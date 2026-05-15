@@ -20,13 +20,3 @@ jobs:
         uses: docker://rhysd/actionlint:1.7.7
         with:
           args: -color
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install mermaid-cli
-        run: npm install -g @mermaid-js/mermaid-cli
-
-      - name: Verify rendered diagrams are fresh
-        run: make diagrams-check

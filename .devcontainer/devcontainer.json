@@ -3,12 +3,11 @@
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/node:1": {"version": "22"},
     "ghcr.io/devcontainers-extra/features/actionlint:1": {},
     "ghcr.io/prulloac/devcontainer-features/pre-commit:1": {},
     "ghcr.io/jungaretti/features/make:1": {}
   },
-  "postCreateCommand": "npm install -g @mermaid-js/mermaid-cli && make install-hooks && echo 'Dev environment ready. Run: make lint'",
+  "postCreateCommand": "make install-hooks && echo 'Dev environment ready. Run: make lint'",
   "customizations": {
     "vscode": {
       "extensions": [

@@ -21,62 +21,60 @@ run *after* release-please cuts a tag.
 - A release-PR opener — release-please does that
 - A replacement for release-please
 
-The split: **release-please owns "from commit to tag"; dotgithub owns
-"from tag to published package"**. They compose; you need both.
+The split: **release-please owns "from commit to tag"; dotgithub
+owns "from tag to published package"**. They compose; you need both.
+
+## I want to USE these workflows in my repo
+
+See [`SKILL.md`](SKILL.md) — quick-start, secrets reference, common
+pitfalls.
+
+## I want to MODIFY these workflows
+
+See [`DEVELOPING.md`](DEVELOPING.md) — local setup, authoring rules,
+how to add a new ecosystem, how this repo self-releases.
 
 ## The pipeline at a glance
 
-![Release flow](docs/diagrams/rendered/release-flow.png)
+```mermaid
+flowchart TB
+    Dev([Developer])
+    Commits[Conventional commits on main]
+    Dev --> Commits
 
-1. Consuming repo configures release-please. Conventional commits
-   land on `main`. release-please opens (and keeps updating) a
-   standing PR titled `chore(release): <component> <version>`.
-2. You merge the PR when ready. release-please creates the tag
-   `<component>/v<version>` and a GitHub Release.
-3. The tag push triggers the consumer's `publish.yml`, which
-   delegates to `hop-top/.github/.github/workflows/publish-on-tag.yml@main`.
-4. Dotgithub's router parses the tag, dispatches to the right
-   ecosystem workflow (`publish-ts.yml`, `publish-py.yml`,
-   `publish-rs.yml`), and runs `mirror-subtree.yml` to push the
-   subtree to the read-only mirror.
+    subgraph ReleasePleaseScope ["Consumer-side (release-please)"]
+        direction TB
+        RP[release-please.yml<br/>opens standing PR]
+        PR[chore release X.Y.Z<br/>PR open on main]
+        Merge[Merge PR]
+        Tag[release-please creates tag<br/>vX.Y.Z]
+        RP --> PR --> Merge --> Tag
+    end
+
+    Commits --> RP
+
+    Push((git push --tags))
+    Tag --> Push
+
+    subgraph DotGithubScope ["dotgithub (this repo)"]
+        direction TB
+        Router[publish-on-tag.yml<br/>parses tag prefix]
+        Router -->|ts/v*| PubTS[publish-ts.yml]
+        Router -->|py/v*| PubPY[publish-py.yml]
+        Router -->|rs/v*| PubRS[publish-rs.yml]
+        Router --> Mirror[mirror-subtree.yml]
+    end
+
+    Push --> Router
+
+    PubTS --> NPM[(npm)]
+    PubPY --> PyPI[(PyPI)]
+    PubRS --> Crates[(crates.io)]
+    Mirror --> MirrorRepo[(read-only mirror repo)]
+```
 
 See [`docs/architecture.md`](docs/architecture.md) for full diagrams
 (router dispatch, secret flow).
-
-## Consuming a workflow
-
-```yaml
-# in your repo: .github/workflows/publish.yml
-on:
-  push:
-    tags: ['*/v*']
-
-jobs:
-  publish:
-    permissions:
-      contents: read
-      id-token: write  # required for PyPI OIDC trusted publishing
-    uses: hop-top/.github/.github/workflows/publish-on-tag.yml@main
-    secrets:
-      NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
-      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      GH_MIRROR_PAT: ${{ secrets.GH_MIRROR_PAT }}
-    with:
-      ecosystems: |
-        ts:  { dir: ts,  ecosystem: ts,  package: "@org/pkg",     mirror: org/pkg-ts }
-        py:  { dir: py,  ecosystem: py,  package: org-pkg,         mirror: org/pkg-py }
-        rs:  { dir: rs,  ecosystem: rs,  package: org-pkg,         mirror: org/pkg-rs }
-        php: { dir: php, ecosystem: php, package: org/pkg,         mirror: org/pkg-php }
-        go:  { dir: go,  ecosystem: go,                            mirror: org/pkg }
-```
-
-See [`docs/consuming.md`](docs/consuming.md) for full reference
-(secret table, env vars exported, overrides per ecosystem).
-
-## Versioning
-
-Pin to a major tag (`@v1`, `@v2`) for stable consumption. `main` is
-the working branch. Breaking changes bump the major tag.
 
 ## Layout
 
@@ -88,11 +86,32 @@ the working branch. Breaking changes bump the major tag.
     publish-py.yml           reusable: PyPI publish (OIDC)
     publish-rs.yml           reusable: crates.io publish
     mirror-subtree.yml       reusable: subtree split + mirror push
-    ci.yml                   self-CI: lint workflows + diagrams freshness
+    ci.yml                   self-CI: actionlint
+    release-please.yml       self-release: opens release PRs
+  release-please-config.json self-release config
+  .release-please-manifest.json
 docs/
   architecture.md            full pipeline diagrams + design rationale
-  consuming.md               full input reference
-  diagrams/                  Mermaid sources
+  diagrams/                  Mermaid sources (also embedded inline in docs)
 profile/
   README.md                  org-page content
+SKILL.md                     consumer-facing how-to
+DEVELOPING.md                collaborator-facing how-to
+VERSION                      current release-please-managed version
 ```
+
+## Versioning
+
+This repo is itself released via release-please. Plain semver tags:
+`v0.1.0`, `v0.1.1`, `v0.2.0`, ..., `v1.0.0`.
+
+Consuming repos pin to a specific tag for reproducibility:
+
+```yaml
+uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0.1.0
+```
+
+`@main` is allowed but means every change here propagates
+immediately. Use a tag for production stability.
+
+See [`DEVELOPING.md`](DEVELOPING.md) for the release flow.

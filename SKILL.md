@@ -1,280 +1,231 @@
 ---
 name: hop-top-dotgithub
-description: Author and modify reusable GitHub Actions workflows, composite actions, and scripts in hop-top/.github. Use when adding/changing release pipelines, mirror logic, publish jobs, or the prerelease/stable cut model consumed by hop-top org repos.
+description: Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io) and push subtree mirrors. Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, mapping registry secrets, or troubleshooting why a tag didn't trigger a publish.
 ---
 
-# hop-top/.github
+# Using hop-top/.github
 
-This repo holds the reusable release and publish pipeline for the entire
-`hop-top` org. Consuming repos call these workflows via `uses:` and
-inherit one canonical pipeline. Changes here ripple to every consumer —
-treat as critical infrastructure.
+This skill is for **consumers**: people wiring up release pipelines
+in hop-top repos by calling the reusable workflows in
+`hop-top/.github`. If you're modifying the workflows themselves, see
+this repo's `DEVELOPING.md` instead.
 
-## See first
-
-[`docs/architecture.md`](docs/architecture.md) — diagrams for control
-flow (router + dispatch), data flow (tag → publish → mirror), secret
-flow, and the alpha→beta→rc→stable state machine. Skim these before
-modifying any workflow.
-
-## When to use this skill
-
-- Adding a new reusable workflow
-- Modifying any existing workflow under `.github/workflows/`
-- Adding a new ecosystem to the router (`publish-on-tag.yml`)
-- Onboarding a new consumer repo
-
-For anything related to release-please configuration, version
-computation, or the alpha/beta/rc/stable model itself, see the
-**`custom-release-please` skill** instead — that's the consumer-side
-concern.
-
-## Core conventions
-
-### What this repo does (and doesn't)
-
-**Does:**
-
-- Provides reusable workflows for publishing to npm / PyPI / crates.io
-- Provides a reusable workflow for subtree mirror push
-- Routes `<component>/v<version>` tag pushes to the right ecosystem
-  job
-
-**Does NOT:**
-
-- Manage versions (release-please does)
-- Generate changelogs (release-please does)
-- Open release PRs (release-please does)
-- Run on commits — only on tag pushes
-
-The dividing line: **release-please owns "commit to tag"; this repo
-owns "tag to published package"**.
-
-### Release model (single path)
+## Mental model
 
 ```
-commits to main
-   ↓
-release-please opens/updates standing PR
-   ↓
-merge PR → release-please creates tag <component>/v<version>
-   ↓
-tag push triggers consumer publish.yml
-   ↓
-publish.yml calls this repo's publish-on-tag.yml
-   ↓
-router dispatches → publish-{ts,py,rs}.yml + mirror-subtree.yml
-   ↓
-published to registry + pushed to mirror
+commits → release-please opens standing PR
+            ↓ merge
+          release-please creates tag <component>/v<version>
+            ↓ tag push
+          your publish.yml triggers
+            ↓ uses:
+          hop-top/.github/.github/workflows/publish-on-tag.yml
+            ↓ dispatches
+          publish-{ts,py,rs}.yml + mirror-subtree.yml
+            ↓
+          registry + mirror push
 ```
 
-**Prereleases AND stable cuts both flow through this path.** The
-prerelease counter (`alpha.0 → alpha.1`) is handled by release-please
-when the consuming repo's config has the three-key combo:
+`hop-top/.github` owns the **publish/mirror** half. release-please
+(consumer-side, configured in YOUR repo) owns the **version/tag**
+half. Both compose; you wire them up.
 
-```json
-{
-  "prerelease": true,
-  "prerelease-type": "alpha.0",
-  "versioning": "prerelease"
-}
-```
+## Quick-start
 
-See the consumer-side `custom-release-please` skill for that. This
-repo's workflows don't care about prerelease vs stable — they just
-parse the tag and publish.
+Two workflow files in your repo:
 
-### Tag format
-
-Always `<component>/v<version>`, separator `/`:
-
-- ✓ `ts/v0.3.0-alpha.0`
-- ✓ `rs/v1.0.0`
-- ✗ `v0.3.0-alpha.0` (no component prefix — collides in monorepo)
-- ✗ `ts-v0.3.0` (wrong separator — `git subtree` expects `/`)
-
-The router (`publish-on-tag.yml`) parses this exact format. Changing
-it breaks every consumer.
-
-## Workflow authoring rules
-
-These are non-negotiable. Past incidents have wasted significant time on
-each one.
-
-### 1. `persist-credentials: false` on every `actions/checkout`
+### `.github/workflows/release-please.yml`
 
 ```yaml
-- uses: actions/checkout@v4
-  with:
-    persist-credentials: false
-```
+name: release-please
 
-Without this, the runner plants `http.extraheader: AUTHORIZATION: basic
-***` with the default `github-actions[bot]` token. Any subsequent
-PAT-based `git push` is silently overridden by that header, producing
-"Permission denied to github-actions[bot]" — even when the PAT is
-correct.
-
-**Audit:** the only exception is the `release-please` job itself, which
-needs the default token to create PRs.
-
-### 2. No `${{ inputs.X }}` inline in `run:` lines
-
-```yaml
-# BAD — command injection vector
-run: do_thing ${{ inputs.cmd }}
-
-# GOOD — env var
-env:
-  CMD: ${{ inputs.cmd }}
-run: do_thing "$CMD"
-```
-
-Reusable workflows trust their callers, but the pattern still matters:
-actionlint flags it, the security hook flags it, and a future caller
-might pass user-controlled input through.
-
-### 3. Always declare `secrets:` explicitly in `workflow_call`
-
-```yaml
 on:
-  workflow_call:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
+          token: ${{ secrets.GH_RELEASE_PLEASE_PAT }}
+```
+
+### `.github/workflows/publish.yml`
+
+```yaml
+name: publish
+
+on:
+  push:
+    tags: ['*/v*']
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      id-token: write  # required for PyPI OIDC trusted publishing
+    uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0.1.0
     secrets:
-      NPM_REGISTRY_TOKEN:
-        required: true
-        description: npm publish token; must allow `publish` on the package
+      NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      GH_MIRROR_PAT: ${{ secrets.GH_MIRROR_PAT }}
+    with:
+      homepage: https://your-project-url
+      description-prefix: "READ-ONLY MIRROR"
+      ecosystems: |
+        ts:  { dir: ts,  ecosystem: ts,  package: "@org/pkg",  mirror: org/pkg-ts }
+        py:  { dir: py,  ecosystem: py,  package: org-pkg,     mirror: org/pkg-py }
+        rs:  { dir: rs,  ecosystem: rs,  package: org-pkg,     mirror: org/pkg-rs }
+        php: { dir: php, ecosystem: php, package: org/pkg,     mirror: org/pkg-php }
+        go:  { dir: go,  ecosystem: go,                        mirror: org/pkg }
 ```
 
-`secrets: inherit` works in the caller but the callee should still
-declare what it expects. Makes the contract explicit and fails fast on
-missing secrets.
+Plus release-please config + manifest (see release-please's docs).
 
-**Document every secret AND env var.** Adding a new secret or step env
-without updating [`docs/consuming.md`](docs/consuming.md) leaves
-downstream users guessing. The doc has two tables:
+## Pinning
 
-- **Secrets reference** — what consuming repos must define and where
-- **Env vars exported inside workflow steps** — what's available to
-  `test-command` / `build-command` overrides
-
-If you add `secrets.X` or `env: X:` anywhere, add a row to one of these
-tables in the same commit.
-
-### 4. Set `permissions:` minimally
-
-Default to `contents: read`. Add only what's needed:
-- `id-token: write` for OIDC (PyPI trusted publishing, npm provenance)
-- `contents: write` only on the workflow that creates tags/releases
-- `pull-requests: write` only on the release-please workflow
-
-### 5. Lint before commit
-
-`make lint` runs actionlint + diagram-freshness. CI runs the same on
-every PR; running locally is faster.
-
-```sh
-make lint
+```yaml
+uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0.1.0
 ```
 
-If you skip the pre-commit hook, CI will catch the failure. The hook is
-the faster loop.
+Pin to a tag for production. `@main` works but means breaking
+changes propagate immediately. Tags follow plain semver: `v0.1.0`,
+`v0.2.0`, `v1.0.0`, etc.
 
-### 6. Diagrams: edit `.mmd`, render PNGs, commit both
+## Secrets reference
 
-Source of truth lives in [`docs/diagrams/*.mmd`](docs/diagrams/).
-Rendered PNGs in `docs/diagrams/rendered/` are checked in so they
-appear in README, npm pages, and other places that don't render
-mermaid.
+All secret names follow the convention
+`<NAMESPACE>_<PURPOSE>_<TYPE>`. The shared workflows expect **exact**
+names — no fallback chains or aliases. Either:
 
-When changing a diagram:
+1. Create org/repo secrets with the canonical names, OR
+2. Explicitly map at the call site (`CANONICAL: ${{ secrets.YOUR_NAME }}`)
 
-```sh
-$EDITOR docs/diagrams/release-flow.mmd
-make diagrams        # regenerates PNGs
-git add docs/diagrams/   # both .mmd and rendered/*.png
+### Secrets the shared workflows expect
+
+| Secret | Required by | Scope | Notes |
+|---|---|---|---|
+| `GH_MIRROR_PAT` | `mirror-subtree` (always) | Org | Fine-grained PAT with `Administration: RW` + `Contents: RW` on every mirror repo |
+| `GH_RELEASE_PLEASE_PAT` | release-please job | Org or repo | Fine-grained PAT with `Contents: RW` + `Pull Requests: RW` + `Workflows: RW` on the source repo. **Default `GITHUB_TOKEN` doesn't work** — its PRs don't trigger downstream workflows. |
+| `NPM_REGISTRY_TOKEN` | `publish-ts` (if shipping TS) | Org | npm Granular Access Token with publish on your scope |
+| `CARGO_REGISTRY_TOKEN` | `publish-rs` (if shipping Rust) | Org | crates.io API token. Account must have a verified email. |
+
+### Secrets the shared workflows DO NOT need
+
+| What | Why not |
+|---|---|
+| **PyPI token** | `publish-py` uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC). Configure on PyPI's side bound to your repo + `pypi-environment` (default: `pypi`). |
+| **Packagist token** | Packagist auto-syncs from public GitHub via webhook. |
+| **Go module token** | proxy.golang.org pulls from git tags. |
+
+### Env vars exported inside workflow steps
+
+Documented here so you know what's available if you customize
+`test-command` or `build-command`:
+
+| Env var | Set in | From | Available to |
+|---|---|---|---|
+| `NODE_AUTH_TOKEN` | `publish-ts` publish step | `secrets.NPM_REGISTRY_TOKEN` | npm CLI (`pnpm publish` reads this) |
+| `CARGO_REGISTRY_TOKEN` | `publish-rs` publish step | `secrets.CARGO_REGISTRY_TOKEN` | cargo |
+| `GH_TOKEN` | `mirror-subtree` all steps | `secrets.GH_MIRROR_PAT` | `gh` CLI + `git push` URL |
+| `TEST_CMD` | `publish-ts`, `publish-py`, `publish-rs` test step | `inputs.test-command` or built-in default | your test command |
+| `BUILD_CMD` | `publish-ts`, `publish-py` build step | `inputs.build-command` or built-in default | your build command |
+| `id-token: write` | `publish-py` job-level | _(permission, no value)_ | OIDC token request for PyPI |
+
+### Aliasing legacy secret names
+
+If your org has legacy secret names (e.g. `MIRROR_PAT` from a prior
+convention), DO NOT rename them via fallback chains in workflows.
+Instead, create a new secret with the canonical name using the
+underlying PAT value, then remove the legacy secret.
+
+The shared workflows accept ONE name only. No fallback. If
+`GH_MIRROR_PAT` isn't set, the mirror job fails — visibly and
+immediately.
+
+### Scoping: org vs repo vs environment
+
+- **Org secrets**: tokens used across multiple repos
+  (`GH_MIRROR_PAT`, `NPM_REGISTRY_TOKEN`, `CARGO_REGISTRY_TOKEN`)
+- **Repo secrets**: tokens specific to one repo (`GH_RELEASE_PLEASE_PAT`
+  may be repo-scoped if you want per-repo PATs)
+- **Environment secrets**: high-stakes scoping with optional manual
+  approval. Used only for `pypi` environment (no secret, just OIDC
+  binding).
+- **GITHUB_TOKEN** (auto): not used by the shared workflows. Doesn't
+  trigger downstream — hence why release-please needs its own PAT.
+
+## `ecosystems` input reference
+
+YAML map. Each key is the **component name** that appears in tag
+prefixes. Each value:
+
+| Field | Required | Notes |
+|---|---|---|
+| `dir` | yes | Subdirectory in the repo |
+| `ecosystem` | yes | `ts` \| `py` \| `rs` \| `php` \| `go` — picks the publish job (or none for php/go) |
+| `mirror` | yes | Full slug of the read-only mirror repo |
+| `package` | no | Registry package name (informational) |
+| `test-command` | no | Override default test step |
+| `build-command` | no | Override default build step (ts, py) |
+| `node-version` | no | Override default Node version (ts; default `22`) |
+| `python-version` | no | Override default Python version (py; default `3.11`) |
+| `rust-toolchain` | no | Override default Rust toolchain (rs; default `stable`) |
+| `access` | no | Override npm access level (ts; default `public`) |
+| `pypi-environment` | no | Override default GitHub Environment for PyPI OIDC (py; default `pypi`) |
+
+### Built-in defaults per ecosystem
+
+| Ecosystem | Test | Build | Runtime |
+|---|---|---|---|
+| `ts` | `pnpm test` | `pnpm build` | Node 22 |
+| `py` | `python -m pytest -q` | `python -m build` | Python 3.11 |
+| `rs` | `cargo test` | _(none; cargo publish handles it)_ | Rust stable |
+| `php` | _(no publish)_ | _(no publish)_ | _Packagist auto-syncs_ |
+| `go` | _(no publish)_ | _(no publish)_ | _proxy.golang.org pulls from tag_ |
+
+### Example with overrides
+
+If your repo uses a Makefile for tests/builds:
+
+```yaml
+ecosystems: |
+  ts:
+    dir: ts
+    ecosystem: ts
+    mirror: hop-top/uri-ts
+    test-command: make test-ts
+    build-command: make build-ts
+  rs:
+    dir: rs
+    ecosystem: rs
+    mirror: hop-top/uri-rs
+    # accepts default `cargo test` — no override needed
 ```
 
-CI's `diagrams-check` fails if you commit `.mmd` without re-rendering
-PNGs.
+## Common pitfalls
 
-## Adding a new ecosystem
+| Issue | Cause | Fix |
+|---|---|---|
+| Tag push doesn't trigger publish | `release-please` used default `GITHUB_TOKEN`, which can't trigger downstream | Set `token: ${{ secrets.GH_RELEASE_PLEASE_PAT }}` on the release-please action |
+| Mirror push fails with `denied to github-actions[bot]` | `actions/checkout` planted an extraheader that overrides the PAT | The shared `mirror-subtree.yml` already sets `persist-credentials: false`. If you're customizing, ensure that's set. |
+| PyPI publish fails with `invalid-token-bad-audience` | OIDC trusted-publisher config doesn't match | Verify on PyPI: org name, repo name, workflow filename, environment name |
+| crates.io publish fails with `verified email required` | The CARGO_REGISTRY_TOKEN's account has no verified email | Verify email at <https://crates.io/settings/profile>, then re-issue the token |
+| First release skips alpha.0 and starts at alpha.1 | `prerelease-type: "alpha"` instead of `"alpha.0"` | Use `"alpha.0"` so the counter has a starting digit |
+| `feat:` from `0.0.0` jumps to `1.0.0` | release-please's "0.0.0 trap" — treats `0.0.0` as "no prior release" | Bootstrap with `Release-As: 0.1.0` footer on the first commit |
 
-Example: adding Java/Maven publishing.
+## See also
 
-1. Create `.github/workflows/publish-java.yml` following the shape of
-   `publish-rs.yml` (minimal — no test matrix, single Java version)
-2. Add a route in `publish-on-tag.yml`:
-   ```yaml
-   publish-java:
-     needs: parse
-     if: needs.parse.outputs.ecosystem == 'java'
-     uses: hop-top/.github/.github/workflows/publish-java.yml@v1
-     secrets:
-       MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
-     with:
-       working-directory: ${{ needs.parse.outputs.dir }}
-   ```
-3. Add the `mirror` job's `needs:` list to include the new publish job
-4. Document in `docs/consuming.md`
-5. Bump major tag (consumers pin to `@v1`/`@v2` — adding an ecosystem
-   is technically backward-compatible, but cut a new minor on `v1` to
-   signal it)
-
-## Versioning this repo
-
-The org-default repo isn't versioned via release-please (no manifest,
-no CHANGELOG.md). Releases are made by moving the `vN` major tag:
-
-```sh
-# Patch/minor — slide v1 forward
-git tag -fa v1 -m "v1.x"
-git push origin v1 --force
-
-# Breaking — cut v2
-git tag v2
-git push origin v2
-```
-
-Consumer repos pin to `@v1`, `@v2` etc. — never `@main`.
-
-## Adding a new consumer repo
-
-1. Set required secrets on the consuming repo (or inherit from org):
-   `NPM_REGISTRY_TOKEN`, `CARGO_REGISTRY_TOKEN`, `GH_MIRROR_PAT`
-   (all org-level), and `GH_RELEASE_PLEASE_PAT` (repo-level). See
-   `docs/consuming.md` for the full table and the
-   `custom-release-please` skill's `setup/` docs for per-secret
-   generation steps.
-2. Create `.github/workflows/publish.yml` and
-   `.github/workflows/release-please.yml` from the templates in the
-   `custom-release-please` skill (`templates/publish.yml`,
-   `templates/release-please.yml`).
-3. Copy `release-please-config.json` + `.release-please-manifest.json`
-   from the skill's `templates/` and customize.
-4. Three-key prerelease combo (`prerelease: true`, `prerelease-type:
-   "alpha.0"`, `versioning: "prerelease"`) is REQUIRED per package
-   for counter-increment behavior. See the skill's
-   `references/three-keys.md`.
-5. Smoke-test with a probe branch + dry-run before pushing to main.
-
-## Common mistakes
-
-- **Inlining inputs in run lines** → security hook + actionlint flag
-- **Forgetting `persist-credentials: false`** → silent push failures
-  with `github-actions[bot]` denied
-- **Tag format other than `<component>/v<version>`** → router fails to
-  parse
-- **Pinning consumers to `@main`** → next breaking change to this repo
-  silently breaks them
-- **Adding version/changelog logic here** → belongs in release-please
-  config on the consumer side, not in dotgithub workflows
-
-## Verification checklist before pushing
-
-- [ ] `make lint` clean
-- [ ] No `${{ inputs.X }}` in `run:` lines
-- [ ] All `actions/checkout` have `persist-credentials: false`
-- [ ] New reusable workflows declare `secrets:` explicitly
-- [ ] Permissions are minimal
-- [ ] If a new ecosystem was added, `docs/consuming.md` is updated
-- [ ] If a breaking change, major tag is bumped (`v1 → v2`)
+- [`docs/architecture.md`](docs/architecture.md) — full control/data
+  flow diagrams + design rationale
+- `custom-release-please` skill (separate) — the consumer-side
+  release-please configuration concerns (three-key prerelease combo,
+  channel transitions, Release-As footers)
