@@ -1,0 +1,45 @@
+name: publish-rs (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Path to the Rust crate (where Cargo.toml lives)
+        type: string
+        required: true
+      rust-toolchain:
+        description: Rust toolchain channel
+        type: string
+        default: stable
+      test-command:
+        description: Test command. Empty uses default.
+        type: string
+        default: ""
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        description: crates.io API token; account must have a verified email
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+
+      - name: Test
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          TEST_CMD: ${{ inputs.test-command || 'cargo test' }}
+        run: $TEST_CMD
+
+      - name: Publish
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish

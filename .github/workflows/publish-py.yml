@@ -1,0 +1,61 @@
+name: publish-py (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Path to the Python package (where pyproject.toml lives)
+        type: string
+        required: true
+      python-version:
+        description: Python version for build+publish
+        type: string
+        default: "3.11"
+      test-command:
+        description: Test command (runs from working-directory). Empty uses default.
+        type: string
+        default: ""
+      build-command:
+        description: Build command (must populate dist/). Empty uses default.
+        type: string
+        default: ""
+      pypi-environment:
+        description: GitHub Environment for trusted publishing
+        type: string
+        default: pypi
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.pypi-environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - run: python -m pip install -U pip pytest build
+
+      - name: Test
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          TEST_CMD: ${{ inputs.test-command || 'python -m pytest -q' }}
+        run: $TEST_CMD
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          BUILD_CMD: ${{ inputs.build-command || 'python -m build' }}
+        run: $BUILD_CMD
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ${{ inputs.working-directory }}/dist/

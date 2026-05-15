@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant Tag as Tag push<br/>(ts/v0.3.0-alpha.0)
+    participant Router as publish-on-tag.yml
+    participant Parse as parse job
+    participant Publish as publish-ts (reusable)
+    participant Mirror as mirror-subtree (reusable)
+    participant NPM as npm
+    participant Source as hop-top/poly-uri
+    participant Mirror_repo as hop-top/uri-ts
+
+    Tag->>Router: triggers on tags ['*/v*']
+    Router->>Parse: extract component, version, dir, ecosystem, mirror_slug
+    Parse-->>Router: component=ts, dir=ts, ecosystem=ts, mirror=hop-top/uri-ts
+
+    par publish + mirror in parallel
+        Router->>Publish: working-directory=ts
+        Publish->>Publish: pnpm test
+        Publish->>Publish: pnpm build
+        Publish->>NPM: pnpm publish --access public
+        NPM-->>Publish: 200 OK
+    and
+        Router->>Mirror: prefix=ts, target=hop-top/uri-ts, tag=v0.3.0-alpha.0
+        Mirror->>Source: git subtree split --prefix=ts HEAD
+        Mirror->>Mirror_repo: git push (refs/heads/main + tag)
+        Mirror->>Mirror_repo: gh release create v0.3.0-alpha.0
+    end

@@ -1,0 +1,66 @@
+name: publish-ts (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Path to the TS package (where package.json lives)
+        type: string
+        required: true
+      node-version:
+        description: Node version for build+publish
+        type: string
+        default: "22"
+      access:
+        description: npm access level (public or restricted)
+        type: string
+        default: public
+      test-command:
+        description: Command to run tests. Empty string uses default.
+        type: string
+        default: ""
+      build-command:
+        description: Command to run before publish. Empty string uses default.
+        type: string
+        default: ""
+    secrets:
+      NPM_REGISTRY_TOKEN:
+        description: npm publish token; must allow publish on the package
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          registry-url: https://registry.npmjs.org
+
+      - run: corepack enable
+
+      - name: Test
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          TEST_CMD: ${{ inputs.test-command || 'pnpm test' }}
+        run: $TEST_CMD
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          BUILD_CMD: ${{ inputs.build-command || 'pnpm build' }}
+        run: $BUILD_CMD
+
+      - name: Publish
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
+          ACCESS: ${{ inputs.access }}
+        run: pnpm publish --access "$ACCESS" --no-git-checks

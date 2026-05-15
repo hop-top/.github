@@ -1,0 +1,162 @@
+name: publish-on-tag (reusable)
+
+# Routes a `<component>/v<version>` tag push to the right ecosystem workflow
+# and mirror push. The caller's `ecosystems` map defines per-component
+# config; each component can override the default test/build commands and
+# runtime versions, or accept the defaults from the per-ecosystem reusable
+# workflows.
+
+on:
+  workflow_call:
+    inputs:
+      ecosystems:
+        description: |
+          YAML map of component -> per-component config.
+
+          Required fields per component:
+            dir          subdirectory in the repo (e.g. "ts")
+            ecosystem    one of: ts | py | rs | php | go
+            mirror       full slug of the read-only mirror
+
+          Optional override fields (empty = use built-in defaults):
+            package          registry name (informational)
+            test-command     override default test step
+            build-command    override default build step (ts, py)
+            node-version     override default Node version (ts; default 22)
+            python-version   override default Python version (py; default 3.11)
+            rust-toolchain   override default Rust toolchain (rs; default stable)
+            access           override npm access level (ts; default public)
+            pypi-environment override default GitHub Environment for PyPI OIDC (py; default pypi)
+        type: string
+        required: true
+      homepage:
+        description: Homepage URL (passed to mirror creation)
+        type: string
+        default: ""
+      description-prefix:
+        description: Prefix for mirror repo descriptions
+        type: string
+        default: "READ-ONLY MIRROR"
+    secrets:
+      NPM_REGISTRY_TOKEN:
+        description: npm publish token (required only if any component uses ecosystem ts)
+        required: false
+      CARGO_REGISTRY_TOKEN:
+        description: crates.io token (required only if any component uses ecosystem rs)
+        required: false
+      GH_MIRROR_PAT:
+        description: PAT with Administration+Contents write on every mirror repo
+        required: true
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    outputs:
+      component: ${{ steps.tag.outputs.component }}
+      version: ${{ steps.tag.outputs.version }}
+      dir: ${{ steps.lookup.outputs.dir }}
+      ecosystem: ${{ steps.lookup.outputs.ecosystem }}
+      mirror: ${{ steps.lookup.outputs.mirror }}
+      package: ${{ steps.lookup.outputs.package }}
+      test_command: ${{ steps.lookup.outputs.test_command }}
+      build_command: ${{ steps.lookup.outputs.build_command }}
+      node_version: ${{ steps.lookup.outputs.node_version }}
+      python_version: ${{ steps.lookup.outputs.python_version }}
+      rust_toolchain: ${{ steps.lookup.outputs.rust_toolchain }}
+      access: ${{ steps.lookup.outputs.access }}
+      pypi_environment: ${{ steps.lookup.outputs.pypi_environment }}
+    steps:
+      - id: tag
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          TAG="${REF#refs/tags/}"
+          COMPONENT="${TAG%%/v*}"
+          VERSION="v${TAG##*/v}"
+          echo "component=$COMPONENT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Parsed component=$COMPONENT version=$VERSION"
+
+      - id: lookup
+        env:
+          ECOSYSTEMS: ${{ inputs.ecosystems }}
+          COMPONENT: ${{ steps.tag.outputs.component }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, sys, yaml
+          eco = yaml.safe_load(os.environ["ECOSYSTEMS"]) or {}
+          comp = os.environ["COMPONENT"]
+          entry = eco.get(comp)
+          if not entry:
+              sys.stderr.write(f"::error::Unknown component {comp!r}\n")
+              sys.exit(1)
+          # Fields: `dir`, `ecosystem`, `mirror` are required by downstream jobs;
+          # `package` is informational (passed through for messages/logs).
+          for k in ("dir", "ecosystem", "mirror", "package"):
+              print(f"{k}={entry.get(k, '')}")
+          # Optional overrides — empty string means "use reusable workflow default".
+          # Output keys use underscores (GITHUB_OUTPUT doesn't like hyphens).
+          for src, dst in [
+              ("test-command",     "test_command"),
+              ("build-command",    "build_command"),
+              ("node-version",     "node_version"),
+              ("python-version",   "python_version"),
+              ("rust-toolchain",   "rust_toolchain"),
+              ("access",           "access"),
+              ("pypi-environment", "pypi_environment"),
+          ]:
+              print(f"{dst}={entry.get(src, '')}")
+          PY
+
+  publish-ts:
+    needs: parse
+    if: needs.parse.outputs.ecosystem == 'ts'
+    uses: hop-top/.github/.github/workflows/publish-ts.yml@main
+    secrets:
+      NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
+    with:
+      working-directory: ${{ needs.parse.outputs.dir }}
+      test-command: ${{ needs.parse.outputs.test_command }}
+      build-command: ${{ needs.parse.outputs.build_command }}
+      node-version: ${{ needs.parse.outputs.node_version || '22' }}
+      access: ${{ needs.parse.outputs.access || 'public' }}
+
+  publish-py:
+    needs: parse
+    if: needs.parse.outputs.ecosystem == 'py'
+    uses: hop-top/.github/.github/workflows/publish-py.yml@main
+    with:
+      working-directory: ${{ needs.parse.outputs.dir }}
+      test-command: ${{ needs.parse.outputs.test_command }}
+      build-command: ${{ needs.parse.outputs.build_command }}
+      python-version: ${{ needs.parse.outputs.python_version || '3.11' }}
+      pypi-environment: ${{ needs.parse.outputs.pypi_environment || 'pypi' }}
+
+  publish-rs:
+    needs: parse
+    if: needs.parse.outputs.ecosystem == 'rs'
+    uses: hop-top/.github/.github/workflows/publish-rs.yml@main
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    with:
+      working-directory: ${{ needs.parse.outputs.dir }}
+      test-command: ${{ needs.parse.outputs.test_command }}
+      rust-toolchain: ${{ needs.parse.outputs.rust_toolchain || 'stable' }}
+
+  mirror:
+    needs: [parse, publish-ts, publish-py, publish-rs]
+    if: |
+      always() &&
+      needs.parse.result == 'success' &&
+      needs.publish-ts.result != 'failure' &&
+      needs.publish-py.result != 'failure' &&
+      needs.publish-rs.result != 'failure'
+    uses: hop-top/.github/.github/workflows/mirror-subtree.yml@main
+    secrets:
+      GH_MIRROR_PAT: ${{ secrets.GH_MIRROR_PAT }}
+    with:
+      source-prefix: ${{ needs.parse.outputs.dir }}
+      target-repo: ${{ needs.parse.outputs.mirror }}
+      tag: ${{ needs.parse.outputs.version }}
+      homepage: ${{ inputs.homepage }}
+      description: ${{ inputs.description-prefix }} of ${{ github.repository }} ${{ needs.parse.outputs.component }}

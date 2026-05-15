@@ -1,0 +1,12 @@
+flowchart LR
+    Checkout[checkout<br/>persist-credentials: false] --> Setup[setup ecosystem<br/>node/python/rust]
+    Setup --> Test[run tests<br/>working-directory: ts]
+    Test --> Build[build artifact]
+    Build --> Publish[publish to registry]
+
+    Test -.fail.-> Stop1[stop]
+    Build -.fail.-> Stop2[stop]
+    Publish -.fail.-> Stop3[stop]
+
+    classDef fail fill:#f8d7da,stroke:#721c24,color:#000
+    class Stop1,Stop2,Stop3 fail

@@ -1,0 +1,45 @@
+flowchart TB
+    Dev([Developer])
+    Commits[Conventional commits on main]
+    Dev --> Commits
+
+    subgraph ReleasePleaseScope ["Consumer-side (release-please)"]
+        direction TB
+        RP[release-please.yml<br/>opens standing PR]
+        PR[chore release ts X.Y.Z-alpha.N<br/>PR open on main]
+        Merge[Merge PR]
+        Tag[release-please creates tag<br/>ts/vX.Y.Z-alpha.N]
+        RP --> PR --> Merge --> Tag
+    end
+
+    Commits --> RP
+
+    Push((git push --tags))
+    Tag --> Push
+
+    subgraph DotGithubScope ["dotgithub (this repo)"]
+        direction TB
+        Router[publish-on-tag.yml<br/>parses tag prefix]
+        Router -->|ts/v*| PubTS[publish-ts.yml]
+        Router -->|py/v*| PubPY[publish-py.yml]
+        Router -->|rs/v*| PubRS[publish-rs.yml]
+        Router -->|php/v*| NoOp1[no publish<br/>Packagist auto-syncs]
+        Router -->|go/v*| NoOp2[no publish<br/>proxy.golang.org<br/>pulls from tag]
+        Router --> Mirror[mirror-subtree.yml<br/>git subtree split + push]
+    end
+
+    Push --> Router
+
+    PubTS --> NPM[(npm)]
+    PubPY --> PyPI[(PyPI<br/>OIDC trusted)]
+    PubRS --> Crates[(crates.io)]
+    Mirror --> MirrorRepo[(read-only mirror repo)]
+
+    classDef scope fill:#e8f4f8,stroke:#0a6,color:#000
+    classDef trigger fill:#fff3cd,stroke:#856404,color:#000
+    classDef registry fill:#f8d7da,stroke:#721c24,color:#000
+    classDef noop fill:#e2e3e5,stroke:#666,color:#000
+    class ReleasePleaseScope,DotGithubScope scope
+    class Push,Router trigger
+    class NPM,PyPI,Crates,MirrorRepo registry
+    class NoOp1,NoOp2 noop

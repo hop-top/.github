@@ -1,0 +1,107 @@
+name: mirror-subtree (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      source-prefix:
+        description: Subdirectory in the consuming repo to split (e.g. "ts", "rs")
+        type: string
+        required: true
+      target-repo:
+        description: Full slug of the read-only mirror (e.g. "hop-top/uri-ts")
+        type: string
+        required: true
+      tag:
+        description: Tag to create on the mirror (strip the component prefix)
+        type: string
+        required: true
+      homepage:
+        description: Homepage URL for the mirror repo
+        type: string
+        default: ""
+      description:
+        description: Description for the mirror repo
+        type: string
+        default: ""
+      create-release:
+        description: Create a GitHub Release on the mirror after push
+        type: boolean
+        default: true
+      changelog-path:
+        description: Path (within source-prefix) to the CHANGELOG for release body
+        type: string
+        default: CHANGELOG.md
+    secrets:
+      GH_MIRROR_PAT:
+        description: PAT with admin+contents write on the mirror repo
+        required: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_MIRROR_PAT }}
+      TARGET: ${{ inputs.target-repo }}
+      PREFIX: ${{ inputs.source-prefix }}
+      TAG: ${{ inputs.tag }}
+      HOMEPAGE: ${{ inputs.homepage }}
+      DESCRIPTION: ${{ inputs.description }}
+      CHANGELOG: ${{ inputs.changelog-path }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Ensure mirror repository exists
+        run: |
+          gh repo view "$TARGET" >/dev/null 2>&1 || \
+            gh repo create "$TARGET" \
+              --public \
+              --disable-issues \
+              --disable-wiki \
+              --homepage "$HOMEPAGE" \
+              --description "$DESCRIPTION"
+
+      - name: Make mirror writable for sync
+        run: |
+          gh api -X PATCH "repos/$TARGET" \
+            -F archived=false \
+            -F has_issues=false \
+            -F has_wiki=false \
+            -F has_projects=false \
+            -F has_discussions=false \
+            -F homepage="$HOMEPAGE" \
+            -F description="$DESCRIPTION"
+
+      - name: Split subtree and push
+        run: |
+          SHA=$(git subtree split --prefix="$PREFIX" HEAD)
+          git remote add mirror "https://x-access-token:${GH_TOKEN}@github.com/${TARGET}.git"
+          git push mirror "${SHA}:refs/heads/main" --force
+          git tag "$TAG" "$SHA"
+          git push mirror "$TAG" --force
+
+      - name: Create release on mirror
+        if: inputs.create-release
+        run: |
+          BODY=""
+          CHANGELOG_PATH="${PREFIX}/${CHANGELOG}"
+          if [ -f "$CHANGELOG_PATH" ]; then
+            BODY=$(sed -n '/^## \[/,/^## \[/{ /^## \[/!p; }' "$CHANGELOG_PATH" | head -50)
+          fi
+          gh release create "$TAG" \
+            --repo "$TARGET" \
+            --title "$TAG" \
+            --notes "${BODY:-Release $TAG}" \
+            --latest=false || true
+
+      - name: Restore mirror read-only
+        if: always()
+        run: |
+          gh api -X PATCH "repos/$TARGET" \
+            -F has_issues=false \
+            -F has_wiki=false \
+            -F has_projects=false \
+            -F has_discussions=false \
+            -F archived=true
