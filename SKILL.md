@@ -114,6 +114,30 @@ majors (`v0`, `v1`, ...) are maintained automatically by dotgithub's
 [`roll-major-tag.yml`](.github/workflows/roll-major-tag.yml)
 workflow.
 
+## Facade pattern
+
+Consumers see one set of names; the workflows internally adapt those
+to whatever env-var names upstream tools demand. This is a deliberate
+**facade**: the canonical secret names follow the
+`<NAMESPACE>_<PURPOSE>_<TYPE>` convention this repo authors, and the
+shared workflows do the translation so consumers never reference
+upstream-specific identifiers.
+
+| Canonical (what you set) | Adapter env (internal) | Read by |
+|---|---|---|
+| `NPM_REGISTRY_TOKEN` | `NODE_AUTH_TOKEN` | `actions/setup-node` for `pnpm publish` |
+| `GH_MIRROR_PAT` | `GH_TOKEN` | `gh` CLI |
+| `CARGO_REGISTRY_TOKEN` | `CARGO_REGISTRY_TOKEN` | `cargo` (name happens to match) |
+
+`GITHUB_TOKEN` is GitHub's auto-injected per-job token. It is **not**
+used by these workflows. release-please needs `GH_RELEASE_PLEASE_PAT`
+specifically because PRs opened by `GITHUB_TOKEN` don't trigger
+downstream workflows; a real PAT does.
+
+Consumers should reference only the canonical names in `secrets:`
+blocks at the call site. The adapter names are an internal
+implementation detail — never set them yourself.
+
 ## Secrets reference
 
 All secret names follow the convention
@@ -142,17 +166,25 @@ names — no fallback chains or aliases. Either:
 
 ### Env vars exported inside workflow steps
 
-Documented here so you know what's available if you customize
-`test-command` or `build-command`:
+Two flavors: **adapter mappings** (internal facade — you don't touch
+these) and **plumbing vars** (available inside your `test-command` /
+`build-command` overrides).
+
+#### Adapter mappings (internal facade — FYI only)
+
+| Canonical secret | Adapter env (internal) | Where | Why |
+|---|---|---|---|
+| `NPM_REGISTRY_TOKEN` | `NODE_AUTH_TOKEN` | `publish-ts` publish step | `actions/setup-node` reads this |
+| `CARGO_REGISTRY_TOKEN` | `CARGO_REGISTRY_TOKEN` | `publish-rs` publish step | cargo reads this (name matches by coincidence) |
+| `GH_MIRROR_PAT` | `GH_TOKEN` | `mirror-subtree` all steps | `gh` CLI reads this |
+
+#### Plumbing env vars (available to your test-command / build-command)
 
 | Env var | Set in | From | Available to |
 |---|---|---|---|
-| `NODE_AUTH_TOKEN` | `publish-ts` publish step | `secrets.NPM_REGISTRY_TOKEN` | npm CLI (`pnpm publish` reads this) |
-| `CARGO_REGISTRY_TOKEN` | `publish-rs` publish step | `secrets.CARGO_REGISTRY_TOKEN` | cargo |
-| `GH_TOKEN` | `mirror-subtree` all steps | `secrets.GH_MIRROR_PAT` | `gh` CLI + `git push` URL |
-| `TEST_CMD` | `publish-ts`, `publish-py`, `publish-rs` test step | `inputs.test-command` or built-in default | your test command |
-| `BUILD_CMD` | `publish-ts`, `publish-py` build step | `inputs.build-command` or built-in default | your build command |
-| `id-token: write` | `publish-py` job-level | _(permission, no value)_ | OIDC token request for PyPI |
+| `TEST_CMD` | `publish-{ts,py,rs}` test step | `inputs.test-command` or built-in default | your test command |
+| `BUILD_CMD` | `publish-{ts,py}` build step | `inputs.build-command` or built-in default | your build command |
+| `id-token: write` (permission) | `publish-py` job-level | — | OIDC token request for PyPI |
 
 ### Aliasing legacy secret names
 
@@ -177,6 +209,67 @@ immediately.
 - **GITHUB_TOKEN** (auto): not used by the shared workflows. Doesn't
   trigger downstream — hence why release-please needs its own PAT.
 
+## Install model
+
+The `publish-{ts,py,rs}.yml` workflows install only **runner-level
+deps** — the language toolchain itself, plus minimal tooling (e.g.
+`pip install pytest build` for py). They do **not** install the
+consuming package's own dependencies.
+
+That's the consumer's job. Your `test-command` (and `build-command`,
+where applicable) is responsible for any package-level install.
+
+### `ts`
+
+The default `test-command` does an implicit install
+(`pnpm install --frozen-lockfile --ignore-scripts && pnpm test`),
+which "just works" for the canonical hop-top stack: `pnpm-lock.yaml`
+present + `"test": "vitest run"` in `package.json`. The
+`--ignore-scripts` flag avoids pnpm 10+ strict-mode failures on
+ignored build scripts (e.g. `esbuild` pulled in by `vitest`).
+
+`build-command` defaults to `pnpm build` and skips re-install — the
+test step already populated `node_modules`.
+
+If your setup is different, override `test-command`:
+
+```yaml
+# install + test (uses lockfile)
+test-command: pnpm install --frozen-lockfile && pnpm test
+
+# install + test, skip transitive build scripts
+test-command: pnpm install --frozen-lockfile --ignore-scripts && pnpm test
+
+# dlx-based, no node_modules
+test-command: pnpm dlx --config.ignore-scripts=true vitest run
+
+# delegate to a Makefile target the repo already maintains
+test-command: make test-ts
+```
+
+### `py`
+
+Default `test-command` is `python -m pytest -q` — assumes the package
+is already on `sys.path`. If your tests import from the package,
+install it first:
+
+```yaml
+test-command: pip install -e . && pytest
+```
+
+### `rs`
+
+Cargo handles deps natively — no install needed in `test-command`.
+Default (`cargo test`) just works.
+
+### Summary
+
+| Ecosystem | Default installs package? | Notes |
+|---|---|---|
+| `ts` | **yes** (`pnpm install --frozen-lockfile --ignore-scripts`) | Exception — defaults are tuned for canonical hop-top stack |
+| `py` | no | Override to `pip install -e . && pytest` if tests import the package |
+| `rs` | no (cargo handles transitive deps) | — |
+
 ## `ecosystems` input reference
 
 YAML map. Each key is the **component name** that appears in tag
@@ -200,7 +293,7 @@ prefixes. Each value:
 
 | Ecosystem | Test | Build | Runtime |
 |---|---|---|---|
-| `ts` | `pnpm test` | `pnpm build` | Node 22 |
+| `ts` | `pnpm install --frozen-lockfile --ignore-scripts && pnpm test` (does implicit install) | `pnpm build` | Node 22 |
 | `py` | `python -m pytest -q` | `python -m build` | Python 3.11 |
 | `rs` | `cargo test` | _(none; cargo publish handles it)_ | Rust stable |
 | `php` | _(no publish)_ | _(no publish)_ | _Packagist auto-syncs_ |
