@@ -72,8 +72,10 @@ jobs:
           MAJOR: ${{ steps.ver.outputs.major }}
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
-          # Check existence — gh api exits non-zero on 404
-          if gh api "repos/$REPO/git/refs/tags/$MAJOR" --silent 2>/dev/null; then
+          # Existence probe: GET /git/ref/tags/<NAME> (singular `ref`).
+          # The plural `refs` form does prefix matching and returns
+          # an array — would falsely "exist" when v0.1.0 matches v0.
+          if gh api "repos/$REPO/git/ref/tags/$MAJOR" --silent 2>/dev/null; then
             echo "Tag $MAJOR exists, updating..."
             RESULT=$(gh api -X PATCH "repos/$REPO/git/refs/tags/$MAJOR" \
               -F sha="$SHA" -F force=true)
