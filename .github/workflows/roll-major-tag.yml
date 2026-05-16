@@ -1,0 +1,85 @@
+name: roll-major-tag
+
+# When a version tag (vMAJOR.MINOR.PATCH[...]) is pushed, force-move
+# the matching major tag (vMAJOR) to the same commit. Consumers
+# pin `@v0` / `@v1` etc. and auto-receive non-breaking updates.
+#
+# Manually trigger via workflow_dispatch with `version` input to
+# bootstrap or backfill (e.g. dispatch with version=v0.1.0).
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Existing version tag to roll the major tag for (e.g. v0.1.0)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  roll:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_RELEASE_PLEASE_PAT }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve version tag
+        id: ver
+        env:
+          REF: ${{ github.ref }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            TAG="$INPUT_VERSION"
+          else
+            TAG="${REF#refs/tags/}"
+          fi
+          if ! [[ "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::tag '$TAG' does not match vMAJOR.MINOR.PATCH pattern"
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "major=v$MAJOR" >> "$GITHUB_OUTPUT"
+          echo "Resolved: tag=$TAG, major=v$MAJOR"
+
+      - name: Resolve commit SHA for the version tag
+        id: sha
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          REF_JSON=$(gh api "repos/$REPO/git/refs/tags/$TAG")
+          SHA=$(echo "$REF_JSON" | jq -r '.object.sha')
+          TYPE=$(echo "$REF_JSON" | jq -r '.object.type')
+          if [ "$TYPE" = "tag" ]; then
+            SHA=$(gh api "repos/$REPO/git/tags/$SHA" --jq '.object.sha')
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Commit SHA for $TAG: $SHA"
+
+      - name: Force-update major tag
+        env:
+          MAJOR: ${{ steps.ver.outputs.major }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          if gh api "repos/$REPO/git/refs/tags/$MAJOR" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPO/git/refs/tags/$MAJOR" \
+              -F sha="$SHA" \
+              -F force=true \
+              --jq '.object.sha' | xargs -I {} echo "Updated $MAJOR -> {}"
+          else
+            gh api -X POST "repos/$REPO/git/refs" \
+              -f ref="refs/tags/$MAJOR" \
+              -f sha="$SHA" \
+              --jq '.object.sha' | xargs -I {} echo "Created $MAJOR -> {}"
+          fi

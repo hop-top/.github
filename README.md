@@ -103,15 +103,18 @@ VERSION                      current release-please-managed version
 ## Versioning
 
 This repo is itself released via release-please. Plain semver tags:
-`v0.1.0`, `v0.1.1`, `v0.2.0`, ..., `v1.0.0`.
+`v0.1.0`, `v0.1.1`, `v0.2.0`, ..., `v1.0.0`. Plus rolling major
+tags (`v0`, `v1`, ...) auto-maintained by
+[`roll-major-tag.yml`](.github/workflows/roll-major-tag.yml).
 
-Consuming repos pin to a specific tag for reproducibility:
+Consuming repos pin to a rolling major (recommended):
 
 ```yaml
-uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0.1.0
+uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0
 ```
 
-`@main` is allowed but means every change here propagates
-immediately. Use a tag for production stability.
+Auto-updates on each non-breaking release. Pin `@v0.1.0` to freeze
+exactly, `@main` to follow everything (breaking changes welcome).
 
-See [`DEVELOPING.md`](DEVELOPING.md) for the release flow.
+See [`SKILL.md`](SKILL.md) for the full pinning options and
+[`DEVELOPING.md`](DEVELOPING.md) for the release flow.
