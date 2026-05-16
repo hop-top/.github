@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/hop-top/.github/compare/v0.2.0...v0.3.0) (2026-05-16)
+
+
+### Features
+
+* **workflows:** facade pattern docs, install model, ts install default ([6f3ee00](https://github.com/hop-top/.github/commit/6f3ee00d8741910964dfcd106729d87bf61b02b5))
+
+
+### Bug Fixes
+
+* **workflow:** use exact-match ref endpoint for tag existence probe ([5164bc1](https://github.com/hop-top/.github/commit/5164bc13fce47e21637842e6bc9175536dd0af9d))
+
 ## [0.2.0](https://github.com/hop-top/.github/compare/v0.1.0...v0.2.0) (2026-05-16)
 
 
