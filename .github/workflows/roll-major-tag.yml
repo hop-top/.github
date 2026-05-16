@@ -72,14 +72,25 @@ jobs:
           MAJOR: ${{ steps.ver.outputs.major }}
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
-          if gh api "repos/$REPO/git/refs/tags/$MAJOR" >/dev/null 2>&1; then
-            gh api -X PATCH "repos/$REPO/git/refs/tags/$MAJOR" \
-              -F sha="$SHA" \
-              -F force=true \
-              --jq '.object.sha' | xargs -I {} echo "Updated $MAJOR -> {}"
+          # Check existence — gh api exits non-zero on 404
+          if gh api "repos/$REPO/git/refs/tags/$MAJOR" --silent 2>/dev/null; then
+            echo "Tag $MAJOR exists, updating..."
+            RESULT=$(gh api -X PATCH "repos/$REPO/git/refs/tags/$MAJOR" \
+              -F sha="$SHA" -F force=true)
+            if NEW_SHA=$(echo "$RESULT" | jq -er '.object.sha' 2>/dev/null); then
+              echo "Updated $MAJOR -> $NEW_SHA"
+            else
+              echo "::error::PATCH failed: $RESULT"
+              exit 1
+            fi
           else
-            gh api -X POST "repos/$REPO/git/refs" \
-              -f ref="refs/tags/$MAJOR" \
-              -f sha="$SHA" \
-              --jq '.object.sha' | xargs -I {} echo "Created $MAJOR -> {}"
+            echo "Tag $MAJOR does not exist, creating..."
+            RESULT=$(gh api -X POST "repos/$REPO/git/refs" \
+              -f ref="refs/tags/$MAJOR" -f sha="$SHA")
+            if NEW_SHA=$(echo "$RESULT" | jq -er '.object.sha' 2>/dev/null); then
+              echo "Created $MAJOR -> $NEW_SHA"
+            else
+              echo "::error::POST failed: $RESULT"
+              exit 1
+            fi
           fi
