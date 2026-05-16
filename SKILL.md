@@ -72,7 +72,7 @@ jobs:
     permissions:
       contents: read
       id-token: write  # required for PyPI OIDC trusted publishing
-    uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0.1.0
+    uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0
     secrets:
       NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -92,13 +92,27 @@ Plus release-please config + manifest (see release-please's docs).
 
 ## Pinning
 
+Three options, in order of preference:
+
 ```yaml
-uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0.1.0
+uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0   # rolling major (recommended)
+uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0.1.0  # exact, frozen
+uses: hop-top/.github/.github/workflows/publish-on-tag.yml@main # latest, breaking changes welcome
 ```
 
-Pin to a tag for production. `@main` works but means breaking
-changes propagate immediately. Tags follow plain semver: `v0.1.0`,
-`v0.2.0`, `v1.0.0`, etc.
+`@v0` is the **rolling major tag** — auto-updates on each non-breaking
+release (`v0.1.0 → v0.1.1 → v0.2.0`). When dotgithub cuts `v1.0.0`
+(breaking), `@v0` stays where it is; you opt in by changing to `@v1`.
+
+`@v0.1.0` is **exact** — frozen, no patches propagate.
+
+`@main` is **rolling everything** — gets every change including
+breaking. Only use in non-production repos.
+
+Tags follow plain semver: `v0.1.0`, `v0.2.0`, `v1.0.0`. The rolling
+majors (`v0`, `v1`, ...) are maintained automatically by dotgithub's
+[`roll-major-tag.yml`](.github/workflows/roll-major-tag.yml)
+workflow.
 
 ## Secrets reference
 
