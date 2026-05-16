@@ -37,7 +37,20 @@ on:
         required: false
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pypi-auth
+        env:
+          PYPI_AUTH: ${{ inputs.pypi-auth }}
+        run: |
+          case "$PYPI_AUTH" in
+            oidc|token) echo "pypi-auth=$PYPI_AUTH (ok)" ;;
+            *) echo "::error::Invalid pypi-auth=$PYPI_AUTH. Must be 'oidc' or 'token'." >&2; exit 1 ;;
+          esac
+
   publish-oidc:
+    needs: validate
     if: ${{ inputs.pypi-auth == 'oidc' }}
     runs-on: ubuntu-latest
     environment:
@@ -69,11 +82,20 @@ jobs:
           packages-dir: ${{ inputs.working-directory }}/dist/
 
   publish-token:
+    needs: validate
     if: ${{ inputs.pypi-auth == 'token' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Verify PYPI_REGISTRY_TOKEN secret is set
+        env:
+          TOKEN: ${{ secrets.PYPI_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::pypi-auth=token requires the PYPI_REGISTRY_TOKEN secret. Caller must pass it through in the publish-on-tag workflow_call secrets block." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
