@@ -1,6 +1,6 @@
 ---
 name: hop-top-dotgithub
-description: Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io) and push subtree mirrors. Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, mapping registry secrets, or troubleshooting why a tag didn't trigger a publish.
+description: Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io) and push subtree mirrors. Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, mapping registry secrets, troubleshooting why a tag didn't trigger a publish, registering a new package on PyPI/Packagist (via OIDC trusted publishing or API tokens), creating GitHub Environments, or debugging pnpm 11 strict-mode install failures.
 ---
 
 # Using hop-top/.github
@@ -743,11 +743,14 @@ mirror tag that Packagist eventually polls.
 
 ## Common pitfalls
 
+Detailed treatment of each entry — including symptoms you'll see in workflow logs and verification commands — in [docs/failure-modes.md](docs/failure-modes.md).
+
 | Issue | Cause | Fix |
 |---|---|---|
 | Tag push doesn't trigger publish (silent) | 3-segment tag (e.g. `sdk/ts/v...`) — `*` in `tags: ['*/v*']` doesn't match `/` | Rename `component` in release-please-config.json so it's a single segment (`kit-ts`, not `sdk/ts`). See [Tag-shape glob trap](#tag-shape-glob-trap). |
 | `Unknown component '<name>'` at publish parse step | `ecosystems` map key in `publish.yml` doesn't match the `component` in release-please-config.json | Make all three names match: release-please `component` == `ecosystems` key == mirror repo basename. See [Three-way name alignment](#three-way-name-alignment). |
 | Tag push doesn't trigger publish (no error) | `release-please` used default `GITHUB_TOKEN`, which can't trigger downstream | Set `token: ${{ secrets.GH_RELEASE_PLEASE_PAT }}` on the release-please action |
+| Tag pushed before `publish.yml` existed → no publish run | Actions reads workflows from the tag's tree, not main | Force-update the tag to a commit containing `publish.yml`; see [failure-modes.md](docs/failure-modes.md#tag-pushed-before-the-publish-workflow-existed--no-publish-run) |
 | release-please proposes stable when you wanted prerelease | Missing `versioning: "prerelease"` and/or manifest seed is stable | Add all four pieces of the prerelease combo. See [Prerelease channel](#prerelease-channel--the-four-piece-combo). |
 | First release skips `alpha.0` and starts at `alpha.1` | `prerelease-type: "alpha"` instead of `"alpha.0"` | Use `"alpha.0"` so the counter has a starting digit |
 | `feat:` from `0.0.0` jumps to `1.0.0` | release-please's "0.0.0 trap" — treats `0.0.0` as "no prior release" | Bootstrap with `Release-As: 0.1.0` footer on the first commit |
@@ -756,8 +759,12 @@ mirror tag that Packagist eventually polls.
 | Mirror push rejected: `workflow ... without 'workflow' scope` | Root component (`dir: "."`) push includes `.github/workflows/*` | Resolved at `mirror-subtree.yml@v0.4.2+` — `.github/workflows/` is stripped from root-component pushes. Pin to `@v0` or `@v1` rolling tag. |
 | Mirror step fails: `fatal: . does not exist; use git subtree add` | Root-component (`dir: "."`) on `mirror-subtree.yml@v0.4.0` or older | Resolved at `mirror-subtree.yml@v0.4.1+`. Pin to `@v0` or `@v1` rolling tag. |
 | `&&` in `test-command` produces pip/cargo arg-parsing errors | Resolved at `publish-{py,rs,ts}.yml@v0.4.3+` (was `run: $TEST_CMD`, now `run: bash -c "$TEST_CMD"`) | Pin to `@v0` or `@v1` rolling tag. |
-| PyPI publish fails with `invalid-publisher` despite correct claims | Pending-publisher table drift, OR caller-vs-reusable workflow_ref confusion | Verify the **caller workflow filename** matches the trusted-publisher config (not the reusable's). If still failing, switch to `pypi-auth: token` as escape hatch. See [PyPI auth modes](#pypi-auth-modes). |
+| Build step fails with `ERR_PNPM_SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER "&&"` | `run: $CMD` doesn't re-parse shell operators in env-var commands (tracked in [#9](https://github.com/hop-top/.github/issues/9)) | Move the pipeline into a package.json script (`ci:build`) so the workflow command is single-token. [Details](docs/failure-modes.md#err_pnpm_spec_not_supported_by_any_resolver-on-build-step) |
+| pnpm install fails with `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 `strictDepBuilds: true` default | Declare offending deps in `pnpm-workspace.yaml` `allowBuilds:` (NOT package.json — that's deprecated in pnpm 11). [Details](docs/failure-modes.md#pnpm-11-strictdepbuilds-blocks-install-on-transitive-postinstalls) |
+| PyPI publish fails with `invalid-publisher` despite correct claims | Pending-publisher table drift, OR caller-vs-reusable workflow_ref confusion | Verify the **caller workflow filename** matches the trusted-publisher config (not the reusable's). If still failing, switch to `pypi-auth: token` as escape hatch. See [PyPI auth modes](#pypi-auth-modes) and [failure-modes.md](docs/failure-modes.md#pypi-oidc-invalid-publisher-despite-correct-looking-claims). |
 | PyPI publish fails with `invalid-token-bad-audience` | OIDC trusted-publisher config doesn't match | Verify on PyPI: org name, repo name, workflow filename, environment name |
+| PyPI version doesn't match git tag | PEP 440 normalization (`0.2.0-alpha.1` → `0.2.0a1`) | Cosmetic; pip accepts both forms in specs. [Details](docs/failure-modes.md#pypi-version-doesnt-match-git-tag-pep-440-normalization) |
+| GitHub Environment binding fails | `pypi` environment doesn't exist on caller repo | `gh api -X PUT repos/<org>/<repo>/environments/pypi` |
 | crates.io publish fails with `verified email required` | The CARGO_REGISTRY_TOKEN's account has no verified email | Verify email at <https://crates.io/settings/profile>, then re-issue the token |
 | crates.io publish fails: `1 files in the working directory contain changes` | `cargo test` mutates `target/` and the crate has no `.gitignore`, or `target/` files are tracked | Add `.gitignore` ignoring `/target/` + `git rm -r --cached <crate>/target/`. See [Rust: target/](#rust-target--cargo-publish-dirty-tree-check). |
 | Rust test fails: `unresolved import <crate>::<feature_module>` under default features | Test file under `tests/` depends on a feature-gated module; cargo compiles all test files unconditionally | Add `#![cfg(feature = "<name>")]` at the top of the test file. See [Rust: feature-gated test files](#rust-feature-gated-test-files). |
@@ -765,9 +772,23 @@ mirror tag that Packagist eventually polls.
 | `go get <module>@latest` returns a pseudo-version after a real release | Ghost versions cached in proxy.golang.org from a prior incarnation outrank the new tag | Bump the next release to a version strictly greater than every ghost. See [Go module proxy: ghost versions](#go-module-proxy-ghost-versions). |
 | Packagist returns 404 even after the mirror has a tag | First version requires manual one-time submit | Submit once at <https://packagist.org/packages/submit>; auto-syncs from then on. |
 | Sibling release-please PRs go CONFLICTING after merging one | Shared manifest; merging A advances it, B's branch is stale | Close the conflicting PR + retrigger release-please via `workflow_dispatch`. See [Retriggering release-please](#retriggering-release-please-after-sibling-pr-conflicts). |
+| release-please PR shows `mergeStateStatus: DIRTY` | Main moved between PR creation and merge attempt | Close PR + delete branch; release-please regenerates on next push. [Details](docs/failure-modes.md#release-please-pr-goes-dirty-after-main-moves) |
 
 ## See also
 
+- [`docs/bootstrap-checklist.md`](docs/bootstrap-checklist.md) — order
+  of operations for a brand-new polyglot repo (org secrets, mirror
+  repos, registry registration, env creation, first release)
+- [`docs/failure-modes.md`](docs/failure-modes.md) — extended
+  symptom→cause→fix guide; covers each entry in the Common Pitfalls
+  table with workflow-log excerpts, root-cause analysis, and what
+  does NOT work
+- [`docs/browser-playbooks.md`](docs/browser-playbooks.md) — verbal
+  step-by-step walkthroughs for web-side setup (PyPI trusted
+  publisher, PyPI API token mint, Packagist registration, GitHub
+  Environment creation, crates.io email verification). Each playbook
+  includes an `ibr`-style prompt you can drive with an authenticated
+  browser session.
 - [`docs/architecture.md`](docs/architecture.md) — full control/data
   flow diagrams + design rationale
 - `custom-release-please` skill (separate) — the consumer-side
