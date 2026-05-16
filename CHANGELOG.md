@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/hop-top/.github/compare/v0.3.0...v0.4.0) (2026-05-16)
+
+
+### Features
+
+* **publish-py:** add token auth mode as escape hatch from OIDC ([#10](https://github.com/hop-top/.github/issues/10)) ([600c4f6](https://github.com/hop-top/.github/commit/600c4f68ee29820b32df98339d30afb042d09df5))
+
 ## [0.3.0](https://github.com/hop-top/.github/compare/v0.2.0...v0.3.0) (2026-05-16)
 
 
