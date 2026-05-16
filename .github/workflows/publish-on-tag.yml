@@ -27,6 +27,7 @@ on:
             rust-toolchain   override default Rust toolchain (rs; default stable)
             access           override npm access level (ts; default public)
             pypi-environment override default GitHub Environment for PyPI OIDC (py; default pypi)
+            pypi-auth        override default PyPI auth mode (py; "oidc" | "token"; default "oidc")
         type: string
         required: true
       homepage:
@@ -43,6 +44,9 @@ on:
         required: false
       CARGO_REGISTRY_TOKEN:
         description: crates.io token (required only if any component uses ecosystem rs)
+        required: false
+      PYPI_REGISTRY_TOKEN:
+        description: 'PyPI API token (required only if a py component sets `pypi-auth: token`)'
         required: false
       GH_MIRROR_PAT:
         description: PAT with Administration+Contents write on every mirror repo
@@ -65,6 +69,7 @@ jobs:
       rust_toolchain: ${{ steps.lookup.outputs.rust_toolchain }}
       access: ${{ steps.lookup.outputs.access }}
       pypi_environment: ${{ steps.lookup.outputs.pypi_environment }}
+      pypi_auth: ${{ steps.lookup.outputs.pypi_auth }}
     steps:
       - id: tag
         env:
@@ -104,6 +109,7 @@ jobs:
               ("rust-toolchain",   "rust_toolchain"),
               ("access",           "access"),
               ("pypi-environment", "pypi_environment"),
+              ("pypi-auth",        "pypi_auth"),
           ]:
               print(f"{dst}={entry.get(src, '')}")
           PY
@@ -125,12 +131,15 @@ jobs:
     needs: parse
     if: needs.parse.outputs.ecosystem == 'py'
     uses: hop-top/.github/.github/workflows/publish-py.yml@main
+    secrets:
+      PYPI_REGISTRY_TOKEN: ${{ secrets.PYPI_REGISTRY_TOKEN }}
     with:
       working-directory: ${{ needs.parse.outputs.dir }}
       test-command: ${{ needs.parse.outputs.test_command }}
       build-command: ${{ needs.parse.outputs.build_command }}
       python-version: ${{ needs.parse.outputs.python_version || '3.11' }}
       pypi-environment: ${{ needs.parse.outputs.pypi_environment || 'pypi' }}
+      pypi-auth: ${{ needs.parse.outputs.pypi_auth || 'oidc' }}
 
   publish-rs:
     needs: parse

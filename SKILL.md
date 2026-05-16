@@ -156,13 +156,59 @@ names — no fallback chains or aliases. Either:
 | `NPM_REGISTRY_TOKEN` | `publish-ts` (if shipping TS) | Org | npm Granular Access Token with publish on your scope |
 | `CARGO_REGISTRY_TOKEN` | `publish-rs` (if shipping Rust) | Org | crates.io API token. Account must have a verified email. |
 
-### Secrets the shared workflows DO NOT need
+### Secrets the shared workflows DO NOT need (default mode)
 
 | What | Why not |
 |---|---|
-| **PyPI token** | `publish-py` uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC). Configure on PyPI's side bound to your repo + `pypi-environment` (default: `pypi`). |
+| **PyPI token** | `publish-py` uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) by default. Configure on PyPI's side bound to your repo + `pypi-environment` (default: `pypi`). If OIDC won't work for your setup, see [PyPI auth modes](#pypi-auth-modes) below for the token escape hatch. |
 | **Packagist token** | Packagist auto-syncs from public GitHub via webhook. |
 | **Go module token** | proxy.golang.org pulls from git tags. |
+
+### PyPI auth modes
+
+`publish-py` supports two authentication modes, picked via the
+`pypi-auth` field in your ecosystem entry:
+
+| `pypi-auth` | Mechanism | Requires |
+|---|---|---|
+| `oidc` (default) | PyPI trusted publishing via short-lived OIDC token | Trusted publisher configured on PyPI matching the **caller workflow filename** (NOT the reusable's); GitHub Environment named per `pypi-environment` must exist on the caller repo |
+| `token` | Long-lived PyPI API token uploaded via twine | `PYPI_REGISTRY_TOKEN` secret available to the caller (no environment binding, no OIDC permissions needed) |
+
+**Choosing**: `oidc` is preferred (no long-lived secret, automatic
+rotation). Use `token` when:
+
+- PyPI trusted publishing isn't matching despite correct claims
+  (rare; pending-publisher table drift).
+- You're publishing from a forked workflow that can't set
+  `id-token: write`.
+- You need to bootstrap-publish before a pending publisher can be
+  configured.
+
+Example caller using token auth for py:
+
+```yaml
+jobs:
+  publish:
+    uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0
+    secrets:
+      PYPI_REGISTRY_TOKEN: ${{ secrets.PYPI_REGISTRY_TOKEN }}
+      # ... other secrets
+    with:
+      ecosystems: |
+        py:
+          dir: py
+          ecosystem: py
+          package: hop-top-uri
+          mirror: hop-top/uri-py
+          pypi-auth: token
+```
+
+**OIDC trap — the workflow_ref claim is the CALLER, not the
+reusable.** When configuring a PyPI trusted publisher for a repo that
+calls into `hop-top/.github`, the "Workflow filename" field on PyPI
+must be the filename of YOUR workflow (e.g. `publish.yml`), not the
+reusable's (`publish-py.yml`). GitHub's OIDC `workflow_ref` claim is
+always set from the calling workflow.
 
 ### Env vars exported inside workflow steps
 
@@ -288,6 +334,7 @@ prefixes. Each value:
 | `rust-toolchain` | no | Override default Rust toolchain (rs; default `stable`) |
 | `access` | no | Override npm access level (ts; default `public`) |
 | `pypi-environment` | no | Override default GitHub Environment for PyPI OIDC (py; default `pypi`) |
+| `pypi-auth` | no | PyPI auth mode (py; `oidc` \| `token`; default `oidc`). `token` requires `PYPI_REGISTRY_TOKEN` secret. |
 
 ### Built-in defaults per ecosystem
 
