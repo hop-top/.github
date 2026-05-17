@@ -70,12 +70,12 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           TEST_CMD: ${{ inputs.test-command || 'python -m pytest -q' }}
-        run: $TEST_CMD
+        run: bash -c "$TEST_CMD"
       - name: Build
         working-directory: ${{ inputs.working-directory }}
         env:
           BUILD_CMD: ${{ inputs.build-command || 'python -m build' }}
-        run: $BUILD_CMD
+        run: bash -c "$BUILD_CMD"
       - name: Publish (OIDC trusted publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -107,12 +107,12 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           TEST_CMD: ${{ inputs.test-command || 'python -m pytest -q' }}
-        run: $TEST_CMD
+        run: bash -c "$TEST_CMD"
       - name: Build
         working-directory: ${{ inputs.working-directory }}
         env:
           BUILD_CMD: ${{ inputs.build-command || 'python -m build' }}
-        run: $BUILD_CMD
+        run: bash -c "$BUILD_CMD"
       - name: Publish (API token)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
