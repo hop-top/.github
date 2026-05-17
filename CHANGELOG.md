@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/hop-top/.github/compare/v0.4.2...v0.4.3) (2026-05-17)
+
+
+### Bug Fixes
+
+* **publish-{py,rs,ts}:** preserve shell operators in test/build commands ([#18](https://github.com/hop-top/.github/issues/18)) ([ebba049](https://github.com/hop-top/.github/commit/ebba049fe77e03a2bc6fd635e63b97c8c2720aec))
+
 ## [0.4.2](https://github.com/hop-top/.github/compare/v0.4.1...v0.4.2) (2026-05-17)
 
 
