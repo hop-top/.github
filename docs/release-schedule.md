@@ -7,6 +7,100 @@ mirror + per-language publish flows).
 Three lanes: **nightly** (automatic), **hotfix** (any time),
 **planned** (drafted or cadenced).
 
+## Branch convention
+
+### Branch types
+
+| Branch | Lifetime | Purpose | Created from |
+|---|---|---|---|
+| `main` | Forever | Active development. Always represents the next unreleased state. | Repo init |
+| `release/<base>` | LTS window | LTS lane for one release line. Receives backported fixes; cuts patches. | The first stable tag opening the line |
+| Topic (`feat/*`, `fix/*`, `docs/*`, `chore/*`, `backport/*`) | Hours to days | A single PR's work. | `main`, or `release/<base>` for backports |
+| `release-please--*` | Until merged | release-please's standing release PR. Auto-managed. | release-please workflow |
+
+No other long-lived branches. No `develop`, no `staging`, no per-feature long-lived branches.
+
+### What `<base>` means
+
+`<base>` is the segment that defines an LTS line.
+
+| Current major | `<base>` is | Example branches |
+|---|---|---|
+| `0.x` (pre-1.0) | `0.<minor>` | `release/0.3`, `release/0.4` |
+| `≥1.x` | `<major>` | `release/1`, `release/2` |
+
+Pre-1.0 treats minor as the breaking-change boundary, so each minor is its own LTS line. Post-1.0, major is the breaking boundary — there is no `release/2.4`, only `release/2`. The "current minor" on a post-1.0 LTS branch is just whatever the latest tag on that branch happens to be.
+
+### When `release/<base>` is created
+
+- A new `release/<base>` is cut **at T+1 after the first stable release of that line ships from `main`**.
+- The branch starts from that release tag, never from arbitrary `main`.
+- Creation is automated by a reusable workflow in `hop-top/.github` that fires on `v<base>.0` (pre-1.0) or `v<base>.0.0` (post-1.0) tag events in any consuming repo.
+- **Pre-release tags (`-alpha.N`, `-beta.N`, `-rc.N`) do not cut LTS branches.** Pre-releases are not patched; consumers running an `-alpha` upgrade to the next `-alpha` for a fix. Only the stable `<base>.0` (or `<base>.0.0`) opens an LTS line.
+
+### When `release/<base>` is closed
+
+A line goes End of Life when it falls outside the LTS window (the 2-line rule in Lane 2 below). EOL is **manual**: when a new minor (pre-1.0) or major (post-1.0) lands and a third LTS line would exist, the maintainer triggers the EOL ritual:
+
+1. Ship any final queued backport as a patch release.
+2. Tag the branch tip with `eol/<base>` for archaeology.
+3. Protect the branch from further pushes (don't delete — tags must resolve for `go get`, `npm install`, `composer require` historical pins).
+4. Update repo `README.md` and `SECURITY.md` to drop the line from supported versions.
+5. Close any PRs targeting the EOL branch with a pointer to the current LTS.
+
+Reopening for an out-of-window CVE backport remains possible but is an exception requiring maintainer sign-off.
+
+### What can land on each branch
+
+| Branch | feat | fix | perf | refactor | docs | chore | ci | build | test |
+|---|---|---|---|---|---|---|---|---|---|
+| `main` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `release/<base>` (in-scope) | ✗ | Security / regression / data-loss only | ✗ | ✗ | Release notes only | Release wiring only | Release wiring only | Release wiring only | Covering the backport |
+| `release/<base>` (EOL) | ✗ | CVE-only, by exception | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+### Direction of changes
+
+**One-way: `main` → `release/<base>`.** Always.
+
+- Fixes land on `main` first, then cherry-pick to in-scope `release/<base>` branches.
+- Never the reverse. A fix landing directly on `release/<base>` without a `main` counterpart is a regression-in-waiting.
+- The cherry-pick is its own PR on the LTS branch, scoped to that branch.
+
+Exception: if the bug only exists on the LTS line and was already fixed differently on `main` (e.g. the affected code was refactored out), the backport PR body cites the original `main` commit and notes "main not affected because <reason>."
+
+### Backport workflow
+
+Backports are **manual cherry-picks initiated from a tracking issue**, not bot-automated. When a `main` fix needs backporting:
+
+1. Open a **backport issue** on the source repo using the `backport` label. Title: `Backport: <original PR title> to <base lines>`. Body must include:
+   - Link to the merged `main` PR and its commit SHA(s).
+   - List of target `release/<base>` branches.
+   - Why each branch needs it (regression / security / data-loss).
+   - Any known conflicts or rewrites required per branch.
+2. For each target branch, open a topic branch `backport/<base>/<short-slug>` from `release/<base>`, cherry-pick the commit(s), open a PR targeting `release/<base>`, link the backport issue.
+3. Each backport PR ships independently. Patch numbers bump per branch.
+4. Close the backport issue once every listed target has merged (or been explicitly dropped with a reason).
+
+If automation becomes worth it (>3 active LTS lines, frequent backports), revisit. Today the issue-driven flow is enough.
+
+### Branch protection
+
+| Branch | Required reviews | Required checks | Force push | Direct push |
+|---|---|---|---|---|
+| `main` | 1 (relaxed for solo maintainer) | CI green | No | No |
+| `release/<base>` | 1 | CI green + security scan | No | No |
+| Topic | None | None | Yes (until PR opened) | Yes |
+
+### Naming
+
+| Pattern | Use |
+|---|---|
+| `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>` | Topic branches targeting `main` |
+| `backport/<base>/<slug>` | Backport branches targeting `release/<base>` |
+| `release/<base>` | LTS branches |
+| `release-please--branches--<branch>--components--<component>` | Standing release PRs (auto-named) |
+| `eol/<base>` | Tag (not branch) marking an EOL'd LTS tip |
+
 ## Channels
 
 | Suffix | Semantics | Trigger |
