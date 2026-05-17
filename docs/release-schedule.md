@@ -35,7 +35,9 @@ Pre-1.0 treats minor as the breaking-change boundary, so each minor is its own L
 
 - A new `release/<base>` is cut **at T+1 after the first stable release of that line ships from `main`**.
 - The branch starts from that release tag, never from arbitrary `main`.
-- Creation is automated by a reusable workflow in `hop-top/.github` that fires on `v<base>.0` (pre-1.0) or `v<base>.0.0` (post-1.0) tag events in any consuming repo.
+- Creation is automated by a reusable workflow in `hop-top/.github` that fires on the **source-component tag** for that line. Tag patterns:
+  - **Single-component repo:** `v<base>.0` (pre-1.0) or `v<base>.0.0` (post-1.0). Example: `v0.4.0`, `v2.0.0`.
+  - **Polyglot repo:** `<source-component>/v<base>.0` (pre-1.0) or `<source-component>/v<base>.0.0` (post-1.0), where `<source-component>` is the canonical name configured in `linked-versions` (e.g. `kit` for `poly-kit`). Example: `kit/v0.4.0`. Linked sibling tags (`kit-ts/v0.4.0`, `kit-py/v0.4.5`, etc.) ride along on the same commit and are inherited by the new branch automatically; they do NOT each trigger a separate branch cut.
 - **Pre-release tags (`-alpha.N`, `-beta.N`, `-rc.N`) do not cut LTS branches.** Pre-releases are not patched; consumers running an `-alpha` upgrade to the next `-alpha` for a fix. Only the stable `<base>.0` (or `<base>.0.0`) opens an LTS line.
 
 ### When `release/<base>` is closed
@@ -130,13 +132,17 @@ the nightly tag is `0.4.0-nightly.20260517`.
 
 **Registry destination:** same registry, distinct dist-tag.
 
-| Ecosystem | Dist-tag / channel |
-|---|---|
-| npm | `nightly` (`npm i @hop-top/kit@nightly`) |
-| PyPI | `--pre` install resolves nightly; no separate channel |
-| crates.io | published as ordinary version, consumers pin explicitly |
-| Packagist | composer `dev-main` alias is preferred for nightly use |
-| Go proxy | `go get hop.top/kit@<commit>` for pseudo-versions; nightly tags resolve via the same proxy |
+**Per-ecosystem version mapping.** The universal git-tag format `<next-base>-nightly.YYYYMMDD` is the source of truth, but registries impose their own version grammars. Map per ecosystem:
+
+| Ecosystem | Published version | Install | Notes |
+|---|---|---|---|
+| npm | `<next-base>-nightly.YYYYMMDD` (semver-compatible as-is) | `npm i @hop-top/kit@nightly` (dist-tag) | dist-tag `nightly` advances each run |
+| PyPI | `<next-base>.devYYYYMMDD` (PEP 440-compatible — `-nightly.N` is rejected) | `pip install --pre hop-top-kit` resolves the latest dev release | The git tag stays `…-nightly.…`; only the published wheel/sdist filename is normalized to PEP 440 |
+| crates.io | `<next-base>-nightly.YYYYMMDD` (semver-compatible as-is) | `cargo add hop-top-kit --pre` or pin explicitly | Yank policy applies; nightlies accumulate |
+| Packagist | `dev-main` alias (no separate nightly version) | `composer require hop-top/kit:dev-main` | Composer's `dev-<branch>` semantics fit nightly use better than minting `…-nightly.…` strings |
+| Go proxy | `<next-base>-nightly.YYYYMMDD` (semver-compatible as-is) | `go get hop.top/kit@<next-base>-nightly.YYYYMMDD` or `@<commit>` for pseudo-versions | Go proxy resolves any tag the source repo publishes |
+
+The PyPI mapping is the only normalization; the rest publish the git-tag string verbatim.
 
 **Linked-version coordination** (for polyglot repos like `poly-kit`): each linked component is evaluated independently against its own paths. Components with no commits since their last nightly **skip the new tag and stay on their previous nightly version**. Linked components are *not* date-aligned across the group — `kit-ts@nightly` and `kit-py@nightly` may resolve to different date suffixes if one had no changes that day. Consumers pinning by date should pin per-component.
 
@@ -166,9 +172,14 @@ security issue, regression.
 | Refactors / code cleanup | No | Stay on `main` |
 | Docs-only | No | Stay on `main` |
 
-**Cadence:** a hotfix patches **every in-scope LTS branch simultaneously**. Follow the [backport workflow](#backport-workflow): open a tracking issue, then one cherry-pick PR per target branch. Merged together when possible. Patch number bumps independently per branch.
+**Cadence:** a hotfix patches **every *affected* in-scope LTS branch**, per the eligibility table above. Follow the [backport workflow](#backport-workflow): open a tracking issue, then one cherry-pick PR per target branch. Merged together when possible. Patch number bumps independently per branch.
 
-**Example:** A security fix lands on `main` and ships as `0.4.5`. The same fix is cherry-picked to `release/0.3` and tagged as `0.3.7` (whatever the next patch on that line is). Two patch releases ship in the same window.
+Which branches count as "affected" depends on the fix type:
+
+- **Security (CVE) / data-loss:** all in-scope LTS branches that contain the vulnerable code are affected. In practice this is usually every in-scope branch, but the backport issue should explicitly list each target and confirm the vulnerable code is present.
+- **Regressions:** only branches where the regression actually shipped. A 0.4.2 regression backported to 0.3 is a *new* bug introduction, not a fix — don't.
+
+**Example:** A security fix lands on `main` and ships as `0.4.5`. The same fix is cherry-picked to `release/0.3` (the older in-scope LTS, vulnerable code confirmed present) and tagged as `0.3.7`. Two patch releases ship in the same window.
 
 **Backports never replay to `main`.** The original fix is already on `main`; the backport PR exists only to land that fix on an older LTS line.
 
@@ -218,9 +229,13 @@ schedule:
 - The maintainer chooses to merge or hold. Holding skips this
   month's cadence — the work rolls into next month.
 
-**RC churn:** if any test/bug fix lands between T-3 and T-0, cut a
-new `vX.Y.Z-rc.N+1` from `main`. The final stable tag is cut from
-the same commit as the last RC.
+**RC churn:** if any test/bug fix lands between T-3 and T-0, cut a new `vX.Y.Z-rc.N+1` from `main`. The stable tag is **not** cut from the same commit as the last RC — release-please tags its own merge commit. The required invariant is that no commits land on `main` between the last RC tag and the release-please PR merge:
+
+1. After the last RC tag, freeze `main`. Only the release-please PR itself may merge.
+2. At T-0, merge the release-please standing PR. release-please tags the resulting merge commit as `vX.Y.Z`.
+3. Because nothing changed between the RC commit and the merge commit (the merge brings in only the release-please PR's CHANGELOG + version-bump diff), the source state is equivalent to the last RC.
+
+If a fix must land between the last RC and T-0, cut a new RC first, then re-freeze.
 
 ### Coordination across linked components (polyglot repos)
 
