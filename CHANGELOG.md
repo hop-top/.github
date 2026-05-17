@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/hop-top/.github/compare/v0.4.0...v0.4.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* **mirror-subtree:** handle root-level component (dir: ".") ([#14](https://github.com/hop-top/.github/issues/14)) ([d7eb0be](https://github.com/hop-top/.github/commit/d7eb0be588e7ee1016dcd23f766d07010b36082d))
+
 ## [0.4.0](https://github.com/hop-top/.github/compare/v0.3.0...v0.4.0) (2026-05-16)
 
 
