@@ -10,6 +10,59 @@ in hop-top repos by calling the reusable workflows in
 `hop-top/.github`. If you're modifying the workflows themselves, see
 this repo's `DEVELOPING.md` instead.
 
+## Repo naming convention
+
+Polyglot repos in the hop-top org follow a strict shape:
+
+| Shape | Pattern | Example |
+|---|---|---|
+| Polyglot source | `poly-<name>` | `hop-top/poly-kit` |
+| Go mirror (or single-language Go repo) | `<name>` (bare) | `hop-top/kit`, `hop-top/uri`, `hop-top/tlc` |
+| TS mirror | `<name>-ts` | `hop-top/kit-ts` |
+| Py mirror | `<name>-py` | `hop-top/kit-py` |
+| Rust mirror | `<name>-rs` | `hop-top/kit-rs` |
+| PHP mirror | `<name>-php` | `hop-top/kit-php` |
+
+**Go ALWAYS takes the bare-name slot.** Vanity imports like
+`hop.top/kit` resolve to `github.com/hop-top/kit` by default; a
+`hop-top/kit-go` repo would break that resolution. `<name>-go` does
+NOT exist in this org — ever.
+
+**Tag shape is `<component>/v<version>` everywhere**, including
+single-language repos (e.g. `tlc/v1.4.2`, not `v1.4.2`). The
+`tags: ['*/v*']` glob in `publish.yml` requires this — bare `v...`
+tags would never trigger publish.
+
+## Tag-shape glob trap
+
+The `tags: ['*/v*']` filter is **single-segment**: `*` does NOT
+match `/`. Tags like `sdk/ts/v0.2.0-alpha.0` (3-segment) silently
+fail to trigger `publish.yml`. The release-please-action's
+`component` field is what produces the tag prefix, so component
+names with `/` in them are the trap.
+
+✅ Good: `component: kit-ts` → tag `kit-ts/v0.2.0-alpha.0` → publish fires.
+✗ Bad: `component: sdk/ts` → tag `sdk/ts/v0.2.0-alpha.0` → publish silent.
+
+The `path` (manifest key) can contain `/` — only the `component`
+must be a single segment.
+
+## Three-way name alignment
+
+For each shipping component, three names must match exactly:
+
+```
+release-please-config.json:packages.<path>.component
+        ==
+publish.yml:ecosystems.<KEY>
+        ==
+mirror repo basename (org/<name>)
+```
+
+If they drift, `publish-on-tag.yml`'s `ecosystems[<component>]`
+lookup fails with `Unknown component '<tag-prefix>'` at parse time,
+before any publish work happens.
+
 ## Mental model
 
 ```
@@ -89,6 +142,97 @@ jobs:
 ```
 
 Plus release-please config + manifest (see release-please's docs).
+
+## Bootstrap checklist (first-time setup)
+
+Hit every box on this list before pushing the first release tag.
+Each missing box was a real session-blocking failure at some point.
+
+**Naming + tag shape**
+
+- [ ] Repo follows the [naming convention](#repo-naming-convention)
+      (`poly-<name>` source + bare-name Go mirror + `<name>-<lang>` mirrors).
+- [ ] Every `component` in `release-please-config.json` is a
+      **single segment** (no `/`). See [Tag-shape glob trap](#tag-shape-glob-trap).
+- [ ] For each component, the **three names match exactly**:
+      `release-please-config.json` `component` == `publish.yml`
+      `ecosystems` key == mirror repo basename. See
+      [Three-way name alignment](#three-way-name-alignment).
+
+**Prerelease channel** (if not shipping stable from day one)
+
+- [ ] Every package has all four pieces: `prerelease: true`,
+      `prerelease-type: "alpha.0"`, `versioning: "prerelease"`,
+      `bump-minor-pre-major: true`. See
+      [Prerelease channel](#prerelease-channel--the-four-piece-combo).
+- [ ] Manifest seed values are **prerelease-shaped**
+      (`0.x.y-alpha.N` or `0.x.y-experimental.N`), not stable.
+- [ ] Verified with a release-please dry-run (`grep '^title:'`).
+
+**Secrets** (org-level unless noted)
+
+- [ ] `GH_MIRROR_PAT` — fine-grained, `Administration: RW` +
+      `Contents: RW` on every mirror repo
+- [ ] `GH_RELEASE_PLEASE_PAT` — fine-grained, `Contents: RW` +
+      `Pull Requests: RW` + `Workflows: RW` on the source repo
+- [ ] `NPM_REGISTRY_TOKEN` (if shipping ts) — npm Granular Access
+      Token with publish on your scope
+- [ ] `CARGO_REGISTRY_TOKEN` (if shipping rs) — crates.io API
+      token; account email **verified**
+- [ ] `PYPI_REGISTRY_TOKEN` (only if using `pypi-auth: token`) —
+      PyPI API token
+
+**Registry pre-registration**
+
+- [ ] npm: no pre-registration needed (first publish claims the
+      name)
+- [ ] crates.io: no pre-registration needed; verify email FIRST
+- [ ] PyPI (OIDC mode): pending trusted publisher configured on
+      <https://pypi.org/manage/account/publishing/>; matches the
+      **caller workflow filename** (not the reusable's)
+- [ ] PyPI: GitHub Environment matching `pypi-environment` (default:
+      `pypi`) exists on the source repo
+- [ ] Packagist: nothing yet — manually submit AFTER first tag
+      lands on the `<name>-php` mirror
+
+**Repo hygiene per language**
+
+- [ ] Rust: `.gitignore` ignores `/target/`; no `target/` files
+      tracked. See [Rust: target/](#rust-target--cargo-publish-dirty-tree-check).
+- [ ] Rust: feature-gated test files have `#![cfg(feature = "...")]`
+      at the top. See [Rust: feature-gated test files](#rust-feature-gated-test-files).
+- [ ] TS: if any test depends on native bindings, exclude it from
+      the publish run via `test-command` override. See
+      [TS: native bindings](#ts-native-bindings----ignore-scripts).
+
+**Workflow setup**
+
+- [ ] `release-please.yml` declares `workflow_dispatch: {}` so you
+      can manually retrigger after closing conflicted PRs. See
+      [Retriggering release-please](#retriggering-release-please-after-sibling-pr-conflicts).
+- [ ] `publish.yml` uses `@v0` (rolling major), not `@main`, not a
+      pinned `@v0.x.y` — that way you get all backwards-compatible
+      fixes (e.g. `mirror-subtree` root-component support,
+      shell-operator preservation) automatically.
+
+**Mirror repos**
+
+- [ ] One mirror repo per shipping language exists:
+      `<org>/<name>-ts`, `-py`, `-rs`, `-php`, and bare `<org>/<name>`
+      for Go.
+- [ ] All currently empty / fresh. The `mirror-subtree` workflow
+      auto-archives them after the first sync.
+
+**Post-merge sanity**
+
+After the first release-please standing PR is merged and the tag is
+pushed:
+
+- [ ] `publish.yml` actually triggered (`gh run list --workflow
+      publish.yml`)
+- [ ] If something failed, fix on `main` then **delete + recreate
+      the tag** (do not `gh run rerun`). See
+      [Re-triggering a failed publish](#re-triggering-a-failed-publish).
 
 ## Pinning
 
@@ -365,16 +509,262 @@ ecosystems: |
     # accepts default `cargo test` — no override needed
 ```
 
+## Prerelease channel — the four-piece combo
+
+To stay in an alpha/beta/rc channel (counter-incrementing), every
+package in `release-please-config.json` needs **all four pieces**:
+
+```json
+{
+  "prerelease": true,
+  "prerelease-type": "alpha.0",
+  "versioning": "prerelease",
+  "bump-minor-pre-major": true
+}
+```
+
+And the manifest seed must be **prerelease-shaped**:
+
+```json
+{ "sdk/ts": "0.3.0-alpha.0" }   // ✅ stays prerelease
+{ "sdk/ts": "0.3.0" }            // ✗ next bump is stable 0.4.0
+```
+
+Why each piece matters:
+
+| Piece | Without it |
+|---|---|
+| `prerelease: true` | Suffix isn't applied at all |
+| `prerelease-type: "alpha.0"` | First release skips `alpha.0` and starts at `alpha.1` |
+| `versioning: "prerelease"` | Counter-only mode is off; base bumps produce stable versions even with `prerelease: true` |
+| Prerelease-shaped manifest seed | release-please sees the prior release as stable, bumps to the next stable |
+
+**To leave the prerelease channel** (cut stable), add a `Release-As: X.Y.Z` footer (no suffix) on a commit. The prerelease suffix is "sticky" — only an explicit footer escapes it.
+
+**To jump base while staying prerelease** (e.g. `0.3.0-alpha.5 → 0.4.0-alpha.0`), add `Release-As: 0.4.0-alpha.0` footer.
+
+**Always dry-run before merging a manifest reseed**:
+
+```sh
+npx release-please@latest release-pr \
+  --token "$(gh auth token)" \
+  --repo-url <url> \
+  --config-file .github/release-please-config.json \
+  --manifest-file .github/.release-please-manifest.json \
+  --target-branch <branch> \
+  --dry-run | grep '^title:'
+```
+
+The actual proposed titles tell you exactly what release-please will emit.
+
+## Re-triggering a failed publish
+
+The single most-counterintuitive thing about this pipeline:
+
+**`publish.yml` runs against the `publish.yml` at the tag's
+commit, NOT current `main`.** When a tag is pushed, GitHub Actions
+snapshots the workflow file from that commit's tree.
+
+This means:
+
+- Fixing `publish.yml` on main doesn't help an already-pushed tag.
+- `gh run rerun <id>` reuses the originally-resolved workflow refs
+  (including `@main` and `@v0`) — it does NOT pick up newer reusable
+  workflows.
+- The reliable retry: **delete the tag + recreate it at current
+  `main`**.
+
+```bash
+SHA=$(gh api repos/<org>/<repo>/branches/main -q '.commit.sha')
+gh release delete <component>/v<version> --repo <org>/<repo> --yes
+gh api -X DELETE repos/<org>/<repo>/git/refs/tags/<component>/v<version>
+gh api -X POST repos/<org>/<repo>/git/refs \
+  -f ref="refs/tags/<component>/v<version>" -f sha="$SHA"
+```
+
+The fresh tag push triggers a fresh workflow run that resolves the
+caller workflow at the new tagged commit AND the reusable workflow
+refs (`@main`, `@v0`) at run time.
+
+## Retriggering release-please (after sibling-PR conflicts)
+
+release-please opens one PR per component, but they share one
+manifest file. When you merge component A's PR, the manifest
+advances — component B's PR is now CONFLICTING because its branch
+still proposes an older manifest.
+
+The fix isn't "rebase the PR" (release-please won't accept manual
+rebases). The fix is **close the conflicted PR + retrigger
+release-please**, which reopens the PR with a freshly rebased
+manifest:
+
+```bash
+gh pr close <conflicting-pr> --repo <org>/<repo>
+gh workflow run release-please.yml --repo <org>/<repo>
+```
+
+For `workflow_dispatch` to work, the workflow must declare it:
+
+```yaml
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+```
+
+If `workflow_dispatch` isn't enabled, branch protection will likely
+block direct pushes to `main`. Workaround: PR an empty commit so
+release-please runs on the resulting merge to main.
+
+## Language-specific gotchas
+
+### Go: root-component caveats
+
+When the Go module lives at the repo root (`dir: "."`), the mirror
+job synthesizes a commit excluding `.github/workflows/` because:
+
+1. `git subtree split --prefix=.` is rejected by git.
+2. Mirror repos are read-only artifacts; pushing CI workflows to
+   them triggers GitHub's PAT `workflow` scope guard
+   (`refusing to allow a Personal Access Token to create or update
+   workflow ... without 'workflow' scope`).
+
+`mirror-subtree.yml@v0.4.2+` handles this automatically. No
+consumer-side config needed.
+
+### Rust: target/ + cargo publish dirty-tree check
+
+`cargo publish` refuses to package if the working tree has
+uncommitted changes. The publish workflow runs `cargo test` first,
+which writes to `target/`. **Every Rust crate must have a
+`.gitignore` ignoring `/target/`** AND must not have `target/`
+files committed.
+
+Canonical `.gitignore` for hop-top Rust crates:
+
+```gitignore
+# Build outputs
+/target/
+**/*.rs.bk
+*.profraw
+*.profdata
+
+# Local workspace/editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Cargo.lock is a release input for this mirrored package.
+!Cargo.lock
+```
+
+If `target/` is already tracked, untrack it:
+
+```bash
+git rm -r --cached <crate-dir>/target/
+git commit -m "chore: untrack target/"
+```
+
+### Rust: feature-gated test files
+
+cargo compiles **every file under `tests/`** unconditionally,
+regardless of `[features]`. A test that imports a feature-gated
+module fails to compile under default features.
+
+If your test depends on an optional feature, gate the whole test
+file:
+
+```rust
+#![cfg(feature = "api")]
+
+use my_crate::api::Client;
+// ...
+```
+
+This makes `cargo test` (default features) silently skip the file,
+while `cargo test --features api` or `--all-features` runs it.
+
+**Test under both modes** to match publish-side coverage:
+
+```sh
+cargo test --locked              # default features (what publish-rs runs)
+cargo test --all-features --locked  # full coverage
+```
+
+### TS: native bindings + --ignore-scripts
+
+`publish-ts.yml`'s default `test-command` uses
+`--ignore-scripts` (supply-chain hygiene). Native-binding deps
+(`better-sqlite3`, `node-canvas`, etc.) don't compile their bindings
+under that flag. Tests that depend on those bindings fail with
+`Could not locate the bindings file`.
+
+Two options:
+
+1. Exclude the affected tests from the publish run:
+
+   ```yaml
+   test-command: pnpm install --frozen-lockfile --ignore-scripts && pnpm vitest run --exclude src/sqlstore.test.ts
+   ```
+
+2. Drop `--ignore-scripts` (only if you trust the dep tree):
+
+   ```yaml
+   test-command: pnpm install --frozen-lockfile && pnpm test
+   ```
+
+### Go module proxy: ghost versions
+
+`proxy.golang.org` is content-addressed and **immutable**. Once a
+version slot is filled, it can never be republished. The proxy's
+`@v/list` also caches version names even after the underlying git
+tags are deleted (these become "ghosts" — listed but unresolvable).
+
+If a Go module's previous incarnation polluted the proxy with ghost
+versions (e.g. a repo restructure), the new release must use a
+version **strictly greater** than every ghost so `@latest` resolves
+correctly:
+
+```sh
+curl -s 'https://proxy.golang.org/<module>/@v/list' | sort -V
+# Pick a next version above the highest ghost
+```
+
+Use a `Release-As: <next-base>-alpha.0` footer or manifest reseed
+to jump the base.
+
+### Packagist: one-time manual submit
+
+The first version of a PHP package needs a **manual submit** at
+<https://packagist.org/packages/submit> with the mirror repo URL.
+After that, the webhook auto-syncs new tags. The `mirror-subtree`
+workflow does NOT create the Packagist entry — it only pushes the
+mirror tag that Packagist eventually polls.
+
 ## Common pitfalls
 
 | Issue | Cause | Fix |
 |---|---|---|
-| Tag push doesn't trigger publish | `release-please` used default `GITHUB_TOKEN`, which can't trigger downstream | Set `token: ${{ secrets.GH_RELEASE_PLEASE_PAT }}` on the release-please action |
+| Tag push doesn't trigger publish (silent) | 3-segment tag (e.g. `sdk/ts/v...`) — `*` in `tags: ['*/v*']` doesn't match `/` | Rename `component` in release-please-config.json so it's a single segment (`kit-ts`, not `sdk/ts`). See [Tag-shape glob trap](#tag-shape-glob-trap). |
+| `Unknown component '<name>'` at publish parse step | `ecosystems` map key in `publish.yml` doesn't match the `component` in release-please-config.json | Make all three names match: release-please `component` == `ecosystems` key == mirror repo basename. See [Three-way name alignment](#three-way-name-alignment). |
+| Tag push doesn't trigger publish (no error) | `release-please` used default `GITHUB_TOKEN`, which can't trigger downstream | Set `token: ${{ secrets.GH_RELEASE_PLEASE_PAT }}` on the release-please action |
+| release-please proposes stable when you wanted prerelease | Missing `versioning: "prerelease"` and/or manifest seed is stable | Add all four pieces of the prerelease combo. See [Prerelease channel](#prerelease-channel--the-four-piece-combo). |
+| First release skips `alpha.0` and starts at `alpha.1` | `prerelease-type: "alpha"` instead of `"alpha.0"` | Use `"alpha.0"` so the counter has a starting digit |
+| `feat:` from `0.0.0` jumps to `1.0.0` | release-please's "0.0.0 trap" — treats `0.0.0` as "no prior release" | Bootstrap with `Release-As: 0.1.0` footer on the first commit |
+| Fixed `publish.yml` on main, retry still fails | `publish.yml` snapshots from the tag's commit; `gh run rerun` reuses the original workflow refs | Delete + recreate the tag at current main. See [Re-triggering a failed publish](#re-triggering-a-failed-publish). |
 | Mirror push fails with `denied to github-actions[bot]` | `actions/checkout` planted an extraheader that overrides the PAT | The shared `mirror-subtree.yml` already sets `persist-credentials: false`. If you're customizing, ensure that's set. |
+| Mirror push rejected: `workflow ... without 'workflow' scope` | Root component (`dir: "."`) push includes `.github/workflows/*` | Resolved at `mirror-subtree.yml@v0.4.2+` — `.github/workflows/` is stripped from root-component pushes. Pin to `@v0` or `@v1` rolling tag. |
+| Mirror step fails: `fatal: . does not exist; use git subtree add` | Root-component (`dir: "."`) on `mirror-subtree.yml@v0.4.0` or older | Resolved at `mirror-subtree.yml@v0.4.1+`. Pin to `@v0` or `@v1` rolling tag. |
+| `&&` in `test-command` produces pip/cargo arg-parsing errors | Resolved at `publish-{py,rs,ts}.yml@v0.4.3+` (was `run: $TEST_CMD`, now `run: bash -c "$TEST_CMD"`) | Pin to `@v0` or `@v1` rolling tag. |
+| PyPI publish fails with `invalid-publisher` despite correct claims | Pending-publisher table drift, OR caller-vs-reusable workflow_ref confusion | Verify the **caller workflow filename** matches the trusted-publisher config (not the reusable's). If still failing, switch to `pypi-auth: token` as escape hatch. See [PyPI auth modes](#pypi-auth-modes). |
 | PyPI publish fails with `invalid-token-bad-audience` | OIDC trusted-publisher config doesn't match | Verify on PyPI: org name, repo name, workflow filename, environment name |
 | crates.io publish fails with `verified email required` | The CARGO_REGISTRY_TOKEN's account has no verified email | Verify email at <https://crates.io/settings/profile>, then re-issue the token |
-| First release skips alpha.0 and starts at alpha.1 | `prerelease-type: "alpha"` instead of `"alpha.0"` | Use `"alpha.0"` so the counter has a starting digit |
-| `feat:` from `0.0.0` jumps to `1.0.0` | release-please's "0.0.0 trap" — treats `0.0.0` as "no prior release" | Bootstrap with `Release-As: 0.1.0` footer on the first commit |
+| crates.io publish fails: `1 files in the working directory contain changes` | `cargo test` mutates `target/` and the crate has no `.gitignore`, or `target/` files are tracked | Add `.gitignore` ignoring `/target/` + `git rm -r --cached <crate>/target/`. See [Rust: target/](#rust-target--cargo-publish-dirty-tree-check). |
+| Rust test fails: `unresolved import <crate>::<feature_module>` under default features | Test file under `tests/` depends on a feature-gated module; cargo compiles all test files unconditionally | Add `#![cfg(feature = "<name>")]` at the top of the test file. See [Rust: feature-gated test files](#rust-feature-gated-test-files). |
+| TS test fails: `Could not locate the bindings file` | Native-binding dep needs build scripts that `--ignore-scripts` blocks | Either exclude the test or drop `--ignore-scripts`. See [TS: native bindings](#ts-native-bindings----ignore-scripts). |
+| `go get <module>@latest` returns a pseudo-version after a real release | Ghost versions cached in proxy.golang.org from a prior incarnation outrank the new tag | Bump the next release to a version strictly greater than every ghost. See [Go module proxy: ghost versions](#go-module-proxy-ghost-versions). |
+| Packagist returns 404 even after the mirror has a tag | First version requires manual one-time submit | Submit once at <https://packagist.org/packages/submit>; auto-syncs from then on. |
+| Sibling release-please PRs go CONFLICTING after merging one | Shared manifest; merging A advances it, B's branch is stale | Close the conflicting PR + retrigger release-please via `workflow_dispatch`. See [Retriggering release-please](#retriggering-release-please-after-sibling-pr-conflicts). |
 
 ## See also
 
