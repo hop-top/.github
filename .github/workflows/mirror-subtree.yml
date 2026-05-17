@@ -76,7 +76,14 @@ jobs:
 
       - name: Split subtree and push
         run: |
-          SHA=$(git subtree split --prefix="$PREFIX" HEAD)
+          # For root-level components (PREFIX="."), there's no subtree to
+          # split — push HEAD directly. git subtree split refuses to operate
+          # on the repo root with 'fatal: . does not exist'.
+          if [ "$PREFIX" = "." ]; then
+            SHA=$(git rev-parse HEAD)
+          else
+            SHA=$(git subtree split --prefix="$PREFIX" HEAD)
+          fi
           git remote add mirror "https://x-access-token:${GH_TOKEN}@github.com/${TARGET}.git"
           git push mirror "${SHA}:refs/heads/main" --force
           git tag "$TAG" "$SHA"
@@ -86,7 +93,12 @@ jobs:
         if: inputs.create-release
         run: |
           BODY=""
-          CHANGELOG_PATH="${PREFIX}/${CHANGELOG}"
+          # Root component: changelog lives at repo root, not under a subdir
+          if [ "$PREFIX" = "." ]; then
+            CHANGELOG_PATH="$CHANGELOG"
+          else
+            CHANGELOG_PATH="${PREFIX}/${CHANGELOG}"
+          fi
           if [ -f "$CHANGELOG_PATH" ]; then
             BODY=$(sed -n '/^## \[/,/^## \[/{ /^## \[/!p; }' "$CHANGELOG_PATH" | head -50)
           fi
