@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/hop-top/.github/compare/v0.4.1...v0.4.2) (2026-05-17)
+
+
+### Bug Fixes
+
+* **mirror-subtree:** strip .github/workflows/ on root-component push ([#16](https://github.com/hop-top/.github/issues/16)) ([6365ec2](https://github.com/hop-top/.github/commit/6365ec270b20c541b9b2fd172e0b91e367af340c))
+
 ## [0.4.1](https://github.com/hop-top/.github/compare/v0.4.0...v0.4.1) (2026-05-17)
 
 
