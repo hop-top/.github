@@ -1,6 +1,6 @@
 # Browser playbooks
 
-Verbal step-by-step walkthroughs for each web-side setup. Each playbook is structured so an AI assistant with browser access (e.g. via [`ibr`](https://github.com/...) with cookies from a logged-in chrome session) can drive the flow.
+Verbal step-by-step walkthroughs for each web-side setup. Each playbook is structured so an AI assistant with browser access (e.g. via `ibr`, an intent-driven browser tool that can reuse cookies from a logged-in chrome session) can drive the flow.
 
 **Convention used below**: each playbook gives (a) the URL, (b) the literal field values, (c) an ibr-style prompt you can copy-paste, and (d) verification commands to run after.
 
@@ -120,11 +120,29 @@ instructions:
 "
 ```
 
-After extraction, set the org-level secret on GitHub:
+After extraction, set the secret on GitHub. Two safety considerations:
 
-```bash
-gh secret set PYPI_REGISTRY_TOKEN --org <org> --visibility all --body "pypi-AgEI..."
-```
+1. **Scope the secret narrowly.** `--visibility all` makes the secret readable by every repo in the org. For a bootstrap token, prefer a repo-level secret or a selected-repo org secret:
+
+   ```bash
+   # repo-scoped (safest for bootstrap)
+   gh secret set PYPI_REGISTRY_TOKEN --repo <org>/<repo>
+
+   # org-level, selected repos only
+   gh secret set PYPI_REGISTRY_TOKEN --org <org> --visibility selected --repos <repo1>,<repo2>
+   ```
+
+2. **Never pass the token via `--body` or any flag.** That puts it in shell history and process listings. `gh secret set` reads from stdin by default — paste when prompted, or pipe from a password manager:
+
+   ```bash
+   # interactive prompt (paste, then Ctrl-D)
+   gh secret set PYPI_REGISTRY_TOKEN --repo <org>/<repo>
+
+   # pipe from password manager (example: 1Password CLI)
+   op read "op://Private/PyPI bootstrap token/credential" | gh secret set PYPI_REGISTRY_TOKEN --repo <org>/<repo>
+   ```
+
+Once project-scoped publishing is set up (see post-first-publish playbook below), rotate the account-wide bootstrap token out and replace the secret with the project-scoped one.
 
 **ibr prompt (project-scoped, post-first-publish)**:
 

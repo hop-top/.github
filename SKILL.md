@@ -743,7 +743,7 @@ mirror tag that Packagist eventually polls.
 
 ## Common pitfalls
 
-Detailed treatment of each entry — including symptoms you'll see in workflow logs and verification commands — in [docs/failure-modes.md](docs/failure-modes.md).
+Entries linked below to [docs/failure-modes.md](docs/failure-modes.md) have extended treatment there (workflow log symptoms, verification commands, escape hatches). The rest are summarized in this table only.
 
 | Issue | Cause | Fix |
 |---|---|---|

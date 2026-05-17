@@ -93,6 +93,8 @@ Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish
 
 `release-please-config.json` + `.release-please-manifest.json` at `.github/`. The shape is documented separately in the `custom-release-please` skill, but the minimum for a polyglot repo:
 
+**No root `.` package.** Every component listed here must also exist in the caller's `publish.yml` `ecosystems:` map (next step). Tags release-please cuts for a component not in that map fail the publish workflow with `Unknown component`. If you need a Go module at the repo root, give it the `go` component and place its sources under `go/` (matching the per-language layout) or extend the ecosystems map to include the root component name.
+
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
@@ -101,7 +103,6 @@ Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish
   "include-component-in-tag": true,
   "tag-separator": "/",
   "packages": {
-    ".":   { "release-type": "go",     "component": "my-pkg", "exclude-paths": ["ts","py","rs","php","go"], "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
     "ts":  { "release-type": "node",   "component": "ts",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
     "py":  { "release-type": "python", "component": "py",     "package-name": "my-pkg", "extra-files": [{"type":"toml","path":"pyproject.toml","jsonpath":"$.project.version"}], "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
     "rs":  { "release-type": "rust",   "component": "rs",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
@@ -114,7 +115,6 @@ Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish
 ```json
 // .release-please-manifest.json — seed values prevent the "0.0.0 trap"
 {
-  ".": "0.1.0-alpha.0",
   "go": "0.1.0-alpha.0",
   "ts": "0.1.0-alpha.0",
   "py": "0.1.0-alpha.0",

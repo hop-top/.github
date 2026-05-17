@@ -44,7 +44,10 @@ The `&&` is interpreted by pnpm's script runner, not by the GitHub Actions shell
 
 - `sh -c "pnpm install && pnpm build"` — the quote chars in the value are literal after bash expansion; the inner shell receives a broken script.
 - `eval "$BUILD_CMD"` — same expansion semantics; quote chars are still literal.
-- Adding a wrapper script you commit to the repo and exec via path — works, but the script approach is cleaner.
+
+**Also works but less preferred**:
+
+- A wrapper script committed to the repo and exec'd via path. Functional, but the package.json script approach above keeps the pipeline visible in one file and avoids an extra checked-in shim.
 
 ## Tag pushed before the publish workflow existed → no publish run
 
@@ -204,9 +207,11 @@ If release-please decides there's nothing left to release (because the in-progre
 
 **Fix**:
 
-- npm: check `npm view <pkg> versions --json` before retrying. If version landed, the publish step will fail; the rest of the pipeline (test, build, mirror) is the only thing being re-exercised — that's fine.
-- PyPI: same shape. Once `hop_top_uri-0.2.0a1.tar.gz` is uploaded, re-running publish step errors. Mirror still updates.
+- npm: check `npm view <pkg> versions --json` before retrying. If the version already landed, the publish job fails on the duplicate upload.
+- PyPI: same shape. Once `hop_top_uri-0.2.0a1.tar.gz` is uploaded, re-running the publish step errors with a 400.
 - crates.io: yank doesn't free the version number. Once published, that number is gone.
+
+**Important: the mirror does NOT update on a duplicate-version failure.** `publish-on-tag.yml` gates the mirror job on `needs.publish-*.result != 'failure'`, so a duplicate upload short-circuits the whole pipeline including the mirror push. If the artifact made it to the registry but the mirror is stale, you need a fresh tag (next bullet) — re-running the failed workflow won't fix it.
 
 If you need a clean retry after a partial publish, **bump the version** rather than reusing.
 
