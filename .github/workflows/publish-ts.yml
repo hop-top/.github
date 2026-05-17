@@ -50,13 +50,13 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           TEST_CMD: ${{ inputs.test-command || 'pnpm install --frozen-lockfile --ignore-scripts && pnpm test' }}
-        run: $TEST_CMD
+        run: bash -c "$TEST_CMD"
 
       - name: Build
         working-directory: ${{ inputs.working-directory }}
         env:
           BUILD_CMD: ${{ inputs.build-command || 'pnpm build' }}
-        run: $BUILD_CMD
+        run: bash -c "$BUILD_CMD"
 
       - name: Publish
         working-directory: ${{ inputs.working-directory }}
