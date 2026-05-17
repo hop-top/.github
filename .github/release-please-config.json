@@ -4,6 +4,8 @@
   "include-component-in-tag": false,
   "pull-request-title-pattern": "chore(release): ${version}",
   "bump-minor-pre-major": true,
+  "label": "status:release-pending",
+  "release-label": "status:release-tagged",
   "extra-files": [
     "VERSION"
   ],
