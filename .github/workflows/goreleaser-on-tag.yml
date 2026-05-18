@@ -123,7 +123,19 @@ jobs:
           REAL_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          git tag "v${BARE}" "${REAL_TAG}"
+          synth="v${BARE}"
+          # Skip if the synthesized name matches the real tag (i.e.
+          # the caller is already using plain `v<version>` shape; no
+          # prefix to strip). `git tag X X` would fail because X
+          # already exists.
+          if [ "$synth" = "$REAL_TAG" ]; then
+            echo "real tag is already bare semver (${REAL_TAG}); no synthesis needed"
+            exit 0
+          fi
+          # Force-create in case a stale local tag of the same name
+          # somehow exists in the runner's checkout.
+          git tag -f "$synth" "$REAL_TAG"
+          echo "synthesized ${synth} -> ${REAL_TAG}"
 
       # Mint a short-lived installation token from the release-bot
       # GitHub App. Scope to the caller repo plus the optional
