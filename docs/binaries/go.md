@@ -64,9 +64,18 @@ constraint, Go version).
 
 ## `.goreleaser.yaml` template
 
-Reference `{{ .Env.BARE_VERSION }}` and `{{ .Env.RELEASE_TAG }}`
-wherever you'd normally use `{{.Version}}` or `{{.Tag}}`. That's
-the only template-side adjustment needed:
+The reusable workflow synthesizes a `v<bare>` git tag at the same
+commit and feeds it via `GORELEASER_CURRENT_TAG`, so stock
+`{{.Version}}` and `{{.Tag}}` resolve cleanly under prefixed tags.
+Two adopter requirements:
+
+- **`release.disable: true`** — GoReleaser OSS can't target a
+  release with a different tag name than the current git tag, so
+  the reusable workflow handles GitHub Release uploads itself via
+  `gh release upload` to the real prefixed tag.
+- **`{{ .Env.RELEASE_TAG }}`** in the Homebrew formula URL only —
+  this is the one spot that needs the real prefixed tag, because
+  the GitHub Release asset path uses it verbatim.
 
 ```yaml
 version: 2
@@ -81,12 +90,12 @@ builds:
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ldflags:
-      - -s -w -X main.version={{ .Env.BARE_VERSION }}
+      - -s -w -X main.version={{ .Version }}
 
 archives:
   - id: usp
     ids: [usp]
-    name_template: "usp_{{ .Env.BARE_VERSION }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "usp_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -99,9 +108,10 @@ changelog:
   disable: true
 
 release:
-  # release-please created the GitHub Release at tag-cut time;
-  # append binaries to that existing release.
-  mode: append
+  # The reusable workflow handles uploading dist/* to the real
+  # release-please-created release. GoReleaser OSS can't target
+  # a different tag name on its own (release.tag: is Pro-only).
+  disable: true
 
 brews:
   - name: usp
@@ -113,8 +123,10 @@ brews:
     homepage: https://github.com/hop-top/usp
     description: "Universal Sessions Protocol"
     license: MIT
-    # {{ .Env.RELEASE_TAG }} is the literal `usp/v...` tag, which
-    # is what the GitHub Release URL uses for asset downloads.
+    # {{ .Env.RELEASE_TAG }} is the literal `usp/v<version>` tag,
+    # which is the path segment GitHub Releases use for asset
+    # downloads. {{.Tag}} here would resolve to the synthesized
+    # bare tag — wrong for the URL.
     url_template: "https://github.com/hop-top/usp/releases/download/{{ .Env.RELEASE_TAG }}/{{ .ArtifactName }}"
     install: bin.install "usp"
     test: |
@@ -134,8 +146,10 @@ goreleaser-on-tag.yml fires     ← cross-platform binaries + Homebrew formula
 ```
 
 Both workflows trigger on the same tag, run independently. The
-GitHub Release is created by release-please; both publish layers
-attach their artifacts to it (GoReleaser uses `release.mode: append`).
+GitHub Release is created by release-please; `publish-on-tag.yml`
+relies on registries pulling from the tag, and
+`goreleaser-on-tag.yml` uploads its archives + checksum directly
+to the release via `gh release upload`.
 
 ## Requirements
 
@@ -175,16 +189,19 @@ The reusable workflow defaults to `~> v2` (latest 2.x). The
 - `brews:` (still works in 2.x but deprecated in favor of
   `homebrew_casks:`; will need a migration in a future major)
 
-### Homebrew formula's `version:` is auto-derived
+### Why `release.disable: true` is mandatory
 
-GoReleaser sets the formula's `version:` field from `{{.Version}}`,
-not `{{.Env.BARE_VERSION}}`. With prefixed tags + OSS GoReleaser,
-`{{.Version}}` becomes the literal `usp/v0.1.0-alpha.1` rather
-than the bare semver. The current workaround: leave `version:`
-alone (GoReleaser writes it, even if ugly), and rely on the
-formula's `url:` to drive the actual download. Users get the
-right binary; the formula's reported version is cosmetic.
+GoReleaser OSS computes the release tag from the current git tag
+(or `GORELEASER_CURRENT_TAG` if set). It can't be told to "build
+under tag X, but publish to release Y." The Pro-only `release.tag`
+override exists for exactly this case but isn't available here.
 
-If/when the cosmetic version matters, override `release.name_template`
-in `.goreleaser.yaml` to inject `BARE_VERSION`. The simpler path
-is GoReleaser Pro + the `monorepo:` block.
+The workaround the reusable workflow uses: synthesize a `v<bare>`
+local tag so GoReleaser's tag parser is happy, run with
+`release.disable: true` so GoReleaser doesn't try to touch any
+GitHub Release, then upload `dist/*.tar.gz`, `dist/*.zip`, and
+`dist/checksums.txt` via `gh release upload` to the real
+prefixed tag.
+
+Net effect for adopters: set `release.disable: true` and don't
+think about it. The reusable workflow does the right thing.
