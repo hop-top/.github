@@ -59,13 +59,28 @@ on:
           then `scoop install <pkg>`.
         type: string
         default: ""
+      winget-fork-repo:
+        description: |
+          Bare repo name (NOT slug) of the caller-org's fork of
+          `microsoft/winget-pkgs`. The fork is assumed to live
+          under the same owner as the caller repo. Required if
+          caller's GoReleaser config has a `winget:` block —
+          GoReleaser pushes the manifest branch here, then opens a
+          PR into `microsoft/winget-pkgs`. Example: `winget-pkgs`.
+          Adopter prerequisite: the package's `package_identifier`
+          must be reserved by manually opening the first manifest
+          PR to `microsoft/winget-pkgs` before automated PRs from
+          the fork are accepted. See docs/binaries/go.md.
+        type: string
+        default: ""
     secrets:
       RELEASE_BOT_APP_ID:
         description: |
           App ID of the hop-top release-bot GitHub App. Org-level
           secret; the App must be installed on the caller repo,
           plus any package-manager target repos in use
-          (`homebrew-tap-repo`, `scoop-bucket-repo`).
+          (`homebrew-tap-repo`, `scoop-bucket-repo`,
+          `winget-fork-repo`).
         required: true
       RELEASE_BOT_PRIVATE_KEY:
         description: |
@@ -159,11 +174,13 @@ jobs:
           CALLER_REPO: ${{ github.event.repository.name }}
           BREW_REPO: ${{ inputs.homebrew-tap-repo }}
           SCOOP_REPO: ${{ inputs.scoop-bucket-repo }}
+          WINGET_REPO: ${{ inputs.winget-fork-repo }}
         run: |
           set -euo pipefail
           repos="$CALLER_REPO"
-          [ -n "$BREW_REPO" ]  && repos="$repos,$BREW_REPO"
-          [ -n "$SCOOP_REPO" ] && repos="$repos,$SCOOP_REPO"
+          [ -n "$BREW_REPO" ]   && repos="$repos,$BREW_REPO"
+          [ -n "$SCOOP_REPO" ]  && repos="$repos,$SCOOP_REPO"
+          [ -n "$WINGET_REPO" ] && repos="$repos,$WINGET_REPO"
           echo "repositories=$repos" >> "$GITHUB_OUTPUT"
           echo "App-token will scope to: $repos"
 
@@ -191,6 +208,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           HOMEBREW_TAP_TOKEN: ${{ steps.app-token.outputs.token }}
           SCOOP_BUCKET_TOKEN: ${{ steps.app-token.outputs.token }}
+          WINGET_PKGS_TOKEN: ${{ steps.app-token.outputs.token }}
           GORELEASER_CURRENT_TAG: v${{ steps.tag.outputs.bare }}
           BARE_VERSION: ${{ steps.tag.outputs.bare }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
