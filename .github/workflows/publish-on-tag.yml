@@ -38,6 +38,14 @@ on:
         description: Prefix for mirror repo descriptions
         type: string
         default: "READ-ONLY MIRROR"
+      enable-mirror:
+        description: |
+          Run the subtree mirror push after publishing. Defaults to true
+          for back-compat. Set to false for single-language `ts`/`py`/`rs`
+          adopters that publish to a registry but have no canonical
+          second-slot mirror repo. See SKILL.md "Single-language repos".
+        type: boolean
+        default: true
     secrets:
       NPM_REGISTRY_TOKEN:
         description: npm publish token (required only if any component uses ecosystem ts)
@@ -156,6 +164,7 @@ jobs:
     needs: [parse, publish-ts, publish-py, publish-rs]
     if: |
       always() &&
+      inputs.enable-mirror &&
       needs.parse.result == 'success' &&
       needs.publish-ts.result != 'failure' &&
       needs.publish-py.result != 'failure' &&
