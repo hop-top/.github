@@ -70,18 +70,21 @@ commits → release-please opens standing PR
             ↓ merge
           release-please creates tag <component>/v<version>
             ↓ tag push
-          your publish.yml triggers
-            ↓ uses:
-          hop-top/.github/.github/workflows/publish-on-tag.yml
-            ↓ dispatches
-          publish-{ts,py,rs}.yml + mirror-subtree.yml
-            ↓
-          registry + mirror push
+          publish.yml triggers          (+ optional <lang>-binaries.yml)
+            ↓ uses:                        ↓ uses:
+          publish-on-tag.yml             <lang>-on-tag.yml (per language)
+            ↓ dispatches                   ↓
+          publish-{ts,py,rs}.yml +       installable artifacts
+            mirror-subtree.yml           (binaries, formulae, …)
+            ↓                              ↓
+          registry + mirror push         GitHub Release assets
 ```
 
-`hop-top/.github` owns the **publish/mirror** half. release-please
-(consumer-side, configured in YOUR repo) owns the **version/tag**
-half. Both compose; you wire them up.
+`hop-top/.github` owns the **publish/mirror/artifacts** half.
+release-please (consumer-side, configured in YOUR repo) owns the
+**version/tag** half. Both compose; you wire them up. The per-
+language binaries lane is opt-in — most adopter repos won't need
+it. See [Shipping installable artifacts](#shipping-installable-artifacts).
 
 ## Quick-start
 
@@ -482,6 +485,43 @@ Default (`cargo test`) just works.
 | `ts` | **yes** (`pnpm install --frozen-lockfile --ignore-scripts`) | Exception — defaults are tuned for canonical hop-top stack |
 | `py` | no | Override to `pip install -e . && pytest` if tests import the package |
 | `rs` | no (cargo handles transitive deps) | — |
+
+## Shipping installable artifacts
+
+`publish-on-tag.yml` handles **language-registry publishing** (npm,
+PyPI, crates.io, Packagist) plus the read-only mirror push. It
+doesn't handle **installable artifacts** — cross-platform binaries,
+desktop apps, package-manager formulae. Those need a language-
+specific builder, each with its own canonical tool and its own
+prefix-stripping quirks when paired with release-please's
+`<component>/v<version>` tag shape.
+
+Per-language reusable workflows live alongside `publish-on-tag.yml`
+in this repo, with focused reference docs:
+
+| Language | Reusable workflow | Reference | Status |
+|---|---|---|---|
+| Go | [`goreleaser-on-tag.yml`](.github/workflows/goreleaser-on-tag.yml) | [docs/binaries/go.md](docs/binaries/go.md) | ✅ shipped |
+| Rust | (planned) `cargo-dist-on-tag.yml` | [docs/binaries/rust.md](docs/binaries/rust.md) | ⏳ stub |
+| Python | (planned) `pyinstaller-on-tag.yml` | [docs/binaries/python.md](docs/binaries/python.md) | ⏳ stub |
+| TypeScript / Node | (planned) `pkg-on-tag.yml` or electron equivalent | [docs/binaries/typescript.md](docs/binaries/typescript.md) | ⏳ stub |
+
+**Composition**: each workflow fires on the same tag-push event as
+`publish-on-tag.yml`, in parallel. The GitHub Release is created
+by release-please at tag-cut time; both layers attach their
+artifacts to that existing release.
+
+```
+release-please cuts tag <component>/v<version>
+  ↓
+publish-on-tag.yml fires        ← language-registry + mirror push
+  ↓ (in parallel)
+<lang>-on-tag.yml fires         ← installable artifacts (binaries, formulae, …)
+```
+
+You opt into the binaries lane per language — most adopter repos
+won't need it. Pick the reference doc for your language and follow
+the caller-workflow snippet there.
 
 ## `ecosystems` input reference
 

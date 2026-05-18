@@ -1,0 +1,128 @@
+name: goreleaser-on-tag (reusable)
+
+# Runs GoReleaser on a tag push, with auto-derived bare-version
+# handling for both `<component>/v<version>` and plain `v<version>`
+# tag shapes. Exports BARE_VERSION + RELEASE_TAG to the GoReleaser
+# step so callers reference them from .goreleaser.yaml templates:
+#
+#   ldflags:
+#     - -s -w -X main.version={{ .Env.BARE_VERSION }}
+#   archives:
+#     - name_template: "myapp_{{ .Env.BARE_VERSION }}_{{ .Os }}_{{ .Arch }}"
+#   brews:
+#     - url_template: "https://github.com/<org>/<repo>/releases/download/{{ .Env.RELEASE_TAG }}/{{ .ArtifactName }}"
+#
+# {{.Tag}} and {{.Version}} are deliberately avoided in templates —
+# they misbehave when the tag carries a non-`v` prefix (the
+# `monorepo:` block in .goreleaser.yaml that fixes this is
+# GoReleaser-Pro-only). Use BARE_VERSION / RELEASE_TAG instead.
+
+on:
+  workflow_call:
+    inputs:
+      goreleaser-config:
+        description: Path to the GoReleaser config (default `.goreleaser.yaml`)
+        type: string
+        default: ".goreleaser.yaml"
+      goreleaser-version:
+        description: GoReleaser version constraint (passed to goreleaser-action)
+        type: string
+        default: "~> v2"
+      go-version:
+        description: Go toolchain version
+        type: string
+        default: "1.26"
+      homebrew-tap-repo:
+        description: |
+          Bare repo name (NOT slug) of the Homebrew tap to push
+          formulae to. The tap is assumed to live under the same
+          owner as the caller repo. Required if caller's
+          GoReleaser config has a `brews:` block — the release-bot
+          App token will be scoped to allow writes here in addition
+          to the caller repo. Example: `homebrew-tap`.
+        type: string
+        default: ""
+    secrets:
+      RELEASE_BOT_APP_ID:
+        description: |
+          App ID of the hop-top release-bot GitHub App. Org-level
+          secret; the App must be installed on the caller repo
+          (and on `homebrew-tap-repo` if set).
+        required: true
+      RELEASE_BOT_PRIVATE_KEY:
+        description: |
+          Private key for the release-bot App. Org-level secret,
+          pairs with `RELEASE_BOT_APP_ID`.
+        required: true
+    outputs:
+      bare-version:
+        description: The semver derived from the tag (no `v`, no component prefix)
+        value: ${{ jobs.goreleaser.outputs.bare-version }}
+      release-tag:
+        description: The literal git tag that triggered the workflow
+        value: ${{ jobs.goreleaser.outputs.release-tag }}
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      bare-version: ${{ steps.tag.outputs.bare }}
+      release-tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Mandatory per DEVELOPING.md rule 1: without this, the
+          # runner plants github-actions[bot] credentials in git
+          # config and silently overrides any subsequent PAT-based
+          # push (e.g. the Homebrew tap update).
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version }}
+
+      # Derive the bare semver from the tag, accepting both
+      # `<component>/v<version>` and plain `v<version>` shapes.
+      # Examples:
+      #   refs/tags/usp/v0.1.0-alpha.1 → bare=0.1.0-alpha.1
+      #   refs/tags/kit-ts/v0.4.0      → bare=0.4.0
+      #   refs/tags/v1.2.3             → bare=1.2.3
+      - id: tag
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          tag="${REF#refs/tags/}"
+          bare="${tag##*/v}"
+          # If no `/v` was found, ${tag##*/v} returns the full tag
+          # unchanged. Fall back to stripping a leading `v`.
+          if [ "$bare" = "$tag" ]; then
+            bare="${tag#v}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "bare=$bare" >> "$GITHUB_OUTPUT"
+          echo "Parsed tag=$tag bare=$bare"
+
+      # Mint a short-lived installation token from the release-bot
+      # GitHub App. Scope to the caller repo plus the optional
+      # Homebrew tap repo (needed when .goreleaser.yaml has brews:).
+      - id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ inputs.homebrew-tap-repo != '' && format('{0},{1}', github.event.repository.name, inputs.homebrew-tap-repo) || github.event.repository.name }}
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: ${{ inputs.goreleaser-version }}
+          args: release --clean --config ${{ inputs.goreleaser-config }}
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          HOMEBREW_TAP_TOKEN: ${{ steps.app-token.outputs.token }}
+          BARE_VERSION: ${{ steps.tag.outputs.bare }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
