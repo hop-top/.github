@@ -4,15 +4,16 @@ Reference for [`goreleaser-on-tag.yml`](../../.github/workflows/goreleaser-on-ta
 
 Wraps [GoReleaser](https://goreleaser.com) to build cross-platform
 binaries (linux / macOS / windows × amd64 / arm64), publish them
-as GitHub Release assets, and push a Homebrew formula to a tap
-repo — all driven by a `<component>/v<version>` tag push from
-release-please.
+as GitHub Release assets, and push package-manager manifests
+(Homebrew tap, Scoop bucket, WinGet fork) — all driven by a
+`<component>/v<version>` tag push from release-please.
 
 ## When to use this
 
 - You ship a Go CLI or daemon that end-users install (not just a
   library other Go projects import).
-- You want `brew install` and direct binary downloads, not just
+- You want package-manager installs (`brew install` / `scoop install`
+  / `winget install`) and direct binary downloads, not just
   `go install hop.top/<repo>@latest`.
 
 If you're shipping a library only, skip this — `publish-on-tag.yml`'s
@@ -77,9 +78,10 @@ Two adopter requirements:
   release with a different tag name than the current git tag, so
   the reusable workflow handles GitHub Release uploads itself via
   `gh release upload` to the real prefixed tag.
-- **`{{ .Env.RELEASE_TAG }}`** in the Homebrew formula URL only —
-  this is the one spot that needs the real prefixed tag, because
-  the GitHub Release asset path uses it verbatim.
+- **`{{ .Env.RELEASE_TAG }}`** in every package-manager URL template
+  (Homebrew `brews:`, Scoop `scoops:`, WinGet `winget:`) — these are
+  the spots that need the real prefixed tag, because the GitHub
+  Release asset path uses it verbatim.
 
 ```yaml
 version: 2
@@ -205,7 +207,10 @@ to the release via `gh release upload`.
 - `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` org secrets
   (already required by `release-please.yml`).
 - Each package-manager target repo must exist before the first tag
-  push; GoReleaser pushes the first commit to it.
+  push. For Homebrew tap + Scoop bucket, the repo can be empty;
+  GoReleaser pushes the first commit. For the WinGet fork, the
+  repo is populated by forking `microsoft/winget-pkgs`; GoReleaser
+  pushes a per-release manifest branch and opens a PR upstream.
 
 ## Package managers
 
@@ -213,7 +218,7 @@ to the release via `gh release upload`.
 the reusable workflow scopes the App token to each target repo
 based on the corresponding `with:` input.
 
-| Manager | Platform | GoReleaser block | Workflow input | Tap/bucket convention |
+| Manager | Platform | GoReleaser block | Workflow input | Target repo convention |
 |---|---|---|---|---|
 | Homebrew | macOS + Linux | `brews:` | `homebrew-tap-repo: homebrew-tap` | `<org>/homebrew-tap` |
 | Scoop | Windows | `scoops:` | `scoop-bucket-repo: scoop-bucket` | `<org>/scoop-bucket` |
@@ -252,8 +257,10 @@ monorepo. GoReleaser pushes a branch to a per-org fork
 be reserved by manually submitting the first manifest PR to
 `microsoft/winget-pkgs` — Microsoft's automated validators run,
 and in some cases a human reviewer chimes in. Once accepted,
-subsequent release-time PRs from the fork are accepted
-automatically.
+subsequent release-time PRs from the fork are eligible for
+automated validation (the identifier is recognized as
+owner-pre-cleared); individual PRs can still fail validation or
+draw a human reviewer if a manifest field changes shape.
 
 This is the WinGet model, not a bug in the workflow.
 
@@ -282,6 +289,30 @@ automated release):
 Until the reservation lands, automated release-time PRs from the
 fork are rejected — `winget:` block should stay out of the
 adopter's `.goreleaser.yaml` until the identifier is live.
+
+### App-token cross-fork PR creation (unverified end-to-end)
+
+GoReleaser opens the WinGet PR using `WINGET_PKGS_TOKEN` — the
+same short-lived App installation token scoped to the caller-org
+fork (`<org>/winget-pkgs`). Whether a GitHub App installation
+token installed only on the fork can open a PR into the public
+`microsoft/winget-pkgs` upstream is verified end-to-end only when
+the first adopter completes the `package_identifier` reservation
+and a real tag push exercises the path. If GoReleaser fails at PR
+creation with an authorization error, the fallback is a PAT scoped
+to a user with public-repo PR access, exposed under the same env
+var name. Track here if encountered.
+
+### Ordering: WinGet PR opens before `gh release upload`
+
+The workflow runs GoReleaser (which opens the WinGet PR with
+manifest URLs pointing at the release assets) **before** the
+`gh release upload` step that attaches `dist/*` to the GitHub
+Release. Microsoft's validators re-run on each push to the PR, so
+the asset gap closes within seconds; in slow scenarios validators
+may flag missing assets transiently. Not a blocker, but worth
+knowing when interpreting validator output on the first run after
+a tag.
 
 ## Gotchas
 
