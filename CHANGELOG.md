@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0](https://github.com/hop-top/.github/compare/v0.4.3...v0.5.0) (2026-05-18)
+
+
+### Features
+
+* **workflows:** add goreleaser-on-tag reusable workflow ([bd14995](https://github.com/hop-top/.github/commit/bd14995f8caf466bf643587e101c17b8f3232ec1))
+* **workflows:** add goreleaser-on-tag reusable workflow ([32508db](https://github.com/hop-top/.github/commit/32508dbd56210e1ebef37042cc3976712c80bab1))
+
+
+### Bug Fixes
+
+* address PR [#23](https://github.com/hop-top/.github/issues/23) review feedback ([f5a12fc](https://github.com/hop-top/.github/commit/f5a12fc882058c363e40aa505fbbe9faf0edaa24))
+
+
+### Refactoring
+
+* **skill:** generalize binaries section, move Go content to per-language doc ([f310cd3](https://github.com/hop-top/.github/commit/f310cd3c3e79ab7a6cb8826dc21fba927a5d3498))
+
 ## [0.4.3](https://github.com/hop-top/.github/compare/v0.4.2...v0.4.3) (2026-05-17)
 
 
