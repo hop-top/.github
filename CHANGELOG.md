@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/hop-top/.github/compare/v0.5.1...v0.6.0) (2026-05-18)
+
+
+### Features
+
+* **goreleaser-on-tag:** add scoop-bucket-repo input for Scoop manifests ([62bd9f2](https://github.com/hop-top/.github/commit/62bd9f29c6a15f1593a71f1cb86a04e9a35bc16f))
+* **goreleaser-on-tag:** Scoop bucket support for Windows ([aabf839](https://github.com/hop-top/.github/commit/aabf83904fc9c4a6a4de5ead757df47ea5f746fc))
+
 ## [0.5.1](https://github.com/hop-top/.github/compare/v0.5.0...v0.5.1) (2026-05-18)
 
 
