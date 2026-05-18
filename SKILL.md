@@ -95,6 +95,7 @@ name: release-please
 on:
   push:
     branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -104,11 +105,23 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      # Mint a short-lived installation token from the hop-top
+      # release-bot GitHub App so the release PRs are opened by
+      # `release-bot[bot]` rather than the human owner — sidesteps
+      # the CODEOWNERS self-approval block on
+      # `.release-please-manifest.json` and avoids the long-lived-PAT
+      # delivery quirks that have bitten fresh repos.
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
-          token: ${{ secrets.GH_RELEASE_PLEASE_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
 ```
 
 ### `.github/workflows/publish.yml`
@@ -173,8 +186,11 @@ Each missing box was a real session-blocking failure at some point.
 
 - [ ] `GH_MIRROR_PAT` — fine-grained, `Administration: RW` +
       `Contents: RW` on every mirror repo
-- [ ] `GH_RELEASE_PLEASE_PAT` — fine-grained, `Contents: RW` +
-      `Pull Requests: RW` + `Workflows: RW` on the source repo
+- [ ] `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` — the
+      hop-top release-bot GitHub App credentials, used to mint a
+      short-lived token for release-please. Org-level; already set
+      across the org. (Cf. legacy `GH_RELEASE_PLEASE_PAT` —
+      deprecated; PAT delivery proved unreliable for fresh repos.)
 - [ ] `NPM_REGISTRY_TOKEN` (if shipping ts) — npm Granular Access
       Token with publish on your scope
 - [ ] `CARGO_REGISTRY_TOKEN` (if shipping rs) — crates.io API
@@ -274,9 +290,15 @@ upstream-specific identifiers.
 | `CARGO_REGISTRY_TOKEN` | `CARGO_REGISTRY_TOKEN` | `cargo` (name happens to match) |
 
 `GITHUB_TOKEN` is GitHub's auto-injected per-job token. It is **not**
-used by these workflows. release-please needs `GH_RELEASE_PLEASE_PAT`
-specifically because PRs opened by `GITHUB_TOKEN` don't trigger
-downstream workflows; a real PAT does.
+used by these workflows. release-please needs a higher-privilege
+token specifically because PRs opened by `GITHUB_TOKEN` don't
+trigger downstream workflows. The canonical pattern is to mint a
+short-lived installation token from the **`release-bot` GitHub App**
+(`RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` org secrets) via
+`actions/create-github-app-token@v1` — see the [Quick-start](#quick-start)
+example. Avoid long-lived PATs (`GH_RELEASE_PLEASE_PAT`); delivery
+to fresh repos has proved unreliable, and PR authorship as the
+human owner trips CODEOWNERS self-approval on the manifest file.
 
 Consumers should reference only the canonical names in `secrets:`
 blocks at the call site. The adapter names are an internal
@@ -296,7 +318,7 @@ names — no fallback chains or aliases. Either:
 | Secret | Required by | Scope | Notes |
 |---|---|---|---|
 | `GH_MIRROR_PAT` | `mirror-subtree` (always) | Org | Fine-grained PAT with `Administration: RW` + `Contents: RW` on every mirror repo |
-| `GH_RELEASE_PLEASE_PAT` | release-please job | Org or repo | Fine-grained PAT with `Contents: RW` + `Pull Requests: RW` + `Workflows: RW` on the source repo. **Default `GITHUB_TOKEN` doesn't work** — its PRs don't trigger downstream workflows. |
+| `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` | release-please job (via `actions/create-github-app-token@v1`) | Org | GitHub App credentials for the hop-top release-bot. The App must be installed on every source repo that ships releases; `Contents: RW` + `Pull Requests: RW` + `Workflows: RW`. **Default `GITHUB_TOKEN` doesn't work** — its PRs don't trigger downstream workflows. **Legacy `GH_RELEASE_PLEASE_PAT` is deprecated** (PAT-delivery proved unreliable on fresh repos, and PRs authored by the human owner trip CODEOWNERS self-approval on `.release-please-manifest.json`). |
 | `NPM_REGISTRY_TOKEN` | `publish-ts` (if shipping TS) | Org | npm Granular Access Token with publish on your scope |
 | `CARGO_REGISTRY_TOKEN` | `publish-rs` (if shipping Rust) | Org | crates.io API token. Account must have a verified email. |
 
@@ -390,14 +412,15 @@ immediately.
 ### Scoping: org vs repo vs environment
 
 - **Org secrets**: tokens used across multiple repos
-  (`GH_MIRROR_PAT`, `NPM_REGISTRY_TOKEN`, `CARGO_REGISTRY_TOKEN`)
-- **Repo secrets**: tokens specific to one repo (`GH_RELEASE_PLEASE_PAT`
-  may be repo-scoped if you want per-repo PATs)
+  (`GH_MIRROR_PAT`, `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY`,
+  `NPM_REGISTRY_TOKEN`, `CARGO_REGISTRY_TOKEN`)
+- **Repo secrets**: rarely needed once the org App is set up; reserved
+  for one-off credentials a single repo owns
 - **Environment secrets**: high-stakes scoping with optional manual
   approval. Used only for `pypi` environment (no secret, just OIDC
   binding).
 - **GITHUB_TOKEN** (auto): not used by the shared workflows. Doesn't
-  trigger downstream — hence why release-please needs its own PAT.
+  trigger downstream — hence why release-please needs the App token.
 
 ## Install model
 
@@ -749,7 +772,8 @@ Entries linked below to [docs/failure-modes.md](docs/failure-modes.md) have exte
 |---|---|---|
 | Tag push doesn't trigger publish (silent) | 3-segment tag (e.g. `sdk/ts/v...`) — `*` in `tags: ['*/v*']` doesn't match `/` | Rename `component` in release-please-config.json so it's a single segment (`kit-ts`, not `sdk/ts`). See [Tag-shape glob trap](#tag-shape-glob-trap). |
 | `Unknown component '<name>'` at publish parse step | `ecosystems` map key in `publish.yml` doesn't match the `component` in release-please-config.json | Make all three names match: release-please `component` == `ecosystems` key == mirror repo basename. See [Three-way name alignment](#three-way-name-alignment). |
-| Tag push doesn't trigger publish (no error) | `release-please` used default `GITHUB_TOKEN`, which can't trigger downstream | Set `token: ${{ secrets.GH_RELEASE_PLEASE_PAT }}` on the release-please action |
+| Tag push doesn't trigger publish (no error) | `release-please` used default `GITHUB_TOKEN`, which can't trigger downstream | Mint an App token via `actions/create-github-app-token@v1` against `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY`, pass to `token:` on the release-please action. See [Quick-start](#quick-start). |
+| release-please run fails immediately: `Input required and not supplied: token` | `secrets.GH_RELEASE_PLEASE_PAT` reference resolves empty on a fresh repo (deprecated path) | Switch to the App-token pattern. The org-level `GH_RELEASE_PLEASE_PAT` secret has not proven reliably reachable for new repos; the `release-bot` App is the supported path. |
 | Tag pushed before `publish.yml` existed → no publish run | Actions reads workflows from the tag's tree, not main | Force-update the tag to a commit containing `publish.yml`; see [failure-modes.md](docs/failure-modes.md#tag-pushed-before-the-publish-workflow-existed--no-publish-run) |
 | release-please proposes stable when you wanted prerelease | Missing `versioning: "prerelease"` and/or manifest seed is stable | Add all four pieces of the prerelease combo. See [Prerelease channel](#prerelease-channel--the-four-piece-combo). |
 | First release skips `alpha.0` and starts at `alpha.1` | `prerelease-type: "alpha"` instead of `"alpha.0"` | Use `"alpha.0"` so the counter has a starting digit |
