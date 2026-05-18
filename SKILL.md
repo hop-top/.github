@@ -524,6 +524,9 @@ on:
 jobs:
   goreleaser:
     uses: hop-top/.github/.github/workflows/goreleaser-on-tag.yml@v0
+    secrets:
+      RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
     with:
       homebrew-tap-repo: homebrew-tap   # omit if no `brews:` block
 ```

@@ -42,6 +42,18 @@ on:
           to the caller repo. Example: `homebrew-tap`.
         type: string
         default: ""
+    secrets:
+      RELEASE_BOT_APP_ID:
+        description: |
+          App ID of the hop-top release-bot GitHub App. Org-level
+          secret; the App must be installed on the caller repo
+          (and on `homebrew-tap-repo` if set).
+        required: true
+      RELEASE_BOT_PRIVATE_KEY:
+        description: |
+          Private key for the release-bot App. Org-level secret,
+          pairs with `RELEASE_BOT_APP_ID`.
+        required: true
     outputs:
       bare-version:
         description: The semver derived from the tag (no `v`, no component prefix)
@@ -62,6 +74,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Mandatory per DEVELOPING.md rule 1: without this, the
+          # runner plants github-actions[bot] credentials in git
+          # config and silently overrides any subsequent PAT-based
+          # push (e.g. the Homebrew tap update).
+          persist-credentials: false
 
       - uses: actions/setup-go@v5
         with:
