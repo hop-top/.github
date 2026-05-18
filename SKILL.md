@@ -159,6 +159,62 @@ jobs:
 
 Plus release-please config + manifest (see release-please's docs).
 
+## Single-language repos
+
+Single-language repos (one ecosystem, no polyglot split) don't always
+need `publish.yml` — and when they do, they don't always want the
+subtree mirror push. The right config depends on whether
+`publish-on-tag.yml` has any work to do for that ecosystem beyond the
+mirror:
+
+| Ecosystem | `publish-X` job fires? | Mirror needed? | Recommended config |
+|---|---|---|---|
+| `go` | No (proxy.golang.org pulls tags directly) | No (source IS the bare-name install slot — no second-slot mirror) | **Drop `publish.yml` entirely** |
+| `ts` | Yes (`pnpm publish` → npm) | Optional | Keep `publish.yml`; set `enable-mirror: false` unless a real `<name>-ts` mirror exists |
+| `py` | Yes (`twine`/OIDC → PyPI) | Optional | Same as `ts` |
+| `rs` | Yes (`cargo publish` → crates.io) | Optional | Same as `ts` |
+| `php` | No (Packagist auto-syncs from webhook on the source) | No | **Drop `publish.yml` entirely** |
+
+For the Go-only and PHP-only cases, `publish-on-tag.yml` has nothing
+to do — the ecosystem's registry pulls directly from the source repo.
+Keeping `publish.yml` would only fire the (unwanted) mirror push.
+
+For `ts`/`py`/`rs`-only repos, the publish step IS needed but the
+unconditional mirror destination is awkward when there's no canonical
+second-slot repo. Use `enable-mirror: false`:
+
+```yaml
+name: publish
+
+on:
+  push:
+    tags: ['*/v*']
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      id-token: write
+    uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0
+    secrets:
+      NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
+      GH_MIRROR_PAT: ${{ secrets.GH_MIRROR_PAT }}  # still required by the schema
+    with:
+      enable-mirror: false
+      ecosystems: |
+        ts: { dir: ., ecosystem: ts, package: "@org/pkg", mirror: org/pkg-ts }
+```
+
+`enable-mirror` defaults to `true` for back-compat with existing
+polyglot callers — single-language adopters opt out explicitly.
+`GH_MIRROR_PAT` is still required by the workflow's `secrets:`
+contract even when `enable-mirror: false` (the mirror job's `if:`
+gates the run, not the schema). Pass an org-level dummy or the real
+PAT; neither is consumed when the gate is `false`. Same goes for
+`mirror:` inside the `ecosystems` map — the parse step reads it but
+the mirror job is skipped, so a placeholder slug (no real repo
+needed) satisfies the YAML schema.
+
 ## Bootstrap checklist (first-time setup)
 
 Hit every box on this list before pushing the first release tag.

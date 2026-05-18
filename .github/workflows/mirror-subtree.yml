@@ -48,6 +48,17 @@ jobs:
       DESCRIPTION: ${{ inputs.description }}
       CHANGELOG: ${{ inputs.changelog-path }}
     steps:
+      - name: Refuse self-mirror
+        # Defense-in-depth: if the caller misconfigures `target-repo` to point
+        # at the source repo itself, the mirror push would force-replace main
+        # with a workflows-stripped tree. Fail fast with a clear message.
+        # See https://github.com/hop-top/.github/issues/27.
+        run: |
+          if [ "$TARGET" = "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Refusing self-mirror: target-repo ($TARGET) equals github.repository ($GITHUB_REPOSITORY). The mirror push would force-replace main with a workflows-stripped tree. Fix the caller's publish.yml so 'mirror' points at the read-only mirror repo, not the source."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -133,11 +144,17 @@ jobs:
             --latest=false || true
 
       - name: Restore mirror read-only
+        # The has_*=false fields below disable every human-input surface
+        # (issues / wiki / projects / discussions). `archived: true` was
+        # dropped deliberately — to human readers, an archived repo reads
+        # as "abandoned, do not rely on", which contradicts the mirror's
+        # actual role as the canonical install slot for vanity imports
+        # (`go install hop.top/uri@latest` resolves here).
+        # See https://github.com/hop-top/.github/issues/27.
         if: always()
         run: |
           gh api -X PATCH "repos/$TARGET" \
             -F has_issues=false \
             -F has_wiki=false \
             -F has_projects=false \
-            -F has_discussions=false \
-            -F archived=true
+            -F has_discussions=false
