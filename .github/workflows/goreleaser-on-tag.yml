@@ -1,21 +1,27 @@
 name: goreleaser-on-tag (reusable)
 
-# Runs GoReleaser on a tag push, with auto-derived bare-version
-# handling for both `<component>/v<version>` and plain `v<version>`
-# tag shapes. Exports BARE_VERSION + RELEASE_TAG to the GoReleaser
-# step so callers reference them from .goreleaser.yaml templates:
+# Runs GoReleaser on a tag push, working around two limitations of
+# GoReleaser OSS (both Pro-only fixes):
 #
-#   ldflags:
-#     - -s -w -X main.version={{ .Env.BARE_VERSION }}
-#   archives:
-#     - name_template: "myapp_{{ .Env.BARE_VERSION }}_{{ .Os }}_{{ .Arch }}"
-#   brews:
-#     - url_template: "https://github.com/<org>/<repo>/releases/download/{{ .Env.RELEASE_TAG }}/{{ .ArtifactName }}"
+#   1. `monorepo:` tag-prefix stripping — needed so {{.Version}}
+#      and {{.Tag}} resolve cleanly under `<component>/v<version>`
+#      tags. We synthesize a local `v<bare>` tag at the same commit
+#      and feed it via GORELEASER_CURRENT_TAG.
+#   2. `release.tag:` override — needed so GoReleaser uploads to a
+#      release with a tag name different from the synthesized one.
+#      We sidestep by having adopters set `release.disable: true`
+#      and uploading dist/* to the real prefixed tag via `gh
+#      release upload` in a separate step here.
 #
-# {{.Tag}} and {{.Version}} are deliberately avoided in templates —
-# they misbehave when the tag carries a non-`v` prefix (the
-# `monorepo:` block in .goreleaser.yaml that fixes this is
-# GoReleaser-Pro-only). Use BARE_VERSION / RELEASE_TAG instead.
+# Net effect for adopters: their .goreleaser.yaml uses stock
+# {{.Version}} and {{.Tag}} (both resolve to the bare v<semver>),
+# disables GoReleaser's own release publishing, and gets a
+# Homebrew formula whose URL points at the real prefixed tag via
+# {{ .Env.RELEASE_TAG }} — the one env var still needed for that
+# specific spot. Full template: docs/binaries/go.md.
+#
+# Both `<component>/v<version>` and plain `v<version>` tag shapes
+# work — same workflow, no caller config to tune.
 
 on:
   workflow_call:
@@ -106,6 +112,19 @@ jobs:
           echo "bare=$bare" >> "$GITHUB_OUTPUT"
           echo "Parsed tag=$tag bare=$bare"
 
+      # Synthesize a local `v<bare>` git tag at the same commit and
+      # tell GoReleaser to use it via GORELEASER_CURRENT_TAG. Without
+      # this, GoReleaser fails at "parsing tag" because the real
+      # `<component>/v<version>` shape is not valid semver. The
+      # synthesized tag is local-only and never pushed.
+      - name: Synthesize bare-version git tag
+        env:
+          BARE: ${{ steps.tag.outputs.bare }}
+          REAL_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git tag "v${BARE}" "${REAL_TAG}"
+
       # Mint a short-lived installation token from the release-bot
       # GitHub App. Scope to the caller repo plus the optional
       # Homebrew tap repo (needed when .goreleaser.yaml has brews:).
@@ -117,6 +136,11 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ inputs.homebrew-tap-repo != '' && format('{0},{1}', github.event.repository.name, inputs.homebrew-tap-repo) || github.event.repository.name }}
 
+      # Build artifacts + write Homebrew formula. Adopter's
+      # .goreleaser.yaml MUST set `release.disable: true` because
+      # GoReleaser OSS can't target a release with a different tag
+      # name (the `release.tag:` override is Pro-only). The upload
+      # step below attaches dist/* to the real release-please tag.
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: ${{ inputs.goreleaser-version }}
@@ -124,5 +148,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           HOMEBREW_TAP_TOKEN: ${{ steps.app-token.outputs.token }}
+          GORELEASER_CURRENT_TAG: v${{ steps.tag.outputs.bare }}
           BARE_VERSION: ${{ steps.tag.outputs.bare }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+
+      # Upload dist/* to the real release-please-created release.
+      # Filters to archives + checksum file; skips the loose binary
+      # directories GoReleaser writes per-target.
+      - name: Upload artifacts to GitHub Release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REAL_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(dist/*.tar.gz dist/*.zip dist/checksums.txt)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::no artifacts found in dist/"
+            exit 1
+          fi
+          gh release upload "${REAL_TAG}" "${assets[@]}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
