@@ -53,13 +53,16 @@ jobs:
       RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
       RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
     with:
-      homebrew-tap-repo: homebrew-tap   # omit if no `brews:` block
+      homebrew-tap-repo: homebrew-tap     # omit if no `brews:` block
+      scoop-bucket-repo: scoop-bucket     # omit if no `scoops:` block
 ```
 
 The reusable workflow handles checkout, Go toolchain setup, the
-release-bot App token mint, and the GoReleaser invocation. See the
+release-bot App token mint, and the GoReleaser invocation. The
+App token's scope is composed dynamically: caller repo always,
+plus any package-manager target repos passed via `with:`. See the
 [workflow source](../../.github/workflows/goreleaser-on-tag.yml)
-for all available `with:` inputs (config path, goreleaser version
+for all available inputs (config path, goreleaser version
 constraint, Go version).
 
 ## `.goreleaser.yaml` template
@@ -131,6 +134,19 @@ brews:
     install: bin.install "usp"
     test: |
       system "#{bin}/usp", "--version"
+
+scoops:
+  - name: usp
+    repository:
+      owner: hop-top
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    homepage: https://github.com/hop-top/usp
+    description: "Universal Sessions Protocol"
+    license: MIT
+    # Same RELEASE_TAG reasoning as brews above.
+    url_template: "https://github.com/hop-top/usp/releases/download/{{ .Env.RELEASE_TAG }}/{{ .ArtifactName }}"
 ```
 
 ## Composition with release-please
@@ -142,7 +158,9 @@ release-please cuts tag <component>/v<version>
   ↓
 publish-on-tag.yml fires        ← language-registry publishes + mirror push
   ↓ (in parallel)
-goreleaser-on-tag.yml fires     ← cross-platform binaries + Homebrew formula
+goreleaser-on-tag.yml fires     ← cross-platform binaries
+                                  + Homebrew formula (brews:)
+                                  + Scoop manifest (scoops:)
 ```
 
 Both workflows trigger on the same tag, run independently. The
@@ -154,12 +172,42 @@ to the release via `gh release upload`.
 ## Requirements
 
 - The `release-bot` GitHub App must be installed on the source
-  repo **and** the Homebrew tap repo (if `brews:` is used) — same
-  install, scoped to both.
+  repo **and** every package-manager target repo in use
+  (`<org>/homebrew-tap` for Homebrew, `<org>/scoop-bucket` for
+  Scoop, etc.) — same install, scoped to all.
 - `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` org secrets
   (already required by `release-please.yml`).
-- The Homebrew tap repo (`<org>/homebrew-tap`) must exist before
-  the first tag push; GoReleaser pushes the first commit to it.
+- Each package-manager target repo must exist before the first tag
+  push; GoReleaser pushes the first commit to it.
+
+## Package managers
+
+`.goreleaser.yaml` can ship to several package managers at once;
+the reusable workflow scopes the App token to each target repo
+based on the corresponding `with:` input.
+
+| Manager | Platform | GoReleaser block | Workflow input | Tap/bucket convention |
+|---|---|---|---|---|
+| Homebrew | macOS + Linux | `brews:` | `homebrew-tap-repo: homebrew-tap` | `<org>/homebrew-tap` |
+| Scoop | Windows | `scoops:` | `scoop-bucket-repo: scoop-bucket` | `<org>/scoop-bucket` |
+| WinGet | Windows (default on Win 11+) | _planned; not yet wired in `goreleaser-on-tag.yml`_ | — | PR into `microsoft/winget-pkgs` via fork |
+
+### Scoop install UX
+
+End users:
+
+```powershell
+scoop bucket add hop-top https://github.com/hop-top/scoop-bucket
+scoop install usp
+```
+
+### WinGet (planned)
+
+Highest reach on modern Windows — ships pre-installed on
+Windows 11 and recent Windows 10. First publish requires a
+manual PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs);
+subsequent releases automate via fork. Tracking issue:
+[hop-top/.github#28 (TBD)](https://github.com/hop-top/.github/issues).
 
 ## Gotchas
 

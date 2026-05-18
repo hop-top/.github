@@ -48,12 +48,24 @@ on:
           to the caller repo. Example: `homebrew-tap`.
         type: string
         default: ""
+      scoop-bucket-repo:
+        description: |
+          Bare repo name (NOT slug) of the Scoop bucket to push
+          manifests to. The bucket is assumed to live under the
+          same owner as the caller repo. Required if caller's
+          GoReleaser config has a `scoops:` block. Example:
+          `scoop-bucket`. Users install via:
+          `scoop bucket add <owner> https://github.com/<owner>/<repo>`
+          then `scoop install <pkg>`.
+        type: string
+        default: ""
     secrets:
       RELEASE_BOT_APP_ID:
         description: |
           App ID of the hop-top release-bot GitHub App. Org-level
-          secret; the App must be installed on the caller repo
-          (and on `homebrew-tap-repo` if set).
+          secret; the App must be installed on the caller repo,
+          plus any package-manager target repos in use
+          (`homebrew-tap-repo`, `scoop-bucket-repo`).
         required: true
       RELEASE_BOT_PRIVATE_KEY:
         description: |
@@ -137,18 +149,36 @@ jobs:
           git tag -f "$synth" "$REAL_TAG"
           echo "synthesized ${synth} -> ${REAL_TAG}"
 
+      # Compose the list of repositories the App token will be
+      # scoped to: always the caller repo, plus any package-manager
+      # target repos in use. The token is short-lived (this job
+      # only); scoping it tightly limits blast radius if any
+      # downstream step misbehaves.
+      - id: token-scope
+        env:
+          CALLER_REPO: ${{ github.event.repository.name }}
+          BREW_REPO: ${{ inputs.homebrew-tap-repo }}
+          SCOOP_REPO: ${{ inputs.scoop-bucket-repo }}
+        run: |
+          set -euo pipefail
+          repos="$CALLER_REPO"
+          [ -n "$BREW_REPO" ]  && repos="$repos,$BREW_REPO"
+          [ -n "$SCOOP_REPO" ] && repos="$repos,$SCOOP_REPO"
+          echo "repositories=$repos" >> "$GITHUB_OUTPUT"
+          echo "App-token will scope to: $repos"
+
       # Mint a short-lived installation token from the release-bot
-      # GitHub App. Scope to the caller repo plus the optional
-      # Homebrew tap repo (needed when .goreleaser.yaml has brews:).
+      # GitHub App. Scope to the caller repo plus any optional
+      # package-manager target repos.
       - id: app-token
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: ${{ inputs.homebrew-tap-repo != '' && format('{0},{1}', github.event.repository.name, inputs.homebrew-tap-repo) || github.event.repository.name }}
+          repositories: ${{ steps.token-scope.outputs.repositories }}
 
-      # Build artifacts + write Homebrew formula. Adopter's
+      # Build artifacts + write package-manager manifests. Adopter's
       # .goreleaser.yaml MUST set `release.disable: true` because
       # GoReleaser OSS can't target a release with a different tag
       # name (the `release.tag:` override is Pro-only). The upload
@@ -160,6 +190,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           HOMEBREW_TAP_TOKEN: ${{ steps.app-token.outputs.token }}
+          SCOOP_BUCKET_TOKEN: ${{ steps.app-token.outputs.token }}
           GORELEASER_CURRENT_TAG: v${{ steps.tag.outputs.bare }}
           BARE_VERSION: ${{ steps.tag.outputs.bare }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
