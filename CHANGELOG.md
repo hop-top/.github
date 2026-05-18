@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/hop-top/.github/compare/v0.6.0...v0.7.0) (2026-05-18)
+
+
+### Features
+
+* **goreleaser-on-tag:** WinGet support for Windows ([7730848](https://github.com/hop-top/.github/commit/7730848764dc0e585be01b8c7e68c9be0ad3751a))
+* **publish-on-tag:** enable-mirror opt-out + self-mirror guard + drop archive flag ([dcdea68](https://github.com/hop-top/.github/commit/dcdea68a50027d811603c9d5cd8699218b1951f7))
+
 ## [0.6.0](https://github.com/hop-top/.github/compare/v0.5.1...v0.6.0) (2026-05-18)
 
 
