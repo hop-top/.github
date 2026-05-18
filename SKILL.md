@@ -210,7 +210,10 @@ polyglot callers — single-language adopters opt out explicitly.
 `GH_MIRROR_PAT` is still required by the workflow's `secrets:`
 contract even when `enable-mirror: false` (the mirror job's `if:`
 gates the run, not the schema). Pass an org-level dummy or the real
-PAT; neither is consumed when the gate is `false`.
+PAT; neither is consumed when the gate is `false`. Same goes for
+`mirror:` inside the `ecosystems` map — the parse step reads it but
+the mirror job is skipped, so a placeholder slug (no real repo
+needed) satisfies the YAML schema.
 
 ## Bootstrap checklist (first-time setup)
 
