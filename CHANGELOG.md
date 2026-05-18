@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.1](https://github.com/hop-top/.github/compare/v0.5.0...v0.5.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **goreleaser-on-tag:** handle plain v-prefix tag case in synthesis step ([703a4aa](https://github.com/hop-top/.github/commit/703a4aaeaa429672b70267b447073f91d4e52b63))
+* **workflows:** synthesize bare-tag for GoReleaser + upload via gh ([2f1f282](https://github.com/hop-top/.github/commit/2f1f2829bd3fe9164be5a120ab9dba56eb9833f4))
+* **workflows:** synthesize bare-tag for GoReleaser + upload via gh release ([01a9314](https://github.com/hop-top/.github/commit/01a9314f014899044cf272dd5fa6a5fcdfc55823))
+
 ## [0.5.0](https://github.com/hop-top/.github/compare/v0.4.3...v0.5.0) (2026-05-18)
 
 
