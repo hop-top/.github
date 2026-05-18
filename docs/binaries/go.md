@@ -4,15 +4,16 @@ Reference for [`goreleaser-on-tag.yml`](../../.github/workflows/goreleaser-on-ta
 
 Wraps [GoReleaser](https://goreleaser.com) to build cross-platform
 binaries (linux / macOS / windows × amd64 / arm64), publish them
-as GitHub Release assets, and push a Homebrew formula to a tap
-repo — all driven by a `<component>/v<version>` tag push from
-release-please.
+as GitHub Release assets, and push package-manager manifests
+(Homebrew tap, Scoop bucket, WinGet fork) — all driven by a
+`<component>/v<version>` tag push from release-please.
 
 ## When to use this
 
 - You ship a Go CLI or daemon that end-users install (not just a
   library other Go projects import).
-- You want `brew install` and direct binary downloads, not just
+- You want package-manager installs (`brew install` / `scoop install`
+  / `winget install`) and direct binary downloads, not just
   `go install hop.top/<repo>@latest`.
 
 If you're shipping a library only, skip this — `publish-on-tag.yml`'s
@@ -55,6 +56,7 @@ jobs:
     with:
       homebrew-tap-repo: homebrew-tap     # omit if no `brews:` block
       scoop-bucket-repo: scoop-bucket     # omit if no `scoops:` block
+      winget-fork-repo: winget-pkgs       # omit if no `winget:` block
 ```
 
 The reusable workflow handles checkout, Go toolchain setup, the
@@ -76,9 +78,10 @@ Two adopter requirements:
   release with a different tag name than the current git tag, so
   the reusable workflow handles GitHub Release uploads itself via
   `gh release upload` to the real prefixed tag.
-- **`{{ .Env.RELEASE_TAG }}`** in the Homebrew formula URL only —
-  this is the one spot that needs the real prefixed tag, because
-  the GitHub Release asset path uses it verbatim.
+- **`{{ .Env.RELEASE_TAG }}`** in every package-manager URL template
+  (Homebrew `brews:`, Scoop `scoops:`, WinGet `winget:`) — these are
+  the spots that need the real prefixed tag, because the GitHub
+  Release asset path uses it verbatim.
 
 ```yaml
 version: 2
@@ -147,6 +150,29 @@ scoops:
     license: MIT
     # Same RELEASE_TAG reasoning as brews above.
     url_template: "https://github.com/hop-top/usp/releases/download/{{ .Env.RELEASE_TAG }}/{{ .ArtifactName }}"
+
+winget:
+  - name: usp
+    publisher: hop-top
+    package_identifier: hop-top.usp
+    short_description: "Universal Sessions Protocol"
+    license: MIT
+    homepage: https://github.com/hop-top/usp
+    repository:
+      owner: hop-top
+      name: winget-pkgs
+      # Per-release branch on the fork; GoReleaser opens a PR from
+      # this branch into microsoft/winget-pkgs.
+      branch: "usp-{{.Version}}"
+      token: "{{ .Env.WINGET_PKGS_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    # Same RELEASE_TAG reasoning as brews above.
+    url_template: "https://github.com/hop-top/usp/releases/download/{{ .Env.RELEASE_TAG }}/{{ .ArtifactName }}"
 ```
 
 ## Composition with release-please
@@ -161,6 +187,7 @@ publish-on-tag.yml fires        ← language-registry publishes + mirror push
 goreleaser-on-tag.yml fires     ← cross-platform binaries
                                   + Homebrew formula (brews:)
                                   + Scoop manifest (scoops:)
+                                  + WinGet manifest (winget:)
 ```
 
 Both workflows trigger on the same tag, run independently. The
@@ -174,11 +201,16 @@ to the release via `gh release upload`.
 - The `release-bot` GitHub App must be installed on the source
   repo **and** every package-manager target repo in use
   (`<org>/homebrew-tap` for Homebrew, `<org>/scoop-bucket` for
-  Scoop, etc.) — same install, scoped to all.
+  Scoop, `<org>/winget-pkgs` (the org's fork of
+  `microsoft/winget-pkgs`) for WinGet, etc.) — same install,
+  scoped to all.
 - `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` org secrets
   (already required by `release-please.yml`).
 - Each package-manager target repo must exist before the first tag
-  push; GoReleaser pushes the first commit to it.
+  push. For Homebrew tap + Scoop bucket, the repo can be empty;
+  GoReleaser pushes the first commit. For the WinGet fork, the
+  repo is populated by forking `microsoft/winget-pkgs`; GoReleaser
+  pushes a per-release manifest branch and opens a PR upstream.
 
 ## Package managers
 
@@ -186,11 +218,11 @@ to the release via `gh release upload`.
 the reusable workflow scopes the App token to each target repo
 based on the corresponding `with:` input.
 
-| Manager | Platform | GoReleaser block | Workflow input | Tap/bucket convention |
+| Manager | Platform | GoReleaser block | Workflow input | Target repo convention |
 |---|---|---|---|---|
 | Homebrew | macOS + Linux | `brews:` | `homebrew-tap-repo: homebrew-tap` | `<org>/homebrew-tap` |
 | Scoop | Windows | `scoops:` | `scoop-bucket-repo: scoop-bucket` | `<org>/scoop-bucket` |
-| WinGet | Windows (default on Win 11+) | _planned; not yet wired in `goreleaser-on-tag.yml`_ | — | PR into `microsoft/winget-pkgs` via fork |
+| WinGet | Windows (default on Win 11+) | `winget:` | `winget-fork-repo: winget-pkgs` | `<org>/winget-pkgs` (fork of `microsoft/winget-pkgs`) |
 
 ### Scoop install UX
 
@@ -201,13 +233,86 @@ scoop bucket add hop-top https://github.com/hop-top/scoop-bucket
 scoop install usp
 ```
 
-### WinGet (planned)
+### WinGet install UX
 
-Highest reach on modern Windows — ships pre-installed on
-Windows 11 and recent Windows 10. First publish requires a
-manual PR to [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs);
-subsequent releases automate via fork. Tracking issue:
-[hop-top/.github#28 (TBD)](https://github.com/hop-top/.github/issues).
+End users:
+
+```powershell
+winget install hop-top.usp
+```
+
+WinGet is the default Windows package manager on Windows 11+ and
+modern Windows 10 (no extra install needed). Reach is broader
+than Scoop, which targets dev users.
+
+### WinGet (Windows) onboarding
+
+Unlike Homebrew + Scoop (per-org tap/bucket the workflow pushes
+to directly), WinGet manifests live in the centralized
+[`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs)
+monorepo. GoReleaser pushes a branch to a per-org fork
+(`<org>/winget-pkgs`), then opens a PR into the upstream monorepo.
+
+**Each package's `package_identifier`** (e.g. `hop-top.usp`) must
+be reserved by manually submitting the first manifest PR to
+`microsoft/winget-pkgs` — Microsoft's automated validators run,
+and in some cases a human reviewer chimes in. Once accepted,
+subsequent release-time PRs from the fork are eligible for
+automated validation (the identifier is recognized as
+owner-pre-cleared); individual PRs can still fail validation or
+draw a human reviewer if a manifest field changes shape.
+
+This is the WinGet model, not a bug in the workflow.
+
+**One-time org setup** (per org, not per package):
+
+1. Fork [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs)
+   into the org as `<org>/winget-pkgs`.
+2. Install the `release-bot` GitHub App on the fork so the
+   short-lived App token can push the per-release manifest
+   branch.
+
+**Adopter prerequisite checklist** (per package, before the first
+automated release):
+
+- [ ] Read [microsoft/winget-pkgs AUTHORING_MANIFESTS.md](https://github.com/microsoft/winget-pkgs/blob/master/AUTHORING_MANIFESTS.md).
+- [ ] Submit the first manifest PR manually to reserve the
+      `<publisher>.<package>` identifier (e.g. `hop-top.usp`).
+- [ ] Wait for Microsoft validators to accept (usually minutes
+      for clean manifests; hours-to-days if anything flags).
+- [ ] Verify: `winget search hop-top.usp` returns the package.
+- [ ] Add the `winget:` block to the adopter's `.goreleaser.yaml`
+      (template above) and set `winget-fork-repo: winget-pkgs`
+      in the caller workflow `with:`.
+- [ ] Next tag push opens the first automated PR from the fork.
+
+Until the reservation lands, automated release-time PRs from the
+fork are rejected — `winget:` block should stay out of the
+adopter's `.goreleaser.yaml` until the identifier is live.
+
+### App-token cross-fork PR creation (unverified end-to-end)
+
+GoReleaser opens the WinGet PR using `WINGET_PKGS_TOKEN` — the
+same short-lived App installation token scoped to the caller-org
+fork (`<org>/winget-pkgs`). Whether a GitHub App installation
+token installed only on the fork can open a PR into the public
+`microsoft/winget-pkgs` upstream is verified end-to-end only when
+the first adopter completes the `package_identifier` reservation
+and a real tag push exercises the path. If GoReleaser fails at PR
+creation with an authorization error, the fallback is a PAT scoped
+to a user with public-repo PR access, exposed under the same env
+var name. Track here if encountered.
+
+### Ordering: WinGet PR opens before `gh release upload`
+
+The workflow runs GoReleaser (which opens the WinGet PR with
+manifest URLs pointing at the release assets) **before** the
+`gh release upload` step that attaches `dist/*` to the GitHub
+Release. Microsoft's validators re-run on each push to the PR, so
+the asset gap closes within seconds; in slow scenarios validators
+may flag missing assets transiently. Not a blocker, but worth
+knowing when interpreting validator output on the first run after
+a tag.
 
 ## Gotchas
 
