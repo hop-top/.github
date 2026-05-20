@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/hop-top/.github/compare/v0.7.0...v0.8.0) (2026-05-20)
+
+
+### Features
+
+* **preflight:** release-please-preflight reusable workflow + SemVer ∩ PEP 440 docs ([#35](https://github.com/hop-top/.github/issues/35)) ([56ee8b3](https://github.com/hop-top/.github/commit/56ee8b322a292ffede14b9ab04bde09cf7d4d53d))
+
 ## [0.7.0](https://github.com/hop-top/.github/compare/v0.6.0...v0.7.0) (2026-05-18)
 
 
