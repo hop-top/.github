@@ -61,18 +61,48 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: write  # for PR annotations
+      contents: read  # least privilege — annotations + step summary don't need PR write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false  # avoid auth header side-effects (DEVELOPING.md convention)
 
-      - name: Install jq + yq
+      # Pre-parse the adopter's publish.yml into JSON so downstream jq can query it.
+      # Matches the python3 + yaml.safe_load pattern used by publish-on-tag.yml —
+      # avoids the PEP 668 / externally-managed env brittleness of `sudo pip install yq`.
+      # jq is preinstalled on ubuntu-latest; yaml ships in the runner's Python stdlib via PyYAML.
+      - name: Parse publish.yml into JSON
+        id: parse-publish
+        env:
+          PUBLISH_PATH: ${{ inputs.publish-workflow-path }}
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq jq
-          sudo pip install -q yq
+          set -euo pipefail
+          if [[ ! -f "$PUBLISH_PATH" ]]; then
+            # Emit empty JSON so downstream `jq` calls don't crash — Check 1 will flag the missing file.
+            echo '{}' > "$RUNNER_TEMP/publish.json"
+            echo "publish_json=$RUNNER_TEMP/publish.json" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json, os, sys
+          import yaml
+          path = os.environ["PUBLISH_PATH"]
+          with open(path, "r", encoding="utf-8") as f:
+              doc = yaml.safe_load(f) or {}
+          # The `ecosystems` field is a string-encoded YAML block (see publish-on-tag.yml's
+          # contract). Decode it inline so downstream jq can drill in directly.
+          try:
+              eco_str = doc.get("jobs", {}).get("publish", {}).get("with", {}).get("ecosystems")
+              if isinstance(eco_str, str):
+                  doc["jobs"]["publish"]["with"]["ecosystems"] = yaml.safe_load(eco_str) or {}
+          except Exception as exc:
+              print(f"warning: could not pre-decode ecosystems: {exc}", file=sys.stderr)
+          out_path = os.path.join(os.environ["RUNNER_TEMP"], "publish.json")
+          with open(out_path, "w", encoding="utf-8") as f:
+              json.dump(doc, f)
+          PY
+          echo "publish_json=$RUNNER_TEMP/publish.json" >> "$GITHUB_OUTPUT"
 
       - name: Run preflight checks
         id: checks
@@ -82,6 +112,7 @@ jobs:
           MANIFEST_PATH: ${{ inputs.manifest-path }}
           PUBLISH_PATH: ${{ inputs.publish-workflow-path }}
           RP_PATH: ${{ inputs.release-please-workflow-path }}
+          PUBLISH_JSON: ${{ steps.parse-publish.outputs.publish_json }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
@@ -95,6 +126,29 @@ jobs:
           info()    { echo "::notice::$1"; echo "[INFO]  $1" >> "$GITHUB_STEP_SUMMARY"; }
           ok()      { echo "[OK]    $1" >> "$GITHUB_STEP_SUMMARY"; }
           fixhint() { echo "[FIX]   $1" >> "$GITHUB_STEP_SUMMARY"; }
+
+          # apply_fail_on: runs at the end (and on early-stop paths) so the
+          # `fail-on` policy is honored consistently. Never `exit 0` early
+          # without going through this.
+          apply_fail_on() {
+            echo "breaking=$BREAKING" >> "$GITHUB_OUTPUT"
+            echo "warning=$WARNING" >> "$GITHUB_OUTPUT"
+            case "$FAIL_ON" in
+              breaking)
+                [[ $BREAKING -gt 0 ]] && exit 1 || exit 0
+                ;;
+              any)
+                [[ $BREAKING -gt 0 || $WARNING -gt 0 ]] && exit 1 || exit 0
+                ;;
+              never)
+                exit 0
+                ;;
+              *)
+                echo "::error::invalid fail-on value: $FAIL_ON (expected: breaking | any | never)"
+                exit 2
+                ;;
+            esac
+          }
 
           {
             echo "## release-please preflight"
@@ -136,9 +190,7 @@ jobs:
               echo ""
               echo "**Stopping: required files missing. Address the above and re-run.**"
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "breaking=$BREAKING" >> "$GITHUB_OUTPUT"
-            echo "warning=$WARNING" >> "$GITHUB_OUTPUT"
-            exit 0
+            apply_fail_on
           fi
 
           # ---------- Check 2: release-please-config.json ----------
@@ -147,6 +199,7 @@ jobs:
             echo "### release-please config"
           } >> "$GITHUB_STEP_SUMMARY"
 
+          PACKAGES=""
           if ! jq empty "$CONFIG_PATH" 2>/dev/null; then
             fail "$CONFIG_PATH is not valid JSON"
             fixhint "jq . $CONFIG_PATH  # to see the parse error"
@@ -264,7 +317,6 @@ jobs:
               if [[ "$RT" != "python" ]]; then
                 continue
               fi
-              # Detect extra-files entries pointing at pyproject.toml (the trap)
               HAS_PYPROJECT_EXTRA=$(jq -r --arg p "$path" '
                 .packages[$p]["extra-files"] // []
                 | map(select(
@@ -279,18 +331,35 @@ jobs:
               else
                 ok "package $path: no extra-files override for pyproject.toml (release-type python will normalize PEP 440 natively)"
               fi
-              # Validate pyproject.toml current value is PEP 440 shape
+              # Validate pyproject.toml current value via tomllib (handles spacing,
+              # single/double quotes, sub-tables — grep is too fragile).
               if [[ -f pyproject.toml ]]; then
-                PYP_VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/version = "(.*)"/\1/')
+                PYP_VERSION=$(python3 - <<'PY' 2>/dev/null || true
+          import sys
+          try:
+              import tomllib  # 3.11+
+          except ImportError:
+              import tomli as tomllib  # 3.10 fallback
+          try:
+              with open("pyproject.toml", "rb") as f:
+                  doc = tomllib.load(f)
+              v = (doc.get("project") or {}).get("version") or (doc.get("tool", {}).get("poetry", {}) or {}).get("version") or ""
+              print(v)
+          except Exception:
+              sys.exit(1)
+          PY
+                )
                 if [[ -n "$PYP_VERSION" ]]; then
-                  # PEP 440 prerelease form: N.N.NaN / N.N.NbN / N.N.NrcN / N.N.N.devN / N.N.N.postN
-                  # Anti-pattern: N.N.N-alphaN, N.N.N-beta, etc.
+                  # PEP 440 prerelease: N.N.NaN / bN / rcN / .devN / .postN
+                  # Anti-pattern: N.N.N-alphaN with hyphen
                   if [[ "$PYP_VERSION" == *-* ]]; then
                     fail "pyproject.toml version '$PYP_VERSION' is SemVer-shaped, not PEP 440 — pip / twine will reject"
                     fixhint "rewrite to PEP 440 (e.g. ${PYP_VERSION%%-*}$(echo "${PYP_VERSION#*-}" | sed -E 's/alpha\.?/a/; s/beta\.?/b/; s/rc\.?/rc/' | tr -d '.')) and let release-please own it from here on"
                   else
                     ok "pyproject.toml version '$PYP_VERSION' looks PEP 440-compatible"
                   fi
+                else
+                  info "could not extract pyproject.toml version (no [project].version or [tool.poetry].version)"
                 fi
               fi
             done
@@ -303,7 +372,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           ECO_KEYS=""
           if [[ -f "$PUBLISH_PATH" ]]; then
-            TAGS=$(yq -r '.on.push.tags // [] | .[]' "$PUBLISH_PATH" 2>/dev/null || echo "")
+            # Tag filter — drill into pre-parsed publish.json
+            TAGS=$(jq -r '.on.push.tags // [] | .[]' "$PUBLISH_JSON" 2>/dev/null || echo "")
             if echo "$TAGS" | grep -qE '^\*/v\*$'; then
               ok "publish.yml triggers on '*/v*' tags"
             elif [[ -z "$TAGS" ]]; then
@@ -314,7 +384,7 @@ jobs:
               fixhint "change to 'tags: [\"*/v*\"]' for the component/v<version> shape"
             fi
 
-            USES=$(yq -r '.jobs.publish.uses // empty' "$PUBLISH_PATH" 2>/dev/null || echo "")
+            USES=$(jq -r '.jobs.publish.uses // empty' "$PUBLISH_JSON" 2>/dev/null || echo "")
             if [[ "$USES" == hop-top/.github/.github/workflows/publish-on-tag.yml@* ]]; then
               ok "publish.yml delegates to hop-top/.github reusable workflow ($USES)"
             elif [[ -z "$USES" ]]; then
@@ -324,7 +394,7 @@ jobs:
               warn "publish.yml uses unexpected workflow ref: $USES"
             fi
 
-            ECO_KEYS=$(yq -r '.jobs.publish.with.ecosystems' "$PUBLISH_PATH" 2>/dev/null | yq -r 'keys[]' 2>/dev/null || echo "")
+            ECO_KEYS=$(jq -r '.jobs.publish.with.ecosystems // {} | keys[]' "$PUBLISH_JSON" 2>/dev/null || echo "")
             if [[ -z "$ECO_KEYS" ]]; then
               warn "publish.yml ecosystems map is empty or unparseable"
               fixhint "add an ecosystems entry per component (see SKILL.md)"
@@ -373,20 +443,29 @@ jobs:
             echo "### per-ecosystem infrastructure"
           } >> "$GITHUB_STEP_SUMMARY"
           for component in $ECO_KEYS; do
-            ECOSYSTEM=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"].ecosystem // empty" "$PUBLISH_PATH" 2>/dev/null || echo "")
-            PACKAGE=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"].package // empty" "$PUBLISH_PATH" 2>/dev/null || echo "")
-            MIRROR=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"].mirror // empty" "$PUBLISH_PATH" 2>/dev/null || echo "")
+            ECOSYSTEM=$(jq -r --arg c "$component" '.jobs.publish.with.ecosystems[$c].ecosystem // empty' "$PUBLISH_JSON" 2>/dev/null || echo "")
+            PACKAGE=$(jq -r --arg c "$component" '.jobs.publish.with.ecosystems[$c].package // empty' "$PUBLISH_JSON" 2>/dev/null || echo "")
+            MIRROR=$(jq -r --arg c "$component" '.jobs.publish.with.ecosystems[$c].mirror // empty' "$PUBLISH_JSON" 2>/dev/null || echo "")
 
             case "$ECOSYSTEM" in
               py)
-                PYPI_AUTH=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"][\"pypi-auth\"] // \"oidc\"" "$PUBLISH_PATH" 2>/dev/null || echo "oidc")
-                PYPI_ENV=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"][\"pypi-environment\"] // \"pypi\"" "$PUBLISH_PATH" 2>/dev/null || echo "pypi")
+                PYPI_AUTH=$(jq -r --arg c "$component" '.jobs.publish.with.ecosystems[$c]["pypi-auth"] // "oidc"' "$PUBLISH_JSON" 2>/dev/null || echo "oidc")
+                PYPI_ENV=$(jq -r --arg c "$component" '.jobs.publish.with.ecosystems[$c]["pypi-environment"] // "pypi"' "$PUBLISH_JSON" 2>/dev/null || echo "pypi")
                 if [[ "$PYPI_AUTH" == "oidc" ]]; then
-                  if gh api "repos/$REPO/environments/$PYPI_ENV" --silent 2>/dev/null; then
+                  # Capture HTTP status explicitly — distinguish 404 (missing) from
+                  # 403 (token can't read) / 5xx (transient) so we don't false-fail.
+                  HTTP=$(gh api "repos/$REPO/environments/$PYPI_ENV" --include 2>/dev/null | head -1 | awk '{print $2}' || true)
+                  if [[ "$HTTP" == "200" ]]; then
                     ok "GitHub Environment '$PYPI_ENV' exists on $REPO"
-                  else
+                  elif [[ "$HTTP" == "404" ]]; then
                     fail "GitHub Environment '$PYPI_ENV' does not exist on $REPO (required for OIDC)"
                     fixhint "gh api -X PUT repos/$REPO/environments/$PYPI_ENV"
+                  elif [[ "$HTTP" == "403" || "$HTTP" == "401" ]]; then
+                    warn "could not verify GitHub Environment '$PYPI_ENV' on $REPO (HTTP $HTTP — token lacks permission)"
+                    fixhint "verify the GITHUB_TOKEN has 'environments: read' or run with a token that does; or check manually via the repo Settings"
+                  else
+                    warn "GitHub Environment '$PYPI_ENV' check returned HTTP ${HTTP:-unknown}"
+                    fixhint "re-run the preflight; if it persists, check via 'gh api repos/$REPO/environments/$PYPI_ENV'"
                   fi
                   info "PyPI trusted publisher must be configured at https://pypi.org/manage/account/publishing/ (workflow filename: $(basename "$PUBLISH_PATH"), environment: $PYPI_ENV)"
                 else
@@ -432,13 +511,19 @@ jobs:
                 ;;
             esac
 
+            # Mirror checks — same HTTP-status discipline as the env check above
             if [[ -n "$MIRROR" ]]; then
               info "mirror '$MIRROR' configured — GH_MIRROR_PAT secret required"
-              if gh api "repos/$MIRROR" --silent 2>/dev/null; then
+              HTTP=$(gh api "repos/$MIRROR" --include 2>/dev/null | head -1 | awk '{print $2}' || true)
+              if [[ "$HTTP" == "200" ]]; then
                 ok "mirror repo $MIRROR exists"
-              else
-                warn "mirror repo $MIRROR does not exist (or token lacks access)"
+              elif [[ "$HTTP" == "404" ]]; then
+                warn "mirror repo $MIRROR does not exist"
                 fixhint "create $MIRROR before first publish, or remove mirror: field for single-language repos"
+              elif [[ "$HTTP" == "403" || "$HTTP" == "401" ]]; then
+                warn "could not verify mirror repo $MIRROR (HTTP $HTTP — token lacks permission)"
+              else
+                warn "mirror repo $MIRROR check returned HTTP ${HTTP:-unknown}"
               fi
             else
               info "no mirror configured for '$component' (single-language pattern)"
@@ -453,21 +538,4 @@ jobs:
             echo "- Warnings: $WARNING"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "breaking=$BREAKING" >> "$GITHUB_OUTPUT"
-          echo "warning=$WARNING" >> "$GITHUB_OUTPUT"
-
-          case "$FAIL_ON" in
-            breaking)
-              [[ $BREAKING -gt 0 ]] && exit 1 || exit 0
-              ;;
-            any)
-              [[ $BREAKING -gt 0 || $WARNING -gt 0 ]] && exit 1 || exit 0
-              ;;
-            never)
-              exit 0
-              ;;
-            *)
-              echo "::error::invalid fail-on value: $FAIL_ON (expected: breaking | any | never)"
-              exit 2
-              ;;
-          esac
+          apply_fail_on
