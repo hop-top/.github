@@ -616,6 +616,83 @@ install it first:
 test-command: pip install -e . && pytest
 ```
 
+### `py`: package naming (install slug vs import name)
+
+PyPI's short names are mostly taken. Bare names like `eva`, `uri`,
+`kit` are owned by third parties; trying to publish under them fails
+with `403 You're not allowed to upload to project '<name>'`. The
+convention across hop-top:
+
+| PyPI install slug | Python import name | Pattern |
+|---|---|---|
+| `hop-top-eva` | `import eva` (or `from core import ...`) | install slug prefixed, import name clean |
+| `hop-top-uri` | `import uri` | same |
+| `hop-top-xrr` | `import xrr` | same |
+| `hop-top-kit` | `import hop_top_kit` | matched (one outlier) |
+
+**Default convention: install slug prefixed, import name clean.** This
+matches the broader Python ecosystem (`pip install scikit-learn` →
+`import sklearn`; `pip install PyYAML` → `import yaml`). Two-of-three
+hop-top py packages follow it; new packages should too.
+
+What changes vs what stays when you prefix the install slug:
+
+```toml
+# Changes:
+[project]
+name = "hop-top-eva"            # ← install slug; what users `pip install`
+
+[tool.uv.sources]
+hop-top-eva = { workspace = true }  # ← match `[project].name`
+
+[dependency-groups]
+dev = ["hop-top-eva", ...]      # ← match `[project].name`
+
+[project.optional-dependencies]
+all = ["hop-top-eva[dev,server,...]"]  # ← match `[project].name`
+
+# Stays the same:
+[tool.hatch.build.targets.wheel]
+packages = ["core", "cli", ...]   # ← import name; what users `import`
+
+[project.scripts]
+eva = "cli.main:app"              # ← CLI command name (user-facing UX)
+
+[project.entry-points."eva.evaluators"]   # ← entry-point group name
+```
+
+**Same for the `package` field in `publish.yml`'s `ecosystems` block** —
+it MUST match the PyPI install slug, not the import name:
+
+```yaml
+ecosystems: |
+  eva:                           # ← release-please component (tag prefix)
+    dir: .
+    ecosystem: py
+    package: hop-top-eva         # ← MUST be the PyPI install slug
+    pypi-auth: token             # ← see [PyPI auth modes](#pypi-auth-modes)
+```
+
+And in `release-please-config.json`:
+
+```jsonc
+{
+  "packages": {
+    ".": {
+      "component": "eva",           // tag prefix (eva/v0.1.0-alpha.1)
+      "package-name": "hop-top-eva", // PyPI install slug (changelog rendering)
+      "release-type": "python"
+    }
+  }
+}
+```
+
+**Sanity check before publish**: `uv build` should produce
+`hop_top_eva-X.Y.Z-py3-none-any.whl` (slug normalized to underscore
+filename) with internal `eva/` packages or whatever your import-side
+layout uses. If the wheel filename is `eva-X.Y.Z...`, your `[project]
+.name` wasn't updated.
+
 ### `rs`
 
 Cargo handles deps natively — no install needed in `test-command`.
@@ -1072,6 +1149,8 @@ Entries linked below to [docs/failure-modes.md](docs/failure-modes.md) have exte
 | Build step fails with `ERR_PNPM_SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER "&&"` | `run: $CMD` doesn't re-parse shell operators in env-var commands (tracked in [#9](https://github.com/hop-top/.github/issues/9)) | Move the pipeline into a package.json script (`ci:build`) so the workflow command is single-token. [Details](docs/failure-modes.md#err_pnpm_spec_not_supported_by_any_resolver-on-build-step) |
 | pnpm install fails with `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 `strictDepBuilds: true` default | Declare offending deps in `pnpm-workspace.yaml` `allowBuilds:` (NOT package.json — that's deprecated in pnpm 11). [Details](docs/failure-modes.md#pnpm-11-strictdepbuilds-blocks-install-on-transitive-postinstalls) |
 | PyPI publish fails with `invalid-publisher` despite correct claims | Pending-publisher table drift, OR caller-vs-reusable workflow_ref confusion | Verify the **caller workflow filename** matches the trusted-publisher config (not the reusable's). If still failing, switch to `pypi-auth: token` as escape hatch. See [PyPI auth modes](#pypi-auth-modes) and [failure-modes.md](docs/failure-modes.md#pypi-oidc-invalid-publisher-despite-correct-looking-claims). |
+| PyPI publish fails with `403 You're not allowed to upload to project '<name>'` | Bare PyPI name (e.g. `eva`, `uri`) is already owned by a third party | Prefix the install slug — rename `[project].name` to `hop-top-<name>` and update `package:` in `publish.yml`'s ecosystems block + `package-name` in `release-please-config.json`. Import name (`packages` in `[tool.hatch.build.targets.wheel]`) can stay clean. See [`py`: package naming](#py-package-naming-install-slug-vs-import-name). |
+| `uv pip install -e .` fails with `references a workspace in tool.uv.sources but is not a workspace member` | `[tool.uv.sources]` key and/or `[dependency-groups].dev` entry references the old `[project].name` after renaming | Update `[tool.uv.sources].<name>` AND `[dependency-groups].dev` AND `[project.optional-dependencies].all` to match the new `[project].name`. All four point at the install slug, not the import name. See [`py`: package naming](#py-package-naming-install-slug-vs-import-name). |
 | PyPI publish fails with `invalid-token-bad-audience` | OIDC trusted-publisher config doesn't match | Verify on PyPI: org name, repo name, workflow filename, environment name |
 | PyPI version doesn't match git tag | PEP 440 normalization (`0.2.0-alpha.1` → `0.2.0a1`) | Cosmetic; pip accepts both forms in specs. [Details](docs/failure-modes.md#pypi-version-doesnt-match-git-tag-pep-440-normalization) |
 | GitHub Environment binding fails | `pypi` environment doesn't exist on caller repo | `gh api -X PUT repos/<org>/<repo>/environments/pypi` |
