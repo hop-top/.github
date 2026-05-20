@@ -158,6 +158,9 @@ jobs:
 ```
 
 Plus release-please config + manifest (see release-please's docs).
+On single-component repos, don't skip the
+[release-PR title pattern](#release-pr-title-pattern) — the polyglot
+default leaves the component name out of the title.
 
 ## Single-language repos
 
@@ -317,6 +320,11 @@ Each missing box was a real session-blocking failure at some point.
       `release-please-config.json` `component` == `publish.yml`
       `ecosystems` key == mirror repo basename. See
       [Three-way name alignment](#three-way-name-alignment).
+- [ ] `release-please-config.json` sets
+      `"pull-request-title-pattern": "chore(release): ${component} ${version}"`.
+      Without it, release-please defaults to `chore: release main` (the
+      component name and version are buried in the body). See
+      [Release-PR title pattern](#release-pr-title-pattern).
 
 **Prerelease channel** (if not shipping stable from day one)
 
@@ -865,6 +873,56 @@ npx release-please@latest release-pr \
 ```
 
 The actual proposed titles tell you exactly what release-please will emit.
+
+## Release-PR title pattern
+
+By default release-please generates PR titles like:
+
+```
+chore: release main
+```
+
+The component name and version are buried inside the PR body. Set
+`pull-request-title-pattern` so the title carries them at a glance:
+
+```json
+{
+  "pull-request-title-pattern": "chore(release): ${component} ${version}"
+}
+```
+
+Result: `chore(release): ben 0.2.0-alpha.1`. Matches the kit org
+convention; grep-able across the org via the GitHub search bar; the
+component name disambiguates which release-please PR is which on
+polyglot repos (where multiple components share the standing PR set).
+
+This is most often missed on **single-component repos** that set
+`separate-pull-requests: false` and don't bother with the pattern —
+the polyglot canonical example (see [`docs/bootstrap-checklist.md`](docs/bootstrap-checklist.md))
+includes it but the single-language sections of this SKILL did not
+mention it pre-v0.8.x. The Bootstrap-checklist line above flags it as
+a required setup step.
+
+**Org-secrets gotcha on the free plan.** Even with the title pattern
+fixed, the release-please workflow will still fail on a private repo
+under a **free** GitHub org with:
+
+```
+Error: Input required and not supplied: app-id
+```
+
+Because org-level secrets with `visibility: all` are **not** available
+to private repos on the free plan — they reach public repos only.
+Three fixes:
+
+1. **Make the source repo public** (cheapest; org secrets propagate).
+2. **Upgrade the org to Team / Enterprise** (org secrets propagate to
+   private repos).
+3. **Set the same secret at repo level** on the private repo
+   (`RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY`, `GH_MIRROR_PAT`,
+   plus any registry tokens), duplicating the org-level entries.
+
+Documented at <https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow>.
 
 ## Re-triggering a failed publish
 
