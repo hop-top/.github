@@ -623,16 +623,16 @@ PyPI's short names are mostly taken. Bare names like `eva`, `uri`,
 with `403 You're not allowed to upload to project '<name>'`. The
 convention across hop-top:
 
-| PyPI install slug | Python import name | Pattern |
+| PyPI install slug | Python import name(s) | Pattern |
 |---|---|---|
-| `hop-top-eva` | `import eva` (or `from core import ...`) | install slug prefixed, import name clean |
-| `hop-top-uri` | `import uri` | same |
-| `hop-top-xrr` | `import xrr` | same |
-| `hop-top-kit` | `import hop_top_kit` | matched (one outlier) |
+| `hop-top-eva` | distribution exposes multiple top-level packages: `core`, `cli`, … (no single `eva` import) | install slug prefixed, import names clean |
+| `hop-top-uri` | `uri` | same |
+| `hop-top-xrr` | `xrr` | same |
+| `hop-top-kit` | `hop_top_kit` | matched (one outlier) |
 
 **Default convention: install slug prefixed, import name clean.** This
 matches the broader Python ecosystem (`pip install scikit-learn` →
-`import sklearn`; `pip install PyYAML` → `import yaml`). Two-of-three
+`import sklearn`; `pip install PyYAML` → `import yaml`). Three-of-four
 hop-top py packages follow it; new packages should too.
 
 What changes vs what stays when you prefix the install slug:
@@ -689,9 +689,10 @@ And in `release-please-config.json`:
 
 **Sanity check before publish**: `uv build` should produce
 `hop_top_eva-X.Y.Z-py3-none-any.whl` (slug normalized to underscore
-filename) with internal `eva/` packages or whatever your import-side
-layout uses. If the wheel filename is `eva-X.Y.Z...`, your `[project]
-.name` wasn't updated.
+filename), with whatever import-side packages your
+`[tool.hatch.build.targets.wheel].packages` lists (e.g. `core/`,
+`cli/`, …). If the wheel filename is `eva-X.Y.Z...`, your
+`[project].name` wasn't updated.
 
 ### `rs`
 
