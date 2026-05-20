@@ -1,6 +1,6 @@
 ---
 name: hop-top-dotgithub
-description: Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io) and push subtree mirrors. Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, mapping registry secrets, troubleshooting why a tag didn't trigger a publish, registering a new package on PyPI/Packagist (via OIDC trusted publishing or API tokens), creating GitHub Environments, or debugging pnpm 11 strict-mode install failures.
+description: Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io) and push subtree mirrors. Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, adding the release-please-preflight check, mapping registry secrets, troubleshooting why a tag didn't trigger a publish, registering a new package on PyPI/Packagist (via OIDC trusted publishing or API tokens), creating GitHub Environments, or debugging pnpm 11 strict-mode install failures.
 ---
 
 # Using hop-top/.github
@@ -214,6 +214,93 @@ PAT; neither is consumed when the gate is `false`. Same goes for
 `mirror:` inside the `ecosystems` map — the parse step reads it but
 the mirror job is skipped, so a placeholder slug (no real repo
 needed) satisfies the YAML schema.
+
+## Preflight check (recommended)
+
+Add a third workflow that pre-validates your release-please setup on
+every PR touching the release files. It runs the same checks as the
+[Bootstrap checklist](#bootstrap-checklist-first-time-setup) but live,
+inline, with specific fix commands for each failure.
+
+### `.github/workflows/release-please-preflight.yml`
+
+```yaml
+name: release-please-preflight
+
+on:
+  pull_request:
+    paths:
+      - '.github/release-please-config.json'
+      - '.github/.release-please-manifest.json'
+      - '.github/workflows/release-please.yml'
+      - '.github/workflows/publish.yml'
+      - 'pyproject.toml'   # adjust per language
+      - 'package.json'
+      - 'Cargo.toml'
+  workflow_dispatch: {}
+
+jobs:
+  preflight:
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: hop-top/.github/.github/workflows/release-please-preflight.yml@v0
+```
+
+### What it checks
+
+Auto-infers from your config — no inputs required:
+
+- All four required files exist (config, manifest, both workflows)
+- `release-please-config.json` parses + has `packages`
+- Every component is single-segment (the
+  [tag-shape glob trap](#tag-shape-glob-trap))
+- Prerelease packages have the
+  [four-piece combo](#prerelease-channel--the-four-piece-combo)
+- Manifest seed shape matches prerelease declaration
+- [SemVer ∩ PEP 440 intersection](#version-string-strategy--semver--pep-440):
+  Python packages don't have an `extra-files` override on
+  `pyproject.toml` (the trap that bypasses PEP 440 normalization),
+  and `pyproject.toml`'s current version is PEP 440-shaped (not
+  SemVer-shaped)
+- `publish.yml` triggers on `*/v*` and delegates to
+  `publish-on-tag.yml`
+- [Three-way name alignment](#three-way-name-alignment) holds
+- `release-please.yml` uses the release-bot App token (not the
+  deprecated PAT) and declares `workflow_dispatch`
+- Per-ecosystem infrastructure: GitHub Environment exists (for PyPI
+  OIDC), mirror repo exists (if configured), PyPI/npm package-name
+  availability (informational)
+
+### Optional overrides
+
+```yaml
+jobs:
+  preflight:
+    uses: hop-top/.github/.github/workflows/release-please-preflight.yml@v0
+    with:
+      fail-on: any              # default 'breaking' — also fail on warnings
+      config-path: custom/path  # default '.github/release-please-config.json'
+```
+
+`fail-on` values:
+
+| Value | Behavior |
+|---|---|
+| `breaking` (default) | Fail on broken config / missing infra |
+| `any` | Also fail on informational warnings (strict mode) |
+| `never` | Annotation-only; always exit 0 |
+
+### When to use
+
+- **Always** for repos using this skill's release pipeline. The
+  preflight catches every checklist item from the [Bootstrap
+  checklist](#bootstrap-checklist-first-time-setup) at PR time
+  instead of at tag-push time (when failures are much costlier —
+  see [Re-triggering a failed publish](#re-triggering-a-failed-publish)).
+- **Especially** for fresh repos doing their first release. The
+  per-ecosystem infrastructure checks (Environment exists, mirror
+  repo exists) prevent the most common bootstrap failures.
 
 ## Bootstrap checklist (first-time setup)
 
@@ -627,6 +714,87 @@ ecosystems: |
     mirror: hop-top/uri-rs
     # accepts default `cargo test` — no override needed
 ```
+
+## Version-string strategy — SemVer ∩ PEP 440
+
+A polyglot release pipeline has to satisfy four conflicting version
+grammars:
+
+| Format | Accepts `0.1.0-alpha.1` | Accepts `0.1.0a1` | Notes |
+|---|---|---|---|
+| Git tag | yes | yes | No format constraint |
+| SemVer (npm, crates, cargo, Go) | yes | no | `a1` lacks the required leading hyphen |
+| PEP 440 (PyPI) | no | yes | Hyphen-separated alpha is rejected by `pip` |
+
+No single string is valid in every registry. The solution: **one
+canonical internal form (SemVer), per-registry normalization at
+file-write time**.
+
+| Layer | Form | Why |
+|---|---|---|
+| Git tag (`<component>/v<version>`) | SemVer (`0.1.0-alpha.1`) | What release-please produces; consumed by Go module proxy, GitHub Releases |
+| `.release-please-manifest.json` | SemVer (`0.1.0-alpha.1`) | Internal state; release-please's native format |
+| `pyproject.toml [project].version` | PEP 440 (`0.1.0a1`) | Required by `pip` / `twine` / PyPI; written by release-type `python` |
+| `package.json version` | SemVer (`0.1.0-alpha.1`) | Required by npm; written by release-type `node` |
+| `Cargo.toml version` | SemVer (`0.1.0-alpha.1`) | Required by cargo; written by release-type `rust` |
+
+### Don't break the normalization
+
+The `release-type` field on each package owns its native file
+formats. `release-type: python` already updates `pyproject.toml`
+(and `setup.py`, `_version.py`) with PEP 440 strings. **Do not add
+an `extra-files` block targeting `pyproject.toml`** — the generic
+`type: toml` updater bypasses the normalization and writes raw
+SemVer into the file, which then fails `pip install` and
+`twine check`.
+
+```jsonc
+// ❌ BROKEN — extra-files bypasses PEP 440 normalization
+{
+  "release-type": "python",
+  "extra-files": [
+    { "type": "toml", "path": "pyproject.toml", "jsonpath": "$.project.version" }
+  ]
+}
+
+// ✅ CORRECT — release-type python updates pyproject.toml natively
+{
+  "release-type": "python"
+}
+```
+
+The preflight workflow catches this misconfiguration; see
+[Preflight check](#preflight-check-recommended).
+
+### Why SemVer is the canonical internal form
+
+- release-please's data model is SemVer-native; PEP 440 is computed
+  on the write side, not stored.
+- The Go module proxy, npm, and crates.io all want SemVer in tags
+  and files. Outvoting them on the canonical form would require
+  per-registry tag rewriting at publish time.
+- PEP 440's normalization is one-way derivable from SemVer
+  (`-alpha.N` → `aN`, `-beta.N` → `bN`, `-rc.N` → `rcN`, `+build` →
+  `+build`). The reverse is ambiguous (`a1` could be `-alpha.1` or
+  `-a.1` — PEP 440 forbids the latter, SemVer allows both).
+
+### Gradual ecosystem adoption
+
+The PEP 440 normalization concern is Python-specific today. As
+other languages join the polyglot setup, each gets a corresponding
+release-type that owns its native file format:
+
+| Language | release-type | Native file | Format |
+|---|---|---|---|
+| Python | `python` | `pyproject.toml`, `setup.py`, `_version.py` | PEP 440 |
+| TypeScript/Node | `node` | `package.json` | SemVer |
+| Rust | `rust` | `Cargo.toml` | SemVer |
+| Go | `go` | (none — proxy reads tags) | n/a |
+| PHP | `php` | `composer.json` | SemVer-compatible |
+
+When adding a polyglot repo, set `release-type` at the package
+level (or top-level if uniform across packages). The preflight
+workflow checks for native-format integrity per ecosystem.
 
 ## Prerelease channel — the four-piece combo
 

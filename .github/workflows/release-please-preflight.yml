@@ -1,0 +1,473 @@
+name: release-please-preflight (reusable)
+
+# Pre-merge sanity checks for adopter repos using hop-top/.github's
+# release-please + publish-on-tag setup. Reports specific resolution
+# steps when something's misconfigured.
+#
+# Adopter usage (minimal — gets full smart-default checks):
+#
+#   # .github/workflows/release-please-preflight.yml
+#   name: release-please-preflight
+#   on:
+#     pull_request:
+#       paths:
+#         - '.github/release-please-config.json'
+#         - '.github/.release-please-manifest.json'
+#         - '.github/workflows/release-please.yml'
+#         - '.github/workflows/publish.yml'
+#         - 'pyproject.toml'
+#         - 'package.json'
+#         - 'Cargo.toml'
+#     workflow_dispatch: {}
+#   jobs:
+#     preflight:
+#       uses: hop-top/.github/.github/workflows/release-please-preflight.yml@v0
+#
+# Override examples:
+#
+#   with:
+#     fail-on: any              # default 'breaking' — also fails on warnings
+#     config-path: custom/path  # default '.github/release-please-config.json'
+
+on:
+  workflow_call:
+    inputs:
+      fail-on:
+        description: |
+          When to exit non-zero.
+            breaking - only fail on broken config / missing infra (default)
+            any      - also fail on informational warnings
+            never    - annotation-only; always exit 0
+        type: string
+        default: breaking
+      config-path:
+        description: Path to release-please-config.json (default .github/release-please-config.json)
+        type: string
+        default: .github/release-please-config.json
+      manifest-path:
+        description: Path to manifest (default .github/.release-please-manifest.json)
+        type: string
+        default: .github/.release-please-manifest.json
+      publish-workflow-path:
+        description: Path to caller publish.yml (default .github/workflows/publish.yml)
+        type: string
+        default: .github/workflows/publish.yml
+      release-please-workflow-path:
+        description: Path to caller release-please.yml (default .github/workflows/release-please.yml)
+        type: string
+        default: .github/workflows/release-please.yml
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # for PR annotations
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install jq + yq
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq
+          sudo pip install -q yq
+
+      - name: Run preflight checks
+        id: checks
+        env:
+          FAIL_ON: ${{ inputs.fail-on }}
+          CONFIG_PATH: ${{ inputs.config-path }}
+          MANIFEST_PATH: ${{ inputs.manifest-path }}
+          PUBLISH_PATH: ${{ inputs.publish-workflow-path }}
+          RP_PATH: ${{ inputs.release-please-workflow-path }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+
+          BREAKING=0
+          WARNING=0
+
+          fail()    { echo "::error::$1"; echo "[BREAK] $1" >> "$GITHUB_STEP_SUMMARY"; BREAKING=$((BREAKING+1)); }
+          warn()    { echo "::warning::$1"; echo "[WARN]  $1" >> "$GITHUB_STEP_SUMMARY"; WARNING=$((WARNING+1)); }
+          info()    { echo "::notice::$1"; echo "[INFO]  $1" >> "$GITHUB_STEP_SUMMARY"; }
+          ok()      { echo "[OK]    $1" >> "$GITHUB_STEP_SUMMARY"; }
+          fixhint() { echo "[FIX]   $1" >> "$GITHUB_STEP_SUMMARY"; }
+
+          {
+            echo "## release-please preflight"
+            echo ""
+            echo "### Files"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # ---------- Check 1: required files ----------
+          if [[ ! -f "$CONFIG_PATH" ]]; then
+            fail "release-please config not found at $CONFIG_PATH"
+            fixhint "create $CONFIG_PATH per the dotgithub SKILL.md Quick-start section"
+          else
+            ok "release-please config found ($CONFIG_PATH)"
+          fi
+
+          if [[ ! -f "$MANIFEST_PATH" ]]; then
+            fail "manifest not found at $MANIFEST_PATH"
+            fixhint "create $MANIFEST_PATH with a prerelease-shaped seed, e.g. {\".\": \"0.1.0-alpha.1\"}"
+          else
+            ok "manifest found ($MANIFEST_PATH)"
+          fi
+
+          if [[ ! -f "$PUBLISH_PATH" ]]; then
+            fail "publish workflow not found at $PUBLISH_PATH"
+            fixhint "create $PUBLISH_PATH calling hop-top/.github/.github/workflows/publish-on-tag.yml@v0"
+          else
+            ok "publish workflow found ($PUBLISH_PATH)"
+          fi
+
+          if [[ ! -f "$RP_PATH" ]]; then
+            fail "release-please workflow not found at $RP_PATH"
+            fixhint "create $RP_PATH using googleapis/release-please-action@v4 (see SKILL.md Quick-start)"
+          else
+            ok "release-please workflow found ($RP_PATH)"
+          fi
+
+          if [[ $BREAKING -gt 0 ]]; then
+            {
+              echo ""
+              echo "**Stopping: required files missing. Address the above and re-run.**"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "breaking=$BREAKING" >> "$GITHUB_OUTPUT"
+            echo "warning=$WARNING" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # ---------- Check 2: release-please-config.json ----------
+          {
+            echo ""
+            echo "### release-please config"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if ! jq empty "$CONFIG_PATH" 2>/dev/null; then
+            fail "$CONFIG_PATH is not valid JSON"
+            fixhint "jq . $CONFIG_PATH  # to see the parse error"
+          else
+            ok "$CONFIG_PATH parses as JSON"
+            PACKAGES=$(jq -r '.packages // {} | keys[]' "$CONFIG_PATH" 2>/dev/null)
+            if [[ -z "$PACKAGES" ]]; then
+              fail "$CONFIG_PATH has no .packages map"
+              fixhint "add a packages block per the dotgithub SKILL.md examples"
+            else
+              info "packages: $(echo "$PACKAGES" | tr '\n' ' ')"
+            fi
+          fi
+
+          # ---------- Check 3: single-segment component names ----------
+          if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            for path in $PACKAGES; do
+              COMPONENT=$(jq -r --arg p "$path" '.packages[$p].component // empty' "$CONFIG_PATH")
+              if [[ -z "$COMPONENT" ]]; then
+                warn "package $path has no .component — tag prefix will be inferred from package-name"
+                fixhint "set .packages.\"$path\".component to a single-segment name in $CONFIG_PATH"
+                continue
+              fi
+              if [[ "$COMPONENT" == */* ]]; then
+                fail "component '$COMPONENT' contains '/' — tag '*/v*' glob does NOT match nested paths"
+                fixhint "rename to single-segment in $CONFIG_PATH (e.g. ${COMPONENT//\//-})"
+              else
+                ok "component '$COMPONENT' is single-segment"
+              fi
+            done
+          fi
+
+          # ---------- Check 4: prerelease four-piece combo ----------
+          if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            {
+              echo ""
+              echo "### prerelease config"
+            } >> "$GITHUB_STEP_SUMMARY"
+            for path in $PACKAGES; do
+              PRERELEASE=$(jq -r --arg p "$path" '.packages[$p].prerelease // false' "$CONFIG_PATH")
+              if [[ "$PRERELEASE" == "true" ]]; then
+                PR_TYPE=$(jq -r --arg p "$path" '.packages[$p]["prerelease-type"] // empty' "$CONFIG_PATH")
+                VERSIONING=$(jq -r --arg p "$path" '.packages[$p].versioning // empty' "$CONFIG_PATH")
+                BUMP_MINOR=$(jq -r --arg p "$path" '.packages[$p]["bump-minor-pre-major"] // false' "$CONFIG_PATH")
+                MISSING=""
+                [[ -z "$PR_TYPE" ]] && MISSING="$MISSING prerelease-type"
+                [[ "$VERSIONING" != "prerelease" ]] && MISSING="$MISSING versioning"
+                [[ "$BUMP_MINOR" != "true" ]] && MISSING="$MISSING bump-minor-pre-major"
+                if [[ -n "$MISSING" ]]; then
+                  fail "package $path is prerelease but missing:$MISSING"
+                  fixhint "all four pieces required — see SKILL.md \"Prerelease channel\""
+                else
+                  ok "package $path: prerelease four-piece combo complete"
+                fi
+                if [[ -n "$PR_TYPE" && "$PR_TYPE" != *.* ]]; then
+                  warn "package $path prerelease-type '$PR_TYPE' missing counter digit — first release will skip alpha.0 and start at alpha.1"
+                  fixhint "change to '$PR_TYPE.0' in $CONFIG_PATH"
+                fi
+              else
+                info "package $path: stable channel (prerelease: false / unset)"
+              fi
+            done
+          fi
+
+          # ---------- Check 5: manifest seed shape vs prerelease config ----------
+          if [[ -f "$MANIFEST_PATH" && -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            {
+              echo ""
+              echo "### manifest seed"
+            } >> "$GITHUB_STEP_SUMMARY"
+            if ! jq empty "$MANIFEST_PATH" 2>/dev/null; then
+              fail "$MANIFEST_PATH is not valid JSON"
+            else
+              for path in $PACKAGES; do
+                PRERELEASE=$(jq -r --arg p "$path" '.packages[$p].prerelease // false' "$CONFIG_PATH")
+                SEED=$(jq -r --arg p "$path" '.[$p] // empty' "$MANIFEST_PATH")
+                if [[ -z "$SEED" ]]; then
+                  warn "no manifest seed for package $path"
+                  fixhint "add \"$path\": \"<version>\" to $MANIFEST_PATH"
+                  continue
+                fi
+                if [[ "$PRERELEASE" == "true" ]]; then
+                  if [[ "$SEED" == *-* ]]; then
+                    ok "package $path: manifest seed '$SEED' is prerelease-shaped"
+                  else
+                    fail "package $path declares prerelease but manifest seed '$SEED' is stable"
+                    fixhint "change seed to e.g. '${SEED}-alpha.1' in $MANIFEST_PATH"
+                  fi
+                else
+                  if [[ "$SEED" == *-* ]]; then
+                    warn "package $path is stable but manifest seed '$SEED' has prerelease suffix"
+                    fixhint "drop the suffix in $MANIFEST_PATH or set prerelease: true in $CONFIG_PATH"
+                  else
+                    ok "package $path: manifest seed '$SEED' is stable-shaped"
+                  fi
+                fi
+              done
+            fi
+          fi
+
+          # ---------- Check 5b: PEP 440 / SemVer intersection (Python) ----------
+          # release-please's release-type: python normalizes SemVer -> PEP 440
+          # when writing Python source files (pyproject.toml, setup.py, etc.).
+          # A manual `extra-files` block with `type: toml` and `path: pyproject.toml`
+          # BYPASSES that normalization — it writes the raw SemVer string
+          # (`0.1.0-alpha.1`) into pyproject.toml, which is invalid PEP 440
+          # and breaks pip install / twine check.
+          if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            {
+              echo ""
+              echo "### PEP 440 / SemVer intersection (Python packages)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            for path in $PACKAGES; do
+              RT=$(jq -r --arg p "$path" '.packages[$p]["release-type"] // .["release-type"] // empty' "$CONFIG_PATH")
+              if [[ "$RT" != "python" ]]; then
+                continue
+              fi
+              # Detect extra-files entries pointing at pyproject.toml (the trap)
+              HAS_PYPROJECT_EXTRA=$(jq -r --arg p "$path" '
+                .packages[$p]["extra-files"] // []
+                | map(select(
+                    (type == "string" and . == "pyproject.toml") or
+                    (type == "object" and (.path // "") == "pyproject.toml")
+                  ))
+                | length
+              ' "$CONFIG_PATH")
+              if [[ "${HAS_PYPROJECT_EXTRA:-0}" -gt 0 ]]; then
+                fail "package $path (release-type python) has an extra-files block targeting pyproject.toml — bypasses PEP 440 normalization, writes SemVer (0.1.0-alpha.1) instead of PEP 440 (0.1.0a1)"
+                fixhint "remove the pyproject.toml entry from extra-files in $CONFIG_PATH — release-type python updates it natively with PEP 440 normalization"
+              else
+                ok "package $path: no extra-files override for pyproject.toml (release-type python will normalize PEP 440 natively)"
+              fi
+              # Validate pyproject.toml current value is PEP 440 shape
+              if [[ -f pyproject.toml ]]; then
+                PYP_VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/version = "(.*)"/\1/')
+                if [[ -n "$PYP_VERSION" ]]; then
+                  # PEP 440 prerelease form: N.N.NaN / N.N.NbN / N.N.NrcN / N.N.N.devN / N.N.N.postN
+                  # Anti-pattern: N.N.N-alphaN, N.N.N-beta, etc.
+                  if [[ "$PYP_VERSION" == *-* ]]; then
+                    fail "pyproject.toml version '$PYP_VERSION' is SemVer-shaped, not PEP 440 — pip / twine will reject"
+                    fixhint "rewrite to PEP 440 (e.g. ${PYP_VERSION%%-*}$(echo "${PYP_VERSION#*-}" | sed -E 's/alpha\.?/a/; s/beta\.?/b/; s/rc\.?/rc/' | tr -d '.')) and let release-please own it from here on"
+                  else
+                    ok "pyproject.toml version '$PYP_VERSION' looks PEP 440-compatible"
+                  fi
+                fi
+              fi
+            done
+          fi
+
+          # ---------- Check 6: publish.yml triggers + ecosystems map ----------
+          {
+            echo ""
+            echo "### publish workflow"
+          } >> "$GITHUB_STEP_SUMMARY"
+          ECO_KEYS=""
+          if [[ -f "$PUBLISH_PATH" ]]; then
+            TAGS=$(yq -r '.on.push.tags // [] | .[]' "$PUBLISH_PATH" 2>/dev/null || echo "")
+            if echo "$TAGS" | grep -qE '^\*/v\*$'; then
+              ok "publish.yml triggers on '*/v*' tags"
+            elif [[ -z "$TAGS" ]]; then
+              fail "publish.yml has no on.push.tags filter"
+              fixhint "add 'on: push: tags: [\"*/v*\"]' in $PUBLISH_PATH"
+            else
+              warn "publish.yml tag filter is '$TAGS' — expected '*/v*'"
+              fixhint "change to 'tags: [\"*/v*\"]' for the component/v<version> shape"
+            fi
+
+            USES=$(yq -r '.jobs.publish.uses // empty' "$PUBLISH_PATH" 2>/dev/null || echo "")
+            if [[ "$USES" == hop-top/.github/.github/workflows/publish-on-tag.yml@* ]]; then
+              ok "publish.yml delegates to hop-top/.github reusable workflow ($USES)"
+            elif [[ -z "$USES" ]]; then
+              warn "publish.yml does not call hop-top/.github reusable — hand-rolled publish?"
+              fixhint "delegate via 'uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0'"
+            else
+              warn "publish.yml uses unexpected workflow ref: $USES"
+            fi
+
+            ECO_KEYS=$(yq -r '.jobs.publish.with.ecosystems' "$PUBLISH_PATH" 2>/dev/null | yq -r 'keys[]' 2>/dev/null || echo "")
+            if [[ -z "$ECO_KEYS" ]]; then
+              warn "publish.yml ecosystems map is empty or unparseable"
+              fixhint "add an ecosystems entry per component (see SKILL.md)"
+            else
+              info "ecosystems keys: $(echo "$ECO_KEYS" | tr '\n' ' ')"
+            fi
+
+            # Three-way name alignment
+            for component in $(jq -r '.packages // {} | to_entries[] | .value.component // empty' "$CONFIG_PATH"); do
+              if echo "$ECO_KEYS" | grep -qx "$component"; then
+                ok "three-way alignment: component '$component' matches ecosystems key"
+              else
+                fail "component '$component' has no matching ecosystems key in publish.yml"
+                fixhint "add '$component:' entry to ecosystems in $PUBLISH_PATH"
+              fi
+            done
+          fi
+
+          # ---------- Check 7: release-please.yml uses release-bot App token ----------
+          {
+            echo ""
+            echo "### release-please workflow"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f "$RP_PATH" ]]; then
+            if grep -q "actions/create-github-app-token" "$RP_PATH"; then
+              ok "release-please.yml mints App token via create-github-app-token"
+            elif grep -q "GH_RELEASE_PLEASE_PAT" "$RP_PATH"; then
+              fail "release-please.yml uses deprecated GH_RELEASE_PLEASE_PAT — PAT delivery is unreliable"
+              fixhint "switch to release-bot App token (RELEASE_BOT_APP_ID + RELEASE_BOT_PRIVATE_KEY)"
+            else
+              warn "release-please.yml may be using GITHUB_TOKEN — PRs won't trigger downstream workflows"
+              fixhint "use actions/create-github-app-token@v1 with RELEASE_BOT_APP_ID/RELEASE_BOT_PRIVATE_KEY"
+            fi
+
+            if grep -q "workflow_dispatch" "$RP_PATH"; then
+              ok "release-please.yml declares workflow_dispatch (manual retrigger enabled)"
+            else
+              warn "release-please.yml does not declare workflow_dispatch"
+              fixhint "add 'workflow_dispatch: {}' under 'on:' so retriggering works after sibling-PR conflicts"
+            fi
+          fi
+
+          # ---------- Check 8: per-ecosystem infrastructure ----------
+          {
+            echo ""
+            echo "### per-ecosystem infrastructure"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for component in $ECO_KEYS; do
+            ECOSYSTEM=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"].ecosystem // empty" "$PUBLISH_PATH" 2>/dev/null || echo "")
+            PACKAGE=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"].package // empty" "$PUBLISH_PATH" 2>/dev/null || echo "")
+            MIRROR=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"].mirror // empty" "$PUBLISH_PATH" 2>/dev/null || echo "")
+
+            case "$ECOSYSTEM" in
+              py)
+                PYPI_AUTH=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"][\"pypi-auth\"] // \"oidc\"" "$PUBLISH_PATH" 2>/dev/null || echo "oidc")
+                PYPI_ENV=$(yq -r ".jobs.publish.with.ecosystems[\"$component\"][\"pypi-environment\"] // \"pypi\"" "$PUBLISH_PATH" 2>/dev/null || echo "pypi")
+                if [[ "$PYPI_AUTH" == "oidc" ]]; then
+                  if gh api "repos/$REPO/environments/$PYPI_ENV" --silent 2>/dev/null; then
+                    ok "GitHub Environment '$PYPI_ENV' exists on $REPO"
+                  else
+                    fail "GitHub Environment '$PYPI_ENV' does not exist on $REPO (required for OIDC)"
+                    fixhint "gh api -X PUT repos/$REPO/environments/$PYPI_ENV"
+                  fi
+                  info "PyPI trusted publisher must be configured at https://pypi.org/manage/account/publishing/ (workflow filename: $(basename "$PUBLISH_PATH"), environment: $PYPI_ENV)"
+                else
+                  info "PyPI auth: token mode — ensure PYPI_REGISTRY_TOKEN secret is set"
+                fi
+                if [[ -n "$PACKAGE" ]]; then
+                  HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/$PACKAGE/json")
+                  if [[ "$HTTP" == "200" ]]; then
+                    info "PyPI package '$PACKAGE' exists — account must already own it for publish to succeed"
+                  elif [[ "$HTTP" == "404" ]]; then
+                    info "PyPI package '$PACKAGE' is unclaimed — first publish will claim the name"
+                  else
+                    warn "PyPI package '$PACKAGE' check returned HTTP $HTTP"
+                  fi
+                fi
+                ;;
+              ts)
+                info "npm publish requires NPM_REGISTRY_TOKEN secret"
+                if [[ -n "$PACKAGE" ]]; then
+                  ENCODED=$(printf '%s' "$PACKAGE" | sed 's|/|%2F|g')
+                  HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/$ENCODED")
+                  if [[ "$HTTP" == "200" ]]; then
+                    info "npm package '$PACKAGE' exists — account must already own it"
+                  elif [[ "$HTTP" == "404" ]]; then
+                    info "npm package '$PACKAGE' is unclaimed — first publish will claim it"
+                  fi
+                fi
+                ;;
+              rs)
+                info "crates.io publish requires CARGO_REGISTRY_TOKEN secret AND a verified email on the account"
+                ;;
+              php)
+                info "Packagist auto-syncs after first manual submit at https://packagist.org/packages/submit"
+                ;;
+              go)
+                info "Go module proxy auto-pulls from tags; no token needed"
+                ;;
+              "")
+                warn "ecosystem '$component' has no .ecosystem field — publish job will skip"
+                ;;
+              *)
+                warn "unknown ecosystem '$ECOSYSTEM' for component '$component'"
+                ;;
+            esac
+
+            if [[ -n "$MIRROR" ]]; then
+              info "mirror '$MIRROR' configured — GH_MIRROR_PAT secret required"
+              if gh api "repos/$MIRROR" --silent 2>/dev/null; then
+                ok "mirror repo $MIRROR exists"
+              else
+                warn "mirror repo $MIRROR does not exist (or token lacks access)"
+                fixhint "create $MIRROR before first publish, or remove mirror: field for single-language repos"
+              fi
+            else
+              info "no mirror configured for '$component' (single-language pattern)"
+            fi
+          done
+
+          # ---------- Summary ----------
+          {
+            echo ""
+            echo "### Summary"
+            echo "- Breaking issues: $BREAKING"
+            echo "- Warnings: $WARNING"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "breaking=$BREAKING" >> "$GITHUB_OUTPUT"
+          echo "warning=$WARNING" >> "$GITHUB_OUTPUT"
+
+          case "$FAIL_ON" in
+            breaking)
+              [[ $BREAKING -gt 0 ]] && exit 1 || exit 0
+              ;;
+            any)
+              [[ $BREAKING -gt 0 || $WARNING -gt 0 ]] && exit 1 || exit 0
+              ;;
+            never)
+              exit 0
+              ;;
+            *)
+              echo "::error::invalid fail-on value: $FAIL_ON (expected: breaking | any | never)"
+              exit 2
+              ;;
+          esac
