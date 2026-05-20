@@ -666,6 +666,28 @@ You opt into the binaries lane per language — most adopter repos
 won't need it. Pick the reference doc for your language and follow
 the caller-workflow snippet there.
 
+### Org-wide tap/bucket convention
+
+When shipping binaries via package managers, **use the org-wide
+tap/bucket repos** — not per-binary ones. For hop-top:
+
+| Manager | Tap/bucket repo | NOT |
+|---|---|---|
+| Homebrew | `hop-top/homebrew-tap` | `hop-top/homebrew-<name>` |
+| Scoop | `hop-top/scoop-bucket` | `hop-top/scoop-<name>` |
+
+Why: per-binary taps multiply maintenance (separate CI, separate
+access tokens, users have to `brew tap` once per tool). The
+org-wide tap pattern means users `brew tap hop-top/tap` once and
+get every hop-top binary via `brew install hop-top/tap/<name>`.
+goreleaser's `brews[].repository.name` field controls this; set
+it to `homebrew-tap`. Same for `scoops[].repository.name` — set
+it to `scoop-bucket`.
+
+The reference doc ([docs/binaries/go.md](docs/binaries/go.md))
+covers the goreleaser config in detail — this is just the
+entry-point reminder.
+
 ## `ecosystems` input reference
 
 YAML map. Each key is the **component name** that appears in tag
@@ -1061,6 +1083,7 @@ Entries linked below to [docs/failure-modes.md](docs/failure-modes.md) have exte
 | Packagist returns 404 even after the mirror has a tag | First version requires manual one-time submit | Submit once at <https://packagist.org/packages/submit>; auto-syncs from then on. |
 | Sibling release-please PRs go CONFLICTING after merging one | Shared manifest; merging A advances it, B's branch is stale | Close the conflicting PR + retrigger release-please via `workflow_dispatch`. See [Retriggering release-please](#retriggering-release-please-after-sibling-pr-conflicts). |
 | release-please PR shows `mergeStateStatus: DIRTY` | Main moved between PR creation and merge attempt | Close PR + delete branch; release-please regenerates on next push. [Details](docs/failure-modes.md#release-please-pr-goes-dirty-after-main-moves) |
+| Created `homebrew-<binary>` or `scoop-<binary>` tap/bucket repo per binary | Misread convention — taps are org-wide, not per-binary | Use `<org>/homebrew-tap` + `<org>/scoop-bucket` (single repos serving every org binary). Delete the per-binary tap/bucket; point goreleaser's `brews[].repository.name` at `homebrew-tap` and `scoops[].repository.name` at `scoop-bucket`. See [Org-wide tap/bucket convention](#org-wide-tapbucket-convention). |
 
 ## See also
 
