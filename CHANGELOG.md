@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/hop-top/.github/compare/v0.8.0...v0.8.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **preflight:** handle PyYAML's on/off-as-boolean quirk in workflow parsing ([#37](https://github.com/hop-top/.github/issues/37)) ([2f23d52](https://github.com/hop-top/.github/commit/2f23d52af2cf34beada785a5d6de63e66f8efafe))
+
 ## [0.8.0](https://github.com/hop-top/.github/compare/v0.7.0...v0.8.0) (2026-05-20)
 
 
