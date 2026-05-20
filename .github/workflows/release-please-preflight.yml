@@ -88,37 +88,38 @@ jobs:
           import json, os, sys
           import yaml
 
-          # PyYAML follows YAML 1.1, which treats unquoted on/off/yes/no/true/false
-          # as booleans. GitHub Actions workflow files use `on:` as the trigger
-          # key — PyYAML parses that into the Python boolean True, not the string
-          # "on", so doc["on"] is unreachable. Post-process: rebuild keys so any
-          # boolean key True/False becomes its YAML 1.1 textual form ("on" / "off").
-          # Recursive: nested maps under jobs/etc. don't have this problem in
-          # practice, but apply uniformly for safety.
-          def _normalize_yaml_keys(node):
-              if isinstance(node, dict):
-                  fixed = {}
-                  for k, v in node.items():
-                      if k is True:
-                          k = "on"
-                      elif k is False:
-                          k = "off"
-                      fixed[k] = _normalize_yaml_keys(v)
-                  return fixed
-              if isinstance(node, list):
-                  return [_normalize_yaml_keys(item) for item in node]
-              return node
+          # PyYAML follows YAML 1.1, which resolves unquoted on/off/yes/no/true/false
+          # all to Python booleans. GitHub Actions workflow files use `on:` as the
+          # top-level trigger key — PyYAML parses that into True, not "on", so
+          # doc["on"] is unreachable.
+          #
+          # Narrow fix: only at the document root, only when `True` is present AND
+          # no quoted "on" key already exists. This avoids:
+          #   - over-normalizing nested booleans (workflow files don't have boolean
+          #     keys at non-root nesting in practice, but be defensive)
+          #   - losing the distinction between `true`/`yes`/`on` (all map to True)
+          #   - overwriting an existing quoted "on" key if both forms appear
+          # Same treatment for False -> "off" at root, since `off` is also a valid
+          # (if uncommon) Actions trigger key.
+          def _restore_root_on_key(doc):
+              if not isinstance(doc, dict):
+                  return doc
+              if True in doc and "on" not in doc:
+                  doc["on"] = doc.pop(True)
+              if False in doc and "off" not in doc:
+                  doc["off"] = doc.pop(False)
+              return doc
 
           path = os.environ["PUBLISH_PATH"]
           with open(path, "r", encoding="utf-8") as f:
               doc = yaml.safe_load(f) or {}
-          doc = _normalize_yaml_keys(doc)
+          doc = _restore_root_on_key(doc)
           # The `ecosystems` field is a string-encoded YAML block (see publish-on-tag.yml's
           # contract). Decode it inline so downstream jq can drill in directly.
           try:
               eco_str = doc.get("jobs", {}).get("publish", {}).get("with", {}).get("ecosystems")
               if isinstance(eco_str, str):
-                  doc["jobs"]["publish"]["with"]["ecosystems"] = _normalize_yaml_keys(yaml.safe_load(eco_str) or {})
+                  doc["jobs"]["publish"]["with"]["ecosystems"] = yaml.safe_load(eco_str) or {}
           except Exception as exc:
               print(f"warning: could not pre-decode ecosystems: {exc}", file=sys.stderr)
           out_path = os.path.join(os.environ["RUNNER_TEMP"], "publish.json")
