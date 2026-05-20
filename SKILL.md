@@ -891,10 +891,11 @@ The component name and version are buried inside the PR body. Set
 }
 ```
 
-Result: `chore(release): ben 0.2.0-alpha.1`. Matches the kit org
-convention; grep-able across the org via the GitHub search bar; the
-component name disambiguates which release-please PR is which on
-polyglot repos (where multiple components share the standing PR set).
+Result: `chore(release): ben 0.2.0-alpha.1`. Matches the convention
+used in `hop-top/kit`; grep-able across the org via the GitHub search
+bar; the component name disambiguates which release-please PR is which
+on polyglot repos (where multiple components share the standing PR
+set).
 
 This is most often missed on **single-component repos** that set
 `separate-pull-requests: false` and don't bother with the pattern —

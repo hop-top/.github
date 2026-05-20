@@ -99,7 +99,7 @@ Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "separate-pull-requests": true,
-  "pull-request-title-pattern": "chore(release):${component} ${version}",
+  "pull-request-title-pattern": "chore(release): ${component} ${version}",
   "include-component-in-tag": true,
   "tag-separator": "/",
   "packages": {
