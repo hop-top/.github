@@ -87,9 +87,33 @@ jobs:
           python3 - <<'PY'
           import json, os, sys
           import yaml
+
+          # PyYAML follows YAML 1.1, which resolves unquoted on/off/yes/no/true/false
+          # all to Python booleans. GitHub Actions workflow files use `on:` as the
+          # top-level trigger key — PyYAML parses that into True, not "on", so
+          # doc["on"] is unreachable.
+          #
+          # Narrow fix: only at the document root, only when `True` is present AND
+          # no quoted "on" key already exists. This avoids:
+          #   - over-normalizing nested booleans (workflow files don't have boolean
+          #     keys at non-root nesting in practice, but be defensive)
+          #   - losing the distinction between `true`/`yes`/`on` (all map to True)
+          #   - overwriting an existing quoted "on" key if both forms appear
+          # Same treatment for False -> "off" at root, since `off` is also a valid
+          # (if uncommon) Actions trigger key.
+          def _restore_root_on_key(doc):
+              if not isinstance(doc, dict):
+                  return doc
+              if True in doc and "on" not in doc:
+                  doc["on"] = doc.pop(True)
+              if False in doc and "off" not in doc:
+                  doc["off"] = doc.pop(False)
+              return doc
+
           path = os.environ["PUBLISH_PATH"]
           with open(path, "r", encoding="utf-8") as f:
               doc = yaml.safe_load(f) or {}
+          doc = _restore_root_on_key(doc)
           # The `ecosystems` field is a string-encoded YAML block (see publish-on-tag.yml's
           # contract). Decode it inline so downstream jq can drill in directly.
           try:
