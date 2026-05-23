@@ -145,6 +145,8 @@ jobs:
     secrets:
       NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+      PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
       GH_MIRROR_PAT: ${{ secrets.GH_MIRROR_PAT }}
     with:
       homepage: https://your-project-url
@@ -176,11 +178,11 @@ mirror:
 | `ts` | Yes (`pnpm publish` → npm) | Optional | Keep `publish.yml`; set `enable-mirror: false` unless a real `<name>-ts` mirror exists |
 | `py` | Yes (`twine`/OIDC → PyPI) | Optional | Same as `ts` |
 | `rs` | Yes (`cargo publish` → crates.io) | Optional | Same as `ts` |
-| `php` | No (Packagist auto-syncs from webhook on the source) | No | **Drop `publish.yml` entirely** |
+| `php` | Yes (Packagist `update-package` API notify after mirror push) | **Required** — Packagist polls the mirror, not the source | Keep `publish.yml`; `enable-mirror: false` is rejected at parse time for php (see [PHP requires the mirror](#php-requires-the-mirror)) |
 
-For the Go-only and PHP-only cases, `publish-on-tag.yml` has nothing
-to do — the ecosystem's registry pulls directly from the source repo.
-Keeping `publish.yml` would only fire the (unwanted) mirror push.
+For the Go-only case, `publish-on-tag.yml` has nothing to do —
+proxy.golang.org pulls directly from the source repo. Keeping
+`publish.yml` would only fire the (unwanted) mirror push.
 
 For `ts`/`py`/`rs`-only repos, the publish step IS needed but the
 unconditional mirror destination is awkward when there's no canonical
@@ -351,6 +353,10 @@ Each missing box was a real session-blocking failure at some point.
       token; account email **verified**
 - [ ] `PYPI_REGISTRY_TOKEN` (only if using `pypi-auth: token`) —
       PyPI API token
+- [ ] `PACKAGIST_USERNAME` + `PACKAGIST_TOKEN` (if shipping php) —
+      Packagist account username + API token. Required for the
+      automated `publish-php` notify step. See
+      [PHP: Packagist notify](#php-packagist-notify).
 
 **Registry pre-registration**
 
@@ -362,8 +368,10 @@ Each missing box was a real session-blocking failure at some point.
       **caller workflow filename** (not the reusable's)
 - [ ] PyPI: GitHub Environment matching `pypi-environment` (default:
       `pypi`) exists on the source repo
-- [ ] Packagist: nothing yet — manually submit AFTER first tag
-      lands on the `<name>-php` mirror
+- [ ] Packagist: one-time package submit at
+      <https://packagist.org/packages/submit> with the mirror repo URL,
+      AFTER the first tag lands on `<name>-php`. After that, the
+      `publish-php` job auto-notifies on every tag (no webhook needed)
 
 **Repo hygiene per language**
 
@@ -475,13 +483,13 @@ names — no fallback chains or aliases. Either:
 | `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` | release-please job (via `actions/create-github-app-token@v1`) | Org | GitHub App credentials for the hop-top release-bot. The App must be installed on every source repo that ships releases **plus every package-manager target repo passed via `goreleaser-on-tag.yml` inputs** (`<org>/homebrew-tap` for `homebrew-tap-repo`, `<org>/scoop-bucket` for `scoop-bucket-repo`, `<org>/winget-pkgs` (the org's fork of `microsoft/winget-pkgs`) for `winget-fork-repo`); `Contents: RW` + `Pull Requests: RW` + `Workflows: RW`. **Default `GITHUB_TOKEN` doesn't work** — its PRs don't trigger downstream workflows. **Legacy `GH_RELEASE_PLEASE_PAT` is deprecated** (PAT-delivery proved unreliable on fresh repos, and PRs authored by the human owner trip CODEOWNERS self-approval on `.release-please-manifest.json`). |
 | `NPM_REGISTRY_TOKEN` | `publish-ts` (if shipping TS) | Org | npm Granular Access Token with publish on your scope |
 | `CARGO_REGISTRY_TOKEN` | `publish-rs` (if shipping Rust) | Org | crates.io API token. Account must have a verified email. |
+| `PACKAGIST_USERNAME` + `PACKAGIST_TOKEN` | `publish-php` (if shipping PHP) | Org | Packagist account username + API token. Mint at <https://packagist.org/profile/edit>. URL-encoded into the `update-package` API call; both are also `::add-mask::`-registered inside the job to keep the encoded form out of logs. |
 
 ### Secrets the shared workflows DO NOT need (default mode)
 
 | What | Why not |
 |---|---|
 | **PyPI token** | `publish-py` uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) by default. Configure on PyPI's side bound to your repo + `pypi-environment` (default: `pypi`). If OIDC won't work for your setup, see [PyPI auth modes](#pypi-auth-modes) below for the token escape hatch. |
-| **Packagist token** | Packagist auto-syncs from public GitHub via webhook. |
 | **Go module token** | proxy.golang.org pulls from git tags. |
 
 ### PyPI auth modes
@@ -782,7 +790,7 @@ prefixes. Each value:
 | Field | Required | Notes |
 |---|---|---|
 | `dir` | yes | Subdirectory in the repo |
-| `ecosystem` | yes | `ts` \| `py` \| `rs` \| `php` \| `go` — picks the publish job (or none for php/go) |
+| `ecosystem` | yes | `ts` \| `py` \| `rs` \| `php` \| `go` — picks the publish job (none for `go`; `php` runs a Packagist notify after the mirror push, not a publish-from-source step) |
 | `mirror` | yes | Full slug of the read-only mirror repo |
 | `package` | no | Registry package name (informational) |
 | `test-command` | no | Override default test step |
@@ -801,7 +809,7 @@ prefixes. Each value:
 | `ts` | `pnpm install --frozen-lockfile --ignore-scripts && pnpm test` (does implicit install) | `pnpm build` | Node 22 |
 | `py` | `python -m pytest -q` | `python -m build` | Python 3.11 |
 | `rs` | `cargo test` | _(none; cargo publish handles it)_ | Rust stable |
-| `php` | _(no publish)_ | _(no publish)_ | _Packagist auto-syncs_ |
+| `php` | _(no publish-from-source)_ | _(no publish-from-source)_ | `publish-php` POSTs to Packagist `update-package` after mirror push (see [PHP: Packagist notify](#php-packagist-notify)) |
 | `go` | _(no publish)_ | _(no publish)_ | _proxy.golang.org pulls from tag_ |
 
 ### Example with overrides
@@ -1179,13 +1187,82 @@ curl -s 'https://proxy.golang.org/<module>/@v/list' | sort -V
 Use a `Release-As: <next-base>-alpha.0` footer or manifest reseed
 to jump the base.
 
-### Packagist: one-time manual submit
+### PHP: Packagist notify
 
-The first version of a PHP package needs a **manual submit** at
-<https://packagist.org/packages/submit> with the mirror repo URL.
-After that, the webhook auto-syncs new tags. The `mirror-subtree`
-workflow does NOT create the Packagist entry — it only pushes the
-mirror tag that Packagist eventually polls.
+PHP "publishing" is not publish-from-source — Packagist polls the
+mirror repo for tags. The `publish-php` job runs **after** the
+mirror push and POSTs to Packagist's `update-package` API to
+trigger an immediate re-index (vs. waiting for the polling
+interval, which can be ~hours). Without the notify step, the
+mirror's new tag eventually surfaces on Packagist anyway, but the
+workflow run completes green with no signal that anything is
+pending — a silent-success failure mode that motivated PR
+[#41](https://github.com/hop-top/.github/pull/41).
+
+#### One-time setup per package
+
+After the **first** mirror push lands on `<org>/<name>-php`, submit
+the package at <https://packagist.org/packages/submit> with the
+mirror repo URL. See [browser-playbooks.md](docs/browser-playbooks.md#packagist-submit-package).
+This is a one-time operation — Packagist needs to know the package
+exists before the API notify can re-index it.
+
+#### Per-tag flow (automated)
+
+```
+tag push <name-php>/v<x.y.z>
+  ↓ publish.yml fires
+  ↓ parse → ecosystem=php → mirror runs → publish-php runs
+  ↓ publish-php: POST https://packagist.org/api/update-package
+  ↓                 ?username=…&apiToken=…
+  ↓                 {"repository":{"url":"https://github.com/<org>/<name>-php"}}
+  ↓ Packagist returns 202 + job id, queues re-index
+  ↓ p2 metadata (composer-install path) updates within minutes
+  ↓ legacy /packages/<name>.json (web UI) lags behind CDN — up to 12h
+```
+
+#### PHP requires the mirror
+
+The `publish-php` job `needs: mirror`. If a caller sets
+`enable-mirror: false` with `ecosystem: php`, `parse` fails early
+with `::error::ecosystem=php requires enable-mirror=true (Packagist
+notify depends on the mirror job)`. There is no "publish to
+Packagist without the mirror" path — Packagist polls the mirror
+slug, not the source.
+
+#### Composer rejects `experimental.N` pre-release identifiers
+
+PHP's Composer parser only accepts a fixed list of pre-release
+stability identifiers: **`dev` | `alpha` | `beta` | `RC` |
+`stable`**. A SemVer string like `0.4.0-experimental.1` parses
+everywhere else (npm, cargo, Go module proxy, PyPI after
+normalization) but **fails `composer install` with `Invalid version
+string`**.
+
+Use `0.4.0-alpha.N` for the prerelease counter in `composer.json`
+(and the release-please manifest for the php package). The other
+ecosystems can keep `experimental.N` if you prefer — but the php
+package needs `alpha.N`. This bit T-0183; see commit
+[`0b76224d`](https://github.com/hop-top/poly-kit/commit/0b76224d).
+
+#### "Abandoned" flag is sticky and Packagist-side only
+
+Packagist has a per-package `abandoned: bool` flag that's set via
+the Packagist **web UI** (or undocumented authenticated API), NOT
+via `composer.json`. The flag persists across `update-package`
+notify calls — re-indexing the mirror tag will not clear it.
+
+If a previous test/cleanup or accidental click marked the package
+abandoned, unmark it in the browser at the package's edit page
+(maintainer access required). The p2 metadata (`/p2/<vendor>/<pkg>.json`,
+the install path) updates immediately on unmark; the legacy
+`/packages/<vendor>/<pkg>.json` endpoint can lag the CDN's
+`s-maxage=43200` (12h) cache.
+
+#### Workflow internals (for debuggers)
+
+- The `publish-php` job's `if:` uses `always() && needs.parse.outputs.ecosystem == 'php' && needs.mirror.result == 'success'`. The `always()` is required because the transitive needs include `publish-ts/publish-py/publish-rs` (via `mirror`), which are `skipped` for a php tag — without `always()`, GitHub Actions applies the implicit "skip downstream if any transitive need is non-success" rule and skips publish-php before evaluating the explicit conditions. Same pattern the `mirror` job uses. See PR [#43](https://github.com/hop-top/.github/pull/43).
+- Credentials are URL-encoded with `jq @uri` and registered with `::add-mask::` before they appear in the `$url` variable — GH's auto-masking only matches the raw secret value, not its URL-encoded form (e.g. tokens containing `+`/`/`/`=`).
 
 ## Common pitfalls
 
@@ -1219,7 +1296,11 @@ Entries linked below to [docs/failure-modes.md](docs/failure-modes.md) have exte
 | Rust test fails: `unresolved import <crate>::<feature_module>` under default features | Test file under `tests/` depends on a feature-gated module; cargo compiles all test files unconditionally | Add `#![cfg(feature = "<name>")]` at the top of the test file. See [Rust: feature-gated test files](#rust-feature-gated-test-files). |
 | TS test fails: `Could not locate the bindings file` | Native-binding dep needs build scripts that `--ignore-scripts` blocks | Either exclude the test or drop `--ignore-scripts`. See [TS: native bindings](#ts-native-bindings----ignore-scripts). |
 | `go get <module>@latest` returns a pseudo-version after a real release | Ghost versions cached in proxy.golang.org from a prior incarnation outrank the new tag | Bump the next release to a version strictly greater than every ghost. See [Go module proxy: ghost versions](#go-module-proxy-ghost-versions). |
-| Packagist returns 404 even after the mirror has a tag | First version requires manual one-time submit | Submit once at <https://packagist.org/packages/submit>; auto-syncs from then on. |
+| Packagist returns 404 even after the mirror has a tag | First version requires manual one-time submit | Submit once at <https://packagist.org/packages/submit>; subsequent tags auto-notify via `publish-php`. See [PHP: Packagist notify](#php-packagist-notify). |
+| PHP tag push runs green but Packagist shows no new version | `publish-php` job was `skipped` (pre-v0.9.1 of dotgithub: `if:` lacked `always()` and got short-circuited by GHA's transitive-needs rule) OR consumer `publish.yml` doesn't forward `PACKAGIST_USERNAME` / `PACKAGIST_TOKEN` | Bump `publish.yml` to `@v0` (rolling) — already fixed at `v0.9.1+`. Confirm the consumer `publish.yml` lists both secrets in its `secrets:` block. See [PHP: Packagist notify](#php-packagist-notify). |
+| `composer install` fails: `Invalid version string "0.4.0-experimental.1"` | Composer's parser only accepts `dev`/`alpha`/`beta`/`RC`/`stable` as pre-release identifiers | Rename the php package's pre-release suffix to `alpha.N` (in `composer.json`, the release-please manifest, and `prerelease-type`). Other ecosystems can keep `experimental.N`. See [Composer rejects experimental.N](#composer-rejects-experimentaln-pre-release-identifiers). |
+| Packagist still shows package as `"abandoned": true` after re-notify | The `abandoned` flag is Packagist-side, set via web UI; not in `composer.json`; not cleared by re-indexing | Unmark in the package's edit page on packagist.org (maintainer-only). p2 metadata reflects the change immediately; legacy `/packages/X.json` CDN can lag up to 12h. See [Abandoned flag](#abandoned-flag-is-sticky-and-packagist-side-only). |
+| Php tag publish fails at `parse`: `ecosystem=php requires enable-mirror=true` | Caller set `enable-mirror: false` for a php component, which would silently skip `publish-php` (it `needs: mirror`) | Set `enable-mirror: true` (default) for any caller that ships a php component. See [PHP requires the mirror](#php-requires-the-mirror). |
 | Sibling release-please PRs go CONFLICTING after merging one | Shared manifest; merging A advances it, B's branch is stale | Close the conflicting PR + retrigger release-please via `workflow_dispatch`. See [Retriggering release-please](#retriggering-release-please-after-sibling-pr-conflicts). |
 | release-please PR shows `mergeStateStatus: DIRTY` | Main moved between PR creation and merge attempt | Close PR + delete branch; release-please regenerates on next push. [Details](docs/failure-modes.md#release-please-pr-goes-dirty-after-main-moves) |
 | Created `homebrew-<binary>` or `scoop-<binary>` tap/bucket repo per binary | Misread convention — taps are org-wide, not per-binary | Use `<org>/homebrew-tap` + `<org>/scoop-bucket` (single repos serving every org binary). Delete the per-binary tap/bucket; point goreleaser's `brews[].repository.name` at `homebrew-tap` and `scoops[].repository.name` at `scoop-bucket`. See [Org-wide tap/bucket convention](#org-wide-tapbucket-convention). |
