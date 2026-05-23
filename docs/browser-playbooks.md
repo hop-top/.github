@@ -204,7 +204,7 @@ Use when bootstrapping php publishing. One-time per Packagist account.
 2. Find the **API Token** field. The username (also shown on the page) is what goes into `PACKAGIST_USERNAME`.
 3. Click "Show API Token" / copy the token. Save to `PACKAGIST_TOKEN`.
 4. Set both as **org-level** secrets in the GitHub org settings, scoped to `All repositories` (or the specific repos that ship php packages).
-5. Each consumer `publish.yml` must forward both in its `secrets:` block — see [SKILL.md § Quick-start](../SKILL.md#quick-start).
+5. Each consumer `publish.yml` must forward both in its `secrets:` block — see [Quick-start](../references/quick-start.md).
 
 **Notes**:
 
