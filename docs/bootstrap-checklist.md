@@ -91,7 +91,7 @@ Nothing to pre-register. `proxy.golang.org` resolves on first fetch from the mir
 
 ## 4. Install the publish + release-please workflows
 
-Both files in `.github/workflows/` on the source repo. Templates in [SKILL.md § Quick-start](../SKILL.md#quick-start).
+Both files in `.github/workflows/` on the source repo. Templates in [Quick-start](../references/quick-start.md).
 
 Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish.yml` exists never triggers the workflow (the workflow file isn't in the tag's tree). If you migrate from a prior release flow, plan to retag anything cut under the old flow.
 

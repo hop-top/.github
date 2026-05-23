@@ -133,7 +133,7 @@ ecosystems: |
     pypi-auth: token
 ```
 
-…and pass `PYPI_REGISTRY_TOKEN` in your caller's `secrets:` block. See [PyPI auth modes](../SKILL.md#pypi-auth-modes) in SKILL.md.
+…and pass `PYPI_REGISTRY_TOKEN` in your caller's `secrets:` block. See [PyPI auth modes](../references/secrets.md#pypi-auth-modes).
 
 **Once published once**, switch back to OIDC via the **project-scoped** trusted publisher path on PyPI (`https://pypi.org/manage/project/<name>/settings/publishing/`), which bypasses pending-publisher matching entirely.
 
