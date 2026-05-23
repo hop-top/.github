@@ -56,6 +56,12 @@ on:
       PYPI_REGISTRY_TOKEN:
         description: 'PyPI API token (required only if a py component sets `pypi-auth: token`)'
         required: false
+      PACKAGIST_USERNAME:
+        description: Packagist account username (required only if any component uses ecosystem php)
+        required: false
+      PACKAGIST_TOKEN:
+        description: Packagist API token (required only if any component uses ecosystem php)
+        required: false
       GH_MIRROR_PAT:
         description: PAT with Administration+Contents write on every mirror repo
         required: true
@@ -178,3 +184,58 @@ jobs:
       tag: ${{ needs.parse.outputs.version }}
       homepage: ${{ inputs.homepage }}
       description: ${{ inputs.description-prefix }} of ${{ github.repository }} ${{ needs.parse.outputs.component }}
+
+  publish-php:
+    # PHP "publishing" = notify Packagist to re-index the mirror repo.
+    # Runs after `mirror` because Packagist polls the mirror, not the monorepo.
+    needs: [parse, mirror]
+    if: needs.parse.outputs.ecosystem == 'php' && needs.mirror.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Packagist of new tag
+        env:
+          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+          PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}
+          MIRROR_REPO: ${{ needs.parse.outputs.mirror }}
+          COMPONENT: ${{ needs.parse.outputs.component }}
+          VERSION: ${{ needs.parse.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PACKAGIST_USERNAME:-}" ] || [ -z "${PACKAGIST_TOKEN:-}" ]; then
+            echo "::error::PACKAGIST_USERNAME and PACKAGIST_TOKEN must be provided for php components"
+            exit 1
+          fi
+          if [ -z "${MIRROR_REPO:-}" ]; then
+            echo "::error::parse.outputs.mirror is empty; cannot notify Packagist"
+            exit 1
+          fi
+          echo "Notifying Packagist: component=$COMPONENT version=$VERSION mirror=$MIRROR_REPO"
+          # Packagist's update-package API:
+          #   POST https://packagist.org/api/update-package?username=...&apiToken=...
+          #   Content-Type: application/json
+          #   {"repository":{"url":"https://github.com/<mirror-repo>"}}
+          # `username` and `apiToken` are URL-encoded into the query string; the
+          # JSON body identifies the package by its source-of-record URL.
+          # `curl` writes the body to a tempfile so we can echo it for diagnostics
+          # without depending on stdout interleaving with the status code.
+          body_file="$(mktemp)"
+          printf '{"repository":{"url":"https://github.com/%s"}}' "$MIRROR_REPO" > "$body_file"
+          response="$(mktemp)"
+          # Encode the credentials into the query string ourselves to avoid shell-quoting hazards.
+          user_enc=$(jq -rn --arg v "$PACKAGIST_USERNAME" '$v|@uri')
+          token_enc=$(jq -rn --arg v "$PACKAGIST_TOKEN" '$v|@uri')
+          url="https://packagist.org/api/update-package?username=${user_enc}&apiToken=${token_enc}"
+          http_code=$(
+            curl -sS -o "$response" -w '%{http_code}' \
+              -X POST \
+              -H 'Content-Type: application/json' \
+              --data-binary "@${body_file}" \
+              "$url"
+          )
+          echo "Packagist HTTP $http_code"
+          cat "$response"
+          echo
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Packagist update-package returned HTTP $http_code"
+            exit 1
+          fi
