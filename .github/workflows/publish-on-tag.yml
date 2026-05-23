@@ -200,8 +200,18 @@ jobs:
   publish-php:
     # PHP "publishing" = notify Packagist to re-index the mirror repo.
     # Runs after `mirror` because Packagist polls the mirror, not the monorepo.
+    #
+    # `always()` is required because the transitive needs include
+    # publish-ts/publish-py/publish-rs (via `mirror`), which are `skipped`
+    # for a php tag. Without `always()`, GitHub Actions applies the
+    # implicit "skip downstream if any transitive need is non-success"
+    # rule and skips this job before evaluating the explicit conditions
+    # below. Same pattern as the `mirror` job above.
     needs: [parse, mirror]
-    if: needs.parse.outputs.ecosystem == 'php' && needs.mirror.result == 'success'
+    if: |
+      always() &&
+      needs.parse.outputs.ecosystem == 'php' &&
+      needs.mirror.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Notify Packagist of new tag
