@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/hop-top/.github/compare/v0.9.0...v0.9.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **publish:** gate publish-php with always() so php tags actually notify Packagist ([#43](https://github.com/hop-top/.github/issues/43)) ([9179dce](https://github.com/hop-top/.github/commit/9179dce984eabc5d92330525ac0b5a8484ad8c38))
+
 ## [0.9.0](https://github.com/hop-top/.github/compare/v0.8.1...v0.9.0) (2026-05-23)
 
 
