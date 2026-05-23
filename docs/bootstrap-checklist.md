@@ -30,7 +30,8 @@ Create at `https://github.com/organizations/<org>/settings/secrets/actions`.
 | `NPM_REGISTRY_TOKEN` | ts component | npm Granular Access Token, publish on your scope |
 | `CARGO_REGISTRY_TOKEN` | rs component | crates.io API token. Account must have a **verified email**. |
 | `PYPI_REGISTRY_TOKEN` | py component (token mode) | OPTIONAL — only if you're using `pypi-auth: token` instead of OIDC. PyPI API token (project-scoped after first publish; account-scoped for bootstrap). |
-| `PACKAGIST_USERNAME` + `PACKAGIST_TOKEN` | php component | Packagist account username + API token. Required for `publish-php`'s `update-package` API notify after each mirror push. Mint at <https://packagist.org/profile/edit>. |
+| `PACKAGIST_USERNAME` | php component | Packagist account username. Paired with `PACKAGIST_TOKEN`. Find at <https://packagist.org/profile/edit>. |
+| `PACKAGIST_TOKEN` | php component | Packagist API token. Required for `publish-php`'s `update-package` API notify after each mirror push. Mint at <https://packagist.org/profile/edit>. |
 
 **Secrets you DON'T need** despite documentation in older guides:
 

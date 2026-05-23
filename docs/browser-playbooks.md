@@ -185,7 +185,7 @@ instructions:
 
 **Notes**:
 
-- Packagist auto-polls the mirror every few minutes once registered. New tags would appear via polling, but the `publish-php` workflow job calls Packagist's `update-package` API on every tag to trigger an immediate re-index — versions land in seconds, not minutes. Polling is the fallback path.
+- Packagist auto-polls the mirror once registered (poll cadence varies, can be hours). The `publish-php` workflow job calls Packagist's `update-package` API on every tag to trigger an immediate re-index — versions land within minutes via the p2 metadata endpoint instead of waiting on the polling interval. Polling is the fallback path.
 - The mirror repo must contain a valid `composer.json` at the root (the `mirror-subtree.yml` job already extracts the php/ subtree as the root of the mirror, so this works automatically).
 - For the API notify to work, `PACKAGIST_USERNAME` + `PACKAGIST_TOKEN` must be set as org-level secrets AND forwarded in the caller `publish.yml`'s `secrets:` block.
 - If you registered the source repo by mistake instead of the mirror, Packagist will see ALL the polyglot dirs and fail. Use the mirror URL.
