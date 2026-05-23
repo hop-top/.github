@@ -30,10 +30,11 @@ Create at `https://github.com/organizations/<org>/settings/secrets/actions`.
 | `NPM_REGISTRY_TOKEN` | ts component | npm Granular Access Token, publish on your scope |
 | `CARGO_REGISTRY_TOKEN` | rs component | crates.io API token. Account must have a **verified email**. |
 | `PYPI_REGISTRY_TOKEN` | py component (token mode) | OPTIONAL — only if you're using `pypi-auth: token` instead of OIDC. PyPI API token (project-scoped after first publish; account-scoped for bootstrap). |
+| `PACKAGIST_USERNAME` | php component | Packagist account username. Paired with `PACKAGIST_TOKEN`. Find at <https://packagist.org/profile/edit>. |
+| `PACKAGIST_TOKEN` | php component | Packagist API token. Required for `publish-php`'s `update-package` API notify after each mirror push. Mint at <https://packagist.org/profile/edit>. |
 
 **Secrets you DON'T need** despite documentation in older guides:
 
-- `PACKAGIST_TOKEN`, `PACKAGIST_USERNAME` — no shared workflow reads them. Packagist auto-syncs from the mirror via webhook polling. If you find these in your org secrets, they're dead weight (probably from a prior workflow generation).
 - `PYPI_API_TOKEN` (or any PyPI-specific secret in default mode) — OIDC trusted publishing replaces the need.
 
 ## 2. Create the read-only mirror repos
@@ -77,7 +78,12 @@ Environment name must match `pypi-environment` in your ecosystem config (default
 
 ### Packagist
 
-Submit your **mirror** repo URL at `https://packagist.org/packages/submit`. See [browser-playbooks.md](browser-playbooks.md#packagist-submit-package). Packagist polls the mirror; tags appear as versions automatically. No CI work.
+Two-step:
+
+1. **One-time package submit** (manual): after the **first** tag lands on the `-php` mirror, submit at `https://packagist.org/packages/submit` with the mirror repo URL. See [browser-playbooks.md](browser-playbooks.md#packagist-submit-package). This tells Packagist the package exists.
+2. **Per-tag notify** (automated): `publish-php` POSTs to Packagist's `update-package` API on every subsequent tag, using `PACKAGIST_USERNAME` + `PACKAGIST_TOKEN`. Triggers an immediate re-index instead of waiting for Packagist's polling interval. Without these secrets, the job fails with `::error::PACKAGIST_USERNAME and PACKAGIST_TOKEN must be provided for php components`.
+
+Composer-specific version constraint: the php package's pre-release suffix MUST be one of `dev` | `alpha` | `beta` | `RC` | `stable`. `experimental.N` (which is fine for npm/cargo/Go) breaks `composer install` with `Invalid version string`. Use `alpha.N` for the php package even if other ecosystems use `experimental.N`.
 
 ### Go module proxy
 

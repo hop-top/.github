@@ -185,10 +185,53 @@ instructions:
 
 **Notes**:
 
-- Packagist auto-polls the mirror every few minutes once registered. New tags appear as versions within ~10 minutes; no CI push needed.
+- Packagist auto-polls the mirror once registered (poll cadence varies, can be hours). The `publish-php` workflow job calls Packagist's `update-package` API on every tag to trigger an immediate re-index — versions land within minutes via the p2 metadata endpoint instead of waiting on the polling interval. Polling is the fallback path.
 - The mirror repo must contain a valid `composer.json` at the root (the `mirror-subtree.yml` job already extracts the php/ subtree as the root of the mirror, so this works automatically).
-- Packagist accepts GitHub webhook configuration to nudge polling. Optional; for hop-top repos, polling is fine.
+- For the API notify to work, `PACKAGIST_USERNAME` + `PACKAGIST_TOKEN` must be set as org-level secrets AND forwarded in the caller `publish.yml`'s `secrets:` block.
 - If you registered the source repo by mistake instead of the mirror, Packagist will see ALL the polyglot dirs and fail. Use the mirror URL.
+
+## Packagist: mint API token
+
+Use when bootstrapping php publishing. One-time per Packagist account.
+
+**URL**: `https://packagist.org/profile/edit` (login required)
+
+**Auth**: requires logged-in Packagist session.
+
+**Steps**:
+
+1. Open the profile-edit page.
+2. Find the **API Token** field. The username (also shown on the page) is what goes into `PACKAGIST_USERNAME`.
+3. Click "Show API Token" / copy the token. Save to `PACKAGIST_TOKEN`.
+4. Set both as **org-level** secrets in the GitHub org settings, scoped to `All repositories` (or the specific repos that ship php packages).
+5. Each consumer `publish.yml` must forward both in its `secrets:` block — see [SKILL.md § Quick-start](../SKILL.md#quick-start).
+
+**Notes**:
+
+- The token isn't shown after the page is closed in some browsers — copy on first display.
+- Token can be regenerated; doing so invalidates the previous one.
+- The token grants access to update any package the account maintains; it's not package-scoped.
+
+## Packagist: unmark abandoned
+
+Use when a package was previously marked as abandoned and you want to reactivate it.
+
+**URL**: `https://packagist.org/packages/<vendor>/<pkg>` → "Settings" / package menu
+
+**Auth**: requires logged-in Packagist session as a maintainer of the package.
+
+**Steps**:
+
+1. Open the package page.
+2. Click the package menu (or "Edit" / "Settings" — exact label varies).
+3. Locate "Mark as abandoned" / "Unmark as abandoned" toggle.
+4. Confirm.
+
+**Notes**:
+
+- `composer.json` does NOT carry the abandoned flag — it's a Packagist-side per-package field. Re-indexing from the mirror won't clear it.
+- p2 metadata (`/p2/<vendor>/<pkg>.json`, the composer-install path) updates immediately on unmark.
+- Legacy `/packages/<vendor>/<pkg>.json` (the web-UI / discovery endpoint) can lag the CDN's `s-maxage=43200` (12h) cache. The package functionally works (installable, no warning) the moment p2 updates — only Packagist's own UI surfaces the abandoned label until the legacy endpoint refreshes.
 
 **Verify**:
 
