@@ -23,8 +23,8 @@ workflows themselves, see [`DEVELOPING.md`](DEVELOPING.md).
 After applying this skill, every merge of a release-please standing
 PR cuts a `<component>/v<version>` tag, which triggers:
 
-- The matching language-registry publish (npm / PyPI / crates.io / Packagist notify).
-- A read-only mirror push to `<org>/<name>-<lang>`.
+- The matching language-registry publish (npm / PyPI / crates.io / Packagist notify). Go has no publish-from-source step — proxy.golang.org pulls from the tag directly.
+- A read-only mirror push to `<org>/<name>-<lang>` (or `<org>/<name>` for Go, which takes the bare-name slot — see [Repo naming convention](#repo-naming-convention) below).
 - (Optionally) language-specific installable artifacts via `<lang>-on-tag.yml`.
 
 ## Find your intent
