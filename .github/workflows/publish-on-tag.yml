@@ -128,6 +128,18 @@ jobs:
               print(f"{dst}={entry.get(src, '')}")
           PY
 
+      - id: guard
+        # PHP publishing is the Packagist notify step, and that step `needs:
+        # mirror`. If a caller disables the mirror for a php component, the
+        # whole publish path silently no-ops and Packagist never sees the tag
+        # — the exact regression this workflow was added to prevent. Fail in
+        # `parse` so the caller gets a clear, early error instead of a green
+        # run that did nothing.
+        if: steps.lookup.outputs.ecosystem == 'php' && inputs.enable-mirror == false
+        run: |
+          echo "::error::ecosystem=php requires enable-mirror=true (Packagist notify depends on the mirror job)"
+          exit 1
+
   publish-ts:
     needs: parse
     if: needs.parse.outputs.ecosystem == 'ts'
@@ -222,8 +234,14 @@ jobs:
           printf '{"repository":{"url":"https://github.com/%s"}}' "$MIRROR_REPO" > "$body_file"
           response="$(mktemp)"
           # Encode the credentials into the query string ourselves to avoid shell-quoting hazards.
+          # GitHub's automatic secret masking matches the *raw* secret value; the URL-encoded
+          # form may differ (e.g. `+`, `/`, `=` in a base64-ish token become `%2B`/`%2F`/`%3D`),
+          # so register the encoded values with `::add-mask::` before they appear anywhere
+          # they could land in logs (curl error output, `set -x` traces in future edits, etc.).
           user_enc=$(jq -rn --arg v "$PACKAGIST_USERNAME" '$v|@uri')
           token_enc=$(jq -rn --arg v "$PACKAGIST_TOKEN" '$v|@uri')
+          echo "::add-mask::$user_enc"
+          echo "::add-mask::$token_enc"
           url="https://packagist.org/api/update-package?username=${user_enc}&apiToken=${token_enc}"
           http_code=$(
             curl -sS -o "$response" -w '%{http_code}' \
