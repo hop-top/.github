@@ -128,6 +128,27 @@ jobs:
           PY
           echo "publish_json=$RUNNER_TEMP/publish.json" >> "$GITHUB_OUTPUT"
 
+      # Detect single-language adopters (Go-only / direct-pull registries) so we can
+      # demote publish.yml-dependent checks. Both signals must hold:
+      #   - release-please-config.json has exactly one entry under .packages
+      #   - publish.yml is absent on disk
+      # A multi-package config WITH no publish.yml is still a misconfig.
+      - name: Detect single-language adopter
+        id: detect
+        env:
+          CONFIG_PATH: ${{ inputs.config-path }}
+          PUBLISH_PATH: ${{ inputs.publish-workflow-path }}
+        run: |
+          set -euo pipefail
+          single=false
+          if [[ -f "$CONFIG_PATH" && ! -f "$PUBLISH_PATH" ]]; then
+            count=$(jq -r '.packages // {} | length' "$CONFIG_PATH" 2>/dev/null || echo 0)
+            if [[ "${count:-0}" == "1" ]]; then
+              single=true
+            fi
+          fi
+          echo "single_lang=$single" >> "$GITHUB_OUTPUT"
+
       - name: Run preflight checks
         id: checks
         env:
@@ -137,6 +158,7 @@ jobs:
           PUBLISH_PATH: ${{ inputs.publish-workflow-path }}
           RP_PATH: ${{ inputs.release-please-workflow-path }}
           PUBLISH_JSON: ${{ steps.parse-publish.outputs.publish_json }}
+          SINGLE_LANG: ${{ steps.detect.outputs.single_lang }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
@@ -196,8 +218,12 @@ jobs:
           fi
 
           if [[ ! -f "$PUBLISH_PATH" ]]; then
-            fail "publish workflow not found at $PUBLISH_PATH"
-            fixhint "create $PUBLISH_PATH calling hop-top/.github/.github/workflows/publish-on-tag.yml@v0"
+            if [[ "${SINGLE_LANG:-false}" == "true" ]]; then
+              info "publish workflow absent (single-language adopter — proxy.golang.org / direct registry pull)"
+            else
+              fail "publish workflow not found at $PUBLISH_PATH"
+              fixhint "create $PUBLISH_PATH calling hop-top/.github/.github/workflows/publish-on-tag.yml@v0"
+            fi
           else
             ok "publish workflow found ($PUBLISH_PATH)"
           fi
@@ -395,7 +421,10 @@ jobs:
             echo "### publish workflow"
           } >> "$GITHUB_STEP_SUMMARY"
           ECO_KEYS=""
-          if [[ -f "$PUBLISH_PATH" ]]; then
+          if [[ "${SINGLE_LANG:-false}" == "true" ]]; then
+            info "skipping publish.yml triggers + ecosystems checks (single-language adopter)"
+            info "skipping three-way name alignment (single-language)"
+          elif [[ -f "$PUBLISH_PATH" ]]; then
             # Tag filter — drill into pre-parsed publish.json
             TAGS=$(jq -r '.on.push.tags // [] | .[]' "$PUBLISH_JSON" 2>/dev/null || echo "")
             if echo "$TAGS" | grep -qE '^\*/v\*$'; then
