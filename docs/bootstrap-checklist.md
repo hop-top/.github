@@ -26,12 +26,16 @@ Create at `https://github.com/organizations/<org>/settings/secrets/actions`.
 | Secret | Required for | Notes |
 |---|---|---|
 | `GH_MIRROR_PAT` | every release (mirror push) | Fine-grained PAT, `Administration: RW` + `Contents: RW` on every mirror repo |
-| `GH_RELEASE_PLEASE_PAT` | release-please standing PR | Fine-grained PAT, `Contents: RW` + `Pull Requests: RW` + `Workflows: RW` on the source repo. NOT `GITHUB_TOKEN` (its PRs don't trigger downstream workflows). |
+| `RELEASE_BOT_APP_ID` | release-please standing PR | Numeric App ID of the hop-top release-bot GitHub App. The App must be installed on the source repo with `Contents: RW` + `Pull Requests: RW` + `Workflows: RW`. Paired with `RELEASE_BOT_PRIVATE_KEY`. |
+| `RELEASE_BOT_PRIVATE_KEY` | release-please standing PR | PEM private key for the same App. Mint via the App's GitHub settings page. Paired with `RELEASE_BOT_APP_ID`. |
 | `NPM_REGISTRY_TOKEN` | ts component | npm Granular Access Token, publish on your scope |
 | `CARGO_REGISTRY_TOKEN` | rs component | crates.io API token. Account must have a **verified email**. |
 | `PYPI_REGISTRY_TOKEN` | py component (token mode) | OPTIONAL — only if you're using `pypi-auth: token` instead of OIDC. PyPI API token (project-scoped after first publish; account-scoped for bootstrap). |
 | `PACKAGIST_USERNAME` | php component | Packagist account username. Paired with `PACKAGIST_TOKEN`. Find at <https://packagist.org/profile/edit>. |
 | `PACKAGIST_TOKEN` | php component | Packagist API token. Required for `publish-php`'s `update-package` API notify after each mirror push. Mint at <https://packagist.org/profile/edit>. |
+
+**Why an App token (and NOT `GITHUB_TOKEN` or a long-lived PAT)?**
+The default `GITHUB_TOKEN` can't open release PRs that trigger downstream workflows, and long-lived fine-grained PATs (the older approach this checklist used to teach) have unreliable delivery in practice — the preflight workflow now rejects them. The release-please job mints a short-lived installation token via `actions/create-github-app-token@v1` from `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY` and passes it as `token:` to `googleapis/release-please-action@v4`. The canonical `release-please.yml` snippet lives in [Quick-start](../references/quick-start.md); installing the App and granting scopes is covered in [Add the release-please preflight check](../references/how-to/add-preflight.md).
 
 **Secrets you DON'T need** despite documentation in older guides:
 
