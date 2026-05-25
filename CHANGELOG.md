@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/hop-top/.github/compare/v0.9.2...v0.10.0) (2026-05-25)
+
+
+### Features
+
+* **publish-on-tag:** dispatch repo-map-update on Go release ([#50](https://github.com/hop-top/.github/issues/50)) ([2390ad3](https://github.com/hop-top/.github/commit/2390ad3d15bbd22eb6a6dfb4e7f66dc740db780d))
+
 ## [0.9.2](https://github.com/hop-top/.github/compare/v0.9.1...v0.9.2) (2026-05-24)
 
 
