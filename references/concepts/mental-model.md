@@ -27,18 +27,16 @@ commits → release-please opens standing PR
             ↓ dispatches                   ↓
           publish-{ts,py,rs}.yml +       installable artifacts
             mirror-subtree.yml +         (binaries, formulae, …)
-            publish-php (Packagist) +      ↓
-            notify-vanity (go only)        GitHub Release assets
-            ↓
+            publish-php (Packagist)        ↓
+            ↓                              GitHub Release assets
           registry + mirror push
-            ↓ (go only)
-          hop-top/hop.top repo-map.yml regen → hop.top/<name> resolves
 ```
 
-The `notify-vanity` job is fire-and-forget: a failed dispatch (e.g.
-release-bot App not installed on `hop-top/hop.top`) does not fail
-the release, and the daily cron on `repo-map.yml` remains the
-fallback path.
+For Go: vanity URLs (`hop.top/<name>`) are resolved live by a
+Cloudflare Worker on `hop-top/hop.top` — not produced by the
+release pipeline. The mirror push is what makes them clone-able;
+no extra notification step is needed. See
+[vanity-imports.md](vanity-imports.md).
 
 ## Who owns what
 

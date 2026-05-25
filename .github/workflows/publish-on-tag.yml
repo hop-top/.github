@@ -47,15 +47,6 @@ on:
         type: boolean
         default: true
     secrets:
-      RELEASE_BOT_APP_ID:
-        description: |
-          Org-level App ID used to mint a short-lived installation token
-          for the vanity-URL refresh dispatch. Required only when any
-          component uses ecosystem `go` (notify-vanity job).
-        required: false
-      RELEASE_BOT_PRIVATE_KEY:
-        description: Org-level App private key paired with RELEASE_BOT_APP_ID.
-        required: false
       NPM_REGISTRY_TOKEN:
         description: npm publish token (required only if any component uses ecosystem ts)
         required: false
@@ -277,34 +268,3 @@ jobs:
             exit 1
           fi
 
-  notify-vanity:
-    # Refresh the hop.top vanity-URL routing table on every Go tag.
-    # Without this, `go get hop.top/<name>` waits up to 24h for the
-    # daily cron in hop-top/hop.top to regenerate worker/src/repos.ts.
-    # Fire-and-forget: a dispatch failure (e.g. App not installed on
-    # hop-top/hop.top) must NOT fail the release — daily cron remains
-    # the fallback path. Hence the 60s timeout and the explicit
-    # `continue-on-error` on the dispatch step.
-    needs: parse
-    if: needs.parse.outputs.ecosystem == 'go'
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/create-github-app-token@v3
-        id: app-token
-        with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          owner: hop-top
-          repositories: hop.top
-
-      - name: Dispatch repo-map-update to hop-top/hop.top
-        continue-on-error: true
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          repository: hop-top/hop.top
-          event-type: repo-map-update
-          client-payload: '{"source_repo": "${{ github.repository }}", "ref": "${{ github.ref_name }}"}'
