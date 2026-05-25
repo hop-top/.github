@@ -45,6 +45,7 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 | Understand the overall flow | [references/concepts/mental-model.md](references/concepts/mental-model.md) |
 | Understand why secret names are canonical | [references/concepts/facade-pattern.md](references/concepts/facade-pattern.md) |
 | Understand the install model | [references/concepts/install-model.md](references/concepts/install-model.md) |
+| Understand how `hop.top/<x>` vanity URLs resolve | [references/concepts/vanity-imports.md](references/concepts/vanity-imports.md) |
 | Understand SemVer ∩ PEP 440 ∩ Composer constraints | [references/concepts/version-strings.md](references/concepts/version-strings.md) |
 | Triage a release-pipeline failure | [references/troubleshooting/common-pitfalls.md](references/troubleshooting/common-pitfalls.md) |
 | ts-specific failure | [references/troubleshooting/ts.md](references/troubleshooting/ts.md) |
@@ -74,7 +75,9 @@ Polyglot repos in the hop-top org follow a strict shape:
 **Go ALWAYS takes the bare-name slot.** Vanity imports like
 `hop.top/kit` resolve to `github.com/hop-top/kit` by default; a
 `hop-top/kit-go` repo would break that resolution. `<name>-go`
-does NOT exist in this org — ever.
+does NOT exist in this org — ever. See [vanity imports
+concept](references/concepts/vanity-imports.md) for the resolver
+mechanism and how to override per-name.
 
 **Tag shape is `<component>/v<version>` everywhere**, including
 single-language repos (e.g. `tlc/v1.4.2`, not `v1.4.2`). The

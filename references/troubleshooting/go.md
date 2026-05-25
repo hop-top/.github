@@ -66,6 +66,10 @@ default; a `hop-top/kit-go` repo would break that resolution.
 This means: don't create `hop-top/<name>-go` mirror repos. The Go
 mirror is the bare-name slot `hop-top/<name>`.
 
+For the full resolver mechanism (Cloudflare Worker, `homebrew-tap`
+overrides, convention fallback, cache behavior) see
+[concepts/vanity-imports.md](../concepts/vanity-imports.md).
+
 ## No publish-from-source step
 
 The Go ecosystem has no `publish-go` job. proxy.golang.org pulls
@@ -87,6 +91,8 @@ entirely. See [how-to/single-language-repo.md](../how-to/single-language-repo.md
 | `go get @latest` returns a pseudo-version | Ghost versions in proxy outrank new tag | Bump next release above the highest ghost |
 | `fatal: . does not exist; use git subtree add` | Old `mirror-subtree.yml` doesn't handle root components | Pin to `@v0` (≥ v0.4.1) |
 | `refusing to allow a Personal Access Token to create or update workflow` | Old `mirror-subtree.yml` pushed `.github/workflows/` to mirror | Pin to `@v0` (≥ v0.4.2) |
+| `hop.top/<x>?go-get=1` returns vanity but `go get` fails with 404 | Resolver has no allowlist — convention fallback returns vanity for any name, including typos and unpushed repos | Verify `hop-top/<x>` actually exists on GitHub; if it should clone something else, add `<x>.rb` to `homebrew-tap` with the right `homepage`. See [concepts/vanity-imports.md](../concepts/vanity-imports.md). |
+| `hop.top/<x>?go-get=1` returns the wrong repo URL | `homebrew-tap` has `<x>.rb` with a stale or incorrect `homepage` field | Update or delete `<x>.rb` in `hop-top/homebrew-tap`. Edge cache TTL is 1h. |
 
 ## Next steps
 
