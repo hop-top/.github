@@ -267,3 +267,4 @@ jobs:
             echo "::error::Packagist update-package returned HTTP $http_code"
             exit 1
           fi
+

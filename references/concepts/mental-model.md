@@ -32,6 +32,12 @@ commits → release-please opens standing PR
           registry + mirror push
 ```
 
+For Go: vanity URLs (`hop.top/<name>`) are resolved live by a
+Cloudflare Worker on `hop-top/hop.top` — not produced by the
+release pipeline. The mirror push is what makes them clone-able;
+no extra notification step is needed. See
+[vanity-imports.md](vanity-imports.md).
+
 ## Who owns what
 
 | Half | Lives in | Responsibility |
