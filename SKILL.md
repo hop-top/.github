@@ -25,6 +25,7 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 
 - The matching language-registry publish (npm / PyPI / crates.io / Packagist notify). Go has no publish-from-source step — proxy.golang.org pulls from the tag directly.
 - A read-only mirror push to `<org>/<name>-<lang>` (or `<org>/<name>` for Go, which takes the bare-name slot — see [Repo naming convention](#repo-naming-convention) below).
+- For Go components only: a `repository_dispatch` to `hop-top/hop.top` that refreshes the vanity-URL routing table so `go get hop.top/<name>` resolves immediately instead of waiting up to 24h for the daily cron.
 - (Optionally) language-specific installable artifacts via `<lang>-on-tag.yml`.
 
 ## Find your intent

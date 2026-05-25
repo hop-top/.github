@@ -27,10 +27,18 @@ commits → release-please opens standing PR
             ↓ dispatches                   ↓
           publish-{ts,py,rs}.yml +       installable artifacts
             mirror-subtree.yml +         (binaries, formulae, …)
-            publish-php (Packagist)        ↓
-            ↓                              GitHub Release assets
+            publish-php (Packagist) +      ↓
+            notify-vanity (go only)        GitHub Release assets
+            ↓
           registry + mirror push
+            ↓ (go only)
+          hop-top/hop.top repo-map.yml regen → hop.top/<name> resolves
 ```
+
+The `notify-vanity` job is fire-and-forget: a failed dispatch (e.g.
+release-bot App not installed on `hop-top/hop.top`) does not fail
+the release, and the daily cron on `repo-map.yml` remains the
+fallback path.
 
 ## Who owns what
 
