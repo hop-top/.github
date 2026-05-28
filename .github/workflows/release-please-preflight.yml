@@ -58,6 +58,247 @@ on:
         default: .github/workflows/release-please.yml
 
 jobs:
+  first-publish-risk:
+    # Probes each component's target registry to detect names that
+    # have never been published yet. First publishes through CI fail
+    # for scoped tokens (npm/PyPI/crates.io) — emit a warning with
+    # the bootstrap command so the adopter resolves it BEFORE merging
+    # the standing release-please PR.
+    #
+    # Runs in parallel with `preflight` (no `needs:`) so the slowest
+    # network probe doesn't gate the rest of the checks.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Probe registries for first-publish risk
+        env:
+          CONFIG_PATH: ${{ inputs.config-path }}
+          PUBLISH_PATH: ${{ inputs.publish-workflow-path }}
+        run: |
+          set -uo pipefail
+          {
+            echo "## first-publish registry probe"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ ! -f "$CONFIG_PATH" ]]; then
+            echo "[INFO] release-please-config.json not found at $CONFIG_PATH; skipping probe" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if ! jq empty "$CONFIG_PATH" 2>/dev/null; then
+            echo "[INFO] $CONFIG_PATH is not valid JSON; skipping probe (preflight job will report)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Pre-parse publish.yml the same way the preflight job does — restore
+          # the root `on` key that PyYAML mangles into True, and decode the
+          # `ecosystems` string block into structured JSON for jq.
+          PUBLISH_JSON=""
+          if [[ -f "$PUBLISH_PATH" ]]; then
+            PUBLISH_JSON="$RUNNER_TEMP/publish.json"
+            python3 - <<'PY'
+          import json, os, sys
+          import yaml
+
+          def _restore_root_on_key(doc):
+              if not isinstance(doc, dict):
+                  return doc
+              if True in doc and "on" not in doc:
+                  doc["on"] = doc.pop(True)
+              if False in doc and "off" not in doc:
+                  doc["off"] = doc.pop(False)
+              return doc
+
+          path = os.environ["PUBLISH_PATH"]
+          with open(path, "r", encoding="utf-8") as f:
+              doc = yaml.safe_load(f) or {}
+          doc = _restore_root_on_key(doc)
+          try:
+              eco_str = doc.get("jobs", {}).get("publish", {}).get("with", {}).get("ecosystems")
+              if isinstance(eco_str, str):
+                  doc["jobs"]["publish"]["with"]["ecosystems"] = yaml.safe_load(eco_str) or {}
+          except Exception as exc:
+              print(f"warning: could not pre-decode ecosystems: {exc}", file=sys.stderr)
+          with open(os.environ["RUNNER_TEMP"] + "/publish.json", "w", encoding="utf-8") as f:
+              json.dump(doc, f)
+          PY
+          else
+            echo "[INFO] publish.yml not found at $PUBLISH_PATH; probing config-only ecosystems via release-type only" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          WARNINGS=0
+          # Walk each component in release-please-config.json. Pull its name
+          # / ecosystem from publish.yml when present; otherwise infer from
+          # release-please's release-type (node|python|rust|php).
+          for path in $(jq -r '.packages // {} | keys[]' "$CONFIG_PATH"); do
+            COMPONENT=$(jq -r --arg p "$path" '.packages[$p].component // empty' "$CONFIG_PATH")
+            RELEASE_TYPE=$(jq -r --arg p "$path" '.packages[$p]["release-type"] // .["release-type"] // empty' "$CONFIG_PATH")
+
+            ECOSYSTEM=""
+            PACKAGE=""
+            if [[ -n "$PUBLISH_JSON" && -n "$COMPONENT" ]]; then
+              ECOSYSTEM=$(jq -r --arg c "$COMPONENT" '.jobs.publish.with.ecosystems[$c].ecosystem // empty' "$PUBLISH_JSON" 2>/dev/null || echo "")
+              PACKAGE=$(jq -r --arg c "$COMPONENT" '.jobs.publish.with.ecosystems[$c].package // empty' "$PUBLISH_JSON" 2>/dev/null || echo "")
+            fi
+
+            # Fallback ecosystem inference when publish.yml is absent or has no
+            # matching entry. Best-effort only — without a `package` value we
+            # cannot probe, so skip the probe but record the gap.
+            if [[ -z "$ECOSYSTEM" ]]; then
+              case "$RELEASE_TYPE" in
+                node)    ECOSYSTEM=ts ;;
+                python)  ECOSYSTEM=py ;;
+                rust)    ECOSYSTEM=rs ;;
+                php)     ECOSYSTEM=php ;;
+                go)      ECOSYSTEM=go ;;
+                *)       continue ;;
+              esac
+            fi
+
+            # Resolve PACKAGE from the manifest path when publish.yml didn't give one.
+            if [[ -z "$PACKAGE" ]]; then
+              case "$ECOSYSTEM" in
+                ts)
+                  if [[ -f "$path/package.json" ]]; then
+                    PACKAGE=$(jq -r '.name // empty' "$path/package.json")
+                  fi
+                  ;;
+                py)
+                  if [[ -f "$path/pyproject.toml" ]]; then
+                    PACKAGE=$(python3 - "$path/pyproject.toml" <<'PY'
+          import sys
+          try:
+              import tomllib
+          except ImportError:
+              import tomli as tomllib
+          with open(sys.argv[1], "rb") as f:
+              doc = tomllib.load(f)
+          name = (doc.get("project") or {}).get("name") or (
+              doc.get("tool", {}).get("poetry", {}) or {}
+          ).get("name") or ""
+          print(name)
+          PY
+                    )
+                  fi
+                  ;;
+                rs)
+                  if [[ -f "$path/Cargo.toml" ]]; then
+                    PACKAGE=$(python3 - "$path/Cargo.toml" <<'PY'
+          import sys
+          try:
+              import tomllib
+          except ImportError:
+              import tomli as tomllib
+          with open(sys.argv[1], "rb") as f:
+              doc = tomllib.load(f)
+          print((doc.get("package") or {}).get("name") or "")
+          PY
+                    )
+                  fi
+                  ;;
+                php)
+                  if [[ -f "$path/composer.json" ]]; then
+                    PACKAGE=$(jq -r '.name // empty' "$path/composer.json")
+                  fi
+                  ;;
+              esac
+            fi
+
+            if [[ -z "$PACKAGE" ]]; then
+              echo "[INFO] component '${COMPONENT:-$path}' ($ECOSYSTEM): could not resolve package name; skipping probe" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+
+            case "$ECOSYSTEM" in
+              ts)
+                ENCODED=$(printf '%s' "$PACKAGE" | sed 's|/|%2F|g')
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/$ENCODED")
+                if [[ "$HTTP" == "404" ]]; then
+                  MSG="Package $PACKAGE not on npm yet. First publish via CI may fail; bootstrap manually first: scripts/bootstrap-first-publish.sh npm"
+                  echo "::warning::$MSG"
+                  echo "[WARN]  $MSG" >> "$GITHUB_STEP_SUMMARY"
+                  WARNINGS=$((WARNINGS+1))
+                elif [[ "$HTTP" == "200" ]]; then
+                  echo "[OK]    npm: $PACKAGE exists" >> "$GITHUB_STEP_SUMMARY"
+                else
+                  echo "[INFO] npm probe for $PACKAGE returned HTTP $HTTP" >> "$GITHUB_STEP_SUMMARY"
+                fi
+                ;;
+              py)
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/$PACKAGE/json")
+                if [[ "$HTTP" == "404" ]]; then
+                  MSG="Package $PACKAGE not on PyPI yet. First publish via CI may fail; bootstrap manually first: scripts/bootstrap-first-publish.sh pypi"
+                  echo "::warning::$MSG"
+                  echo "[WARN]  $MSG" >> "$GITHUB_STEP_SUMMARY"
+                  WARNINGS=$((WARNINGS+1))
+                elif [[ "$HTTP" == "200" ]]; then
+                  echo "[OK]    PyPI: $PACKAGE exists" >> "$GITHUB_STEP_SUMMARY"
+                else
+                  echo "[INFO] PyPI probe for $PACKAGE returned HTTP $HTTP" >> "$GITHUB_STEP_SUMMARY"
+                fi
+                ;;
+              rs)
+                # crates.io returns 200 + JSON for both existing and unknown
+                # crates; the discriminator is the `versions` array length.
+                BODY=$(mktemp)
+                HTTP=$(curl -s -o "$BODY" -w "%{http_code}" "https://crates.io/api/v1/crates/$PACKAGE")
+                if [[ "$HTTP" == "200" ]]; then
+                  VERSIONS=$(jq -r '.versions // [] | length' "$BODY" 2>/dev/null || echo 0)
+                  if [[ "${VERSIONS:-0}" == "0" ]]; then
+                    MSG="Package $PACKAGE not on crates.io yet. First publish via CI may fail; bootstrap manually first: scripts/bootstrap-first-publish.sh cargo"
+                    echo "::warning::$MSG"
+                    echo "[WARN]  $MSG" >> "$GITHUB_STEP_SUMMARY"
+                    WARNINGS=$((WARNINGS+1))
+                  else
+                    echo "[OK]    crates.io: $PACKAGE exists ($VERSIONS versions)" >> "$GITHUB_STEP_SUMMARY"
+                  fi
+                elif [[ "$HTTP" == "404" ]]; then
+                  MSG="Package $PACKAGE not on crates.io yet. First publish via CI may fail; bootstrap manually first: scripts/bootstrap-first-publish.sh cargo"
+                  echo "::warning::$MSG"
+                  echo "[WARN]  $MSG" >> "$GITHUB_STEP_SUMMARY"
+                  WARNINGS=$((WARNINGS+1))
+                else
+                  echo "[INFO] crates.io probe for $PACKAGE returned HTTP $HTTP" >> "$GITHUB_STEP_SUMMARY"
+                fi
+                rm -f "$BODY"
+                ;;
+              php)
+                HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://packagist.org/packages/$PACKAGE.json")
+                if [[ "$HTTP" == "404" ]]; then
+                  MSG="Package $PACKAGE not on Packagist yet. First publish via CI may fail; submit manually at https://packagist.org/packages/submit"
+                  echo "::warning::$MSG"
+                  echo "[WARN]  $MSG" >> "$GITHUB_STEP_SUMMARY"
+                  WARNINGS=$((WARNINGS+1))
+                elif [[ "$HTTP" == "200" ]]; then
+                  echo "[OK]    Packagist: $PACKAGE exists" >> "$GITHUB_STEP_SUMMARY"
+                else
+                  echo "[INFO] Packagist probe for $PACKAGE returned HTTP $HTTP" >> "$GITHUB_STEP_SUMMARY"
+                fi
+                ;;
+              go)
+                echo "[INFO] go: proxy.golang.org pulls from git tag — no first-publish bootstrap needed" >> "$GITHUB_STEP_SUMMARY"
+                ;;
+              *)
+                echo "[INFO] unknown ecosystem '$ECOSYSTEM' for component '${COMPONENT:-$path}'" >> "$GITHUB_STEP_SUMMARY"
+                ;;
+            esac
+          done
+
+          {
+            echo ""
+            echo "Warnings: $WARNINGS"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Annotation-only by design — never fails the job. The main
+          # `preflight` job owns the fail-on policy; this probe surfaces
+          # advisory signals only.
+          exit 0
+
   preflight:
     runs-on: ubuntu-latest
     permissions:
