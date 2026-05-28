@@ -1,5 +1,12 @@
 name: publish-py (reusable)
 
+# First publish of a brand-new PyPI project cannot run through this
+# workflow with a project-scoped token (the project doesn't exist
+# yet, so the scope has nothing to act on). See SKILL.md's "First
+# publish of a new package" / "PyPI" section for the bootstrap
+# options (account-scoped token via `uv run twine upload`, or
+# pre-registering OIDC trusted publishing on pypi.org).
+
 on:
   workflow_call:
     inputs:
