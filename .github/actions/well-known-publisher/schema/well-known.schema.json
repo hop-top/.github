@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hop-top/.github/main/.github/actions/well-known-publisher/schema/well-known.schema.json",
+  "title": "well-known publisher config",
+  "type": "object",
+  "required": ["version", "resources"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Schema version; only 1 is accepted today.",
+      "const": 1
+    },
+    "output_dir": {
+      "description": "Directory generators write into. Caller-provided default wins over this.",
+      "type": "string",
+      "default": "dist/.well-known"
+    },
+    "deploy": {
+      "description": "Optional deploy mode handled by the caller workflow.",
+      "enum": ["commit", "pages", "worker"]
+    },
+    "worker_endpoint": {
+      "description": "Endpoint used when deploy = worker; ignored otherwise.",
+      "type": "string",
+      "format": "uri"
+    },
+    "resources": {
+      "description": "Per-resource generator configs. Future generators add a key here via the registry plus a $defs entry.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "custom": {
+      "description": "Escape hatch: arbitrary files written under .well-known/.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/custom_entry" }
+    }
+  },
+  "$defs": {
+    "custom_entry": {
+      "type": "object",
+      "required": ["path", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^\\.well-known/"
+        },
+        "content_type": {
+          "type": "string",
+          "default": "application/octet-stream"
+        },
+        "body": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
