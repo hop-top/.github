@@ -74,6 +74,10 @@ name: publish
 on:
   push:
     tags: ['*/v*']
+  # Manual trigger: re-run a publish for an existing tag without re-pushing.
+  # Caveat — `workflow_dispatch` replays against the workflow file at the
+  # tag's commit, not main HEAD. See `how-to/retrigger-failed-publish.md`.
+  workflow_dispatch: {}
 
 jobs:
   publish:

@@ -38,6 +38,9 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 | Stay in an alpha/beta/rc channel | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
 | Keep a monorepo Release-free (Releases only on mirrors) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
 | Re-trigger a failed publish | [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md) |
+| Understand why a workflow-file fix on main doesn't apply on rerun | [Re-runs use the tag's workflow snapshot, not main](#re-runs-use-the-tags-workflow-snapshot-not-main) |
+| Bootstrap a hand-populated mirror before the first tag | [Bootstrap-mirror gotcha](#bootstrap-mirror-gotcha) |
+| Understand why an umbrella tag (`<umbrella>/vX.Y.Z`) shows all-skipped | [Umbrella / meta-component tags](#umbrella--meta-component-tags) |
 | Re-trigger release-please after sibling-PR conflicts | [references/how-to/retrigger-release-please.md](references/how-to/retrigger-release-please.md) |
 | Ship installable binaries (Homebrew, Scoop, WinGet, …) | [references/how-to/ship-binaries.md](references/how-to/ship-binaries.md) |
 | Look up a secret name | [references/secrets.md](references/secrets.md) |
@@ -119,6 +122,70 @@ If they drift, `publish-on-tag.yml`'s `ecosystems[<component>]`
 lookup fails with `Unknown component '<tag-prefix>'` at parse
 time, before any publish work happens.
 
+## Umbrella / meta-component tags
+
+Some release-please setups define an umbrella entry (the `.` root in
+the manifest, e.g. `poly-cite`, `poly-uri`, `poly-kit`) that bumps
+repo-level meta changes with no publish target. Its tag fires
+`publish.yml` like any other; `publish-on-tag.yml` resolves the
+component prefix against the caller's `ecosystems` map, finds no
+match, and **skips cleanly with a `::notice::`** — every downstream
+job no-ops via the empty `ecosystem` output. The workflow finishes
+green with all publish jobs marked `skipped`. Do NOT add a stub
+entry to `ecosystems` for the umbrella; the skip is the contract.
+
+## Bootstrap-mirror gotcha
+
+`mirror-subtree.yml` does a non-force subtree push, which assumes
+the mirror's `main` is empty or a strict descendant of what the
+subtree split produces. Two bootstrap shapes are safe:
+
+1. **Empty mirror repo** — `gh repo create <org>/<name>-<lang>
+   --public --description "..."` and stop. The first tag's subtree
+   push initialises `main` cleanly.
+2. **Pre-registration mirror** — if you must seed `main` before the
+   first tag (e.g. to register the repo on Packagist or claim a
+   crates.io name), populate `main` with `git subtree split` from
+   the polyglot source at the exact commit the first tag will land
+   on, then push. Anything else (hand-written `README.md`,
+   placeholder commits, license-only seed) will cause the first
+   subtree publish to non-fast-forward and the `mirror` job to fail.
+
+If you hit a non-fast-forward on the first publish:
+
+- Delete and recreate the mirror as empty, then re-run the publish.
+- OR hand-push a `git subtree split` of the source-commit-for-the-tag
+  to the mirror's `main`, then re-run.
+
+Force-push is intentionally NOT the default — a stray force from
+`mirror-subtree.yml` would silently destroy a hand-written
+pre-registration commit on the mirror. A `bootstrap-mirror: true`
+per-component opt-in flag is a candidate future enhancement (would
+flip the first publish to `--force-with-lease` then auto-revert);
+not implemented yet.
+
+## Re-runs use the tag's workflow snapshot, not main
+
+When `publish.yml` fails on a tag and you fix the workflow on main,
+**re-running the failed run still uses the workflow file from the
+tag's commit, not current main**. Same for `workflow_dispatch` reruns
+of an existing tag. The same applies to the reusable workflow
+references (`@v0`, `@main`) — they're resolved at the original tag's
+push time and frozen for the rerun.
+
+Two paths to apply a main-side fix to an already-pushed tag:
+
+- **Delete + recreate the tag at current main** — see
+  [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md).
+  Reliable; works for both `publish.yml` and reusable-workflow fixes.
+- **Cut a new patch tag with the fix included** — `gh release create
+  <component>/v<next-patch>` after the fix lands on main. Use when
+  the original tag is already published (npm/PyPI/etc. won't accept
+  a re-publish of the same version anyway).
+
+See [references/concepts/mental-model.md § Snapshot semantics](references/concepts/mental-model.md#snapshot-semantics)
+for the full reasoning.
+
 ## Quick start (TL;DR)
 
 Two workflow files in your repo. Full snippets:
@@ -129,6 +196,12 @@ Two workflow files in your repo. Full snippets:
 on:
   push:
     tags: ['*/v*']
+  # Manual trigger: re-run a publish for an existing tag without re-pushing.
+  # Note: GitHub Actions snapshots the workflow file at the tag's commit; a
+  # `workflow_dispatch` rerun still replays against that snapshot. To pick up
+  # fixes landed on main, delete + recreate the tag — see
+  # `references/how-to/retrigger-failed-publish.md`.
+  workflow_dispatch: {}
 
 jobs:
   publish:
@@ -155,4 +228,5 @@ jobs:
 - [`docs/browser-playbooks.md`](docs/browser-playbooks.md) — verbal step-by-step walkthroughs for web-side setup (PyPI trusted publisher, PyPI API token mint, Packagist registration, Packagist token mint, Packagist unmark abandoned, GitHub Environment creation, crates.io email verification).
 - [`docs/architecture.md`](docs/architecture.md) — full control/data flow diagrams + design rationale.
 - [`docs/generated-docs.md`](docs/generated-docs.md) — generated doc regions: metadata source, in-repo renderer, cog markers, staleness gate.
+- [`docs/adr/`](docs/adr/) — architecture decision records.
 - `custom-release-please` skill (separate) — the consumer-side release-please configuration concerns.
