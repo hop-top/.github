@@ -107,8 +107,20 @@ jobs:
           comp = os.environ["COMPONENT"]
           entry = eco.get(comp)
           if not entry:
-              sys.stderr.write(f"::error::Unknown component {comp!r}\n")
-              sys.exit(1)
+              # Umbrella / meta components have no ecosystem entry by design:
+              # release-please umbrella bumps (the `.` root in a separate-PRs
+              # manifest) tag the repo at `<umbrella>/vX.Y.Z` for repo-level
+              # meta changes with no publish target. Emit a notice and skip
+              # cleanly so every downstream job no-ops via the empty
+              # `ecosystem` output (`if: needs.parse.outputs.ecosystem != ''`)
+              # instead of failing the workflow with red X.
+              sys.stderr.write(
+                  f"::notice::Component {comp!r} has no ecosystem entry; "
+                  f"skipping publish (umbrella component)\n"
+              )
+              for k in ("dir", "ecosystem", "mirror", "package"):
+                  print(f"{k}=")
+              sys.exit(0)
           # Fields: `dir`, `ecosystem`, `mirror` are required by downstream jobs;
           # `package` is informational (passed through for messages/logs).
           for k in ("dir", "ecosystem", "mirror", "package"):
@@ -142,7 +154,10 @@ jobs:
 
   publish-ts:
     needs: parse
-    if: needs.parse.outputs.ecosystem == 'ts'
+    # `ecosystem != ''` guard short-circuits umbrella / meta-component tags
+    # (see parse.lookup). The `== 'ts'` already implies non-empty but the
+    # explicit pair keeps every downstream gate visually consistent.
+    if: needs.parse.outputs.ecosystem != '' && needs.parse.outputs.ecosystem == 'ts'
     uses: hop-top/.github/.github/workflows/publish-ts.yml@main
     secrets:
       NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
@@ -155,7 +170,7 @@ jobs:
 
   publish-py:
     needs: parse
-    if: needs.parse.outputs.ecosystem == 'py'
+    if: needs.parse.outputs.ecosystem != '' && needs.parse.outputs.ecosystem == 'py'
     uses: hop-top/.github/.github/workflows/publish-py.yml@main
     secrets:
       PYPI_REGISTRY_TOKEN: ${{ secrets.PYPI_REGISTRY_TOKEN }}
@@ -169,7 +184,7 @@ jobs:
 
   publish-rs:
     needs: parse
-    if: needs.parse.outputs.ecosystem == 'rs'
+    if: needs.parse.outputs.ecosystem != '' && needs.parse.outputs.ecosystem == 'rs'
     uses: hop-top/.github/.github/workflows/publish-rs.yml@main
     secrets:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -184,6 +199,7 @@ jobs:
       always() &&
       inputs.enable-mirror &&
       needs.parse.result == 'success' &&
+      needs.parse.outputs.ecosystem != '' &&
       needs.publish-ts.result != 'failure' &&
       needs.publish-py.result != 'failure' &&
       needs.publish-rs.result != 'failure'
@@ -208,8 +224,13 @@ jobs:
     # rule and skips this job before evaluating the explicit conditions
     # below. Same pattern as the `mirror` job above.
     needs: [parse, mirror]
+    # `secrets.*` cannot appear in job-level `if:` — the per-secret presence
+    # check lives in the first step below and emits a `::notice::` + clean
+    # skip when credentials weren't forwarded. Empty `ecosystem` (umbrella
+    # tag) short-circuits this whole job via the first conjunct.
     if: |
       always() &&
+      needs.parse.outputs.ecosystem != '' &&
       needs.parse.outputs.ecosystem == 'php' &&
       needs.mirror.result == 'success'
     runs-on: ubuntu-latest
@@ -223,9 +244,14 @@ jobs:
           VERSION: ${{ needs.parse.outputs.version }}
         run: |
           set -euo pipefail
+          # Clean skip when caller hasn't wired Packagist credentials —
+          # a php-tag pipeline still publishes the mirror; missing
+          # PACKAGIST_* means "don't notify Packagist." A red workflow on
+          # a missing-secret config error obscures the real outcome.
+          # Hard-fail belongs in the preflight check, not here.
           if [ -z "${PACKAGIST_USERNAME:-}" ] || [ -z "${PACKAGIST_TOKEN:-}" ]; then
-            echo "::error::PACKAGIST_USERNAME and PACKAGIST_TOKEN must be provided for php components"
-            exit 1
+            echo "::notice::PACKAGIST_USERNAME and/or PACKAGIST_TOKEN not provided; skipping Packagist notify"
+            exit 0
           fi
           if [ -z "${MIRROR_REPO:-}" ]; then
             echo "::error::parse.outputs.mirror is empty; cannot notify Packagist"
