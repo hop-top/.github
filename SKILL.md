@@ -34,6 +34,7 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 | Set up a brand-new repo's release pipeline | [references/quick-start.md](references/quick-start.md) |
 | Run the full first-time-setup checklist | [docs/bootstrap-checklist.md](docs/bootstrap-checklist.md) |
 | Publish a brand-new package for the first time | [First publish of a new package](#first-publish-of-a-new-package) |
+| Diagnose a first-publish CI failure | [Diagnosing first-publish failures](#diagnosing-first-publish-failures) |
 | Catch misconfigurations at PR time | [references/how-to/add-preflight.md](references/how-to/add-preflight.md) |
 | Configure a single-language repo (no polyglot split) | [references/how-to/single-language-repo.md](references/how-to/single-language-repo.md) |
 | Stay in an alpha/beta/rc channel | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
@@ -234,6 +235,42 @@ The reasoning for "not in CI secrets": an unrestricted token can
 publish to ANY crate name on the account. CI secrets are accessible
 to anyone with `pull_request` against the repo via malicious
 workflow edits in a branch. Keep blast radius small.
+
+## Diagnosing first-publish failures
+
+### npm 2FA in "Auth and writes" mode breaks CI publish
+
+Symptom: CI publish fails with `ERR_PNPM_OTP_NON_INTERACTIVE` even
+when `NPM_REGISTRY_TOKEN` is valid and the package already exists.
+Often preceded by `OIDC skipped: 404` in the same log — that line
+is informational (we're not using OIDC for npm) and easy to misread
+as a token / registry / scope issue.
+
+Cause: the npm account's 2FA mode is set to "Auth and writes",
+which requires an OTP on every publish. CI has no interactive
+session and cannot supply an OTP — no amount of token rotation
+will fix this.
+
+Fix: switch the account's 2FA mode to "Auth only" at
+<https://www.npmjs.com/settings/~/profile>. Tokens still work; the
+OTP requirement only applies to interactive web/CLI logins. After
+the change, the next CI publish succeeds without code changes.
+
+### Expired npm token returns HTTP 404, not 401/403
+
+Symptom:
+`pnpm: 404 Not Found - PUT https://registry.npmjs.org/@scope%2fname - Not found`.
+
+This looks identical to "package doesn't exist in scope" or
+"token lacks publish permission". It's actually "token expired" —
+npm returns 404 instead of 401/403 to avoid leaking package
+existence to unauthenticated callers.
+
+Diagnostic: before assuming scope / permission issues, check the
+token's expiry at
+<https://www.npmjs.com/settings/~/tokens>. If expired, mint a
+replacement, update the `NPM_REGISTRY_TOKEN` secret, and re-run
+the failed workflow run.
 
 ## See also
 
