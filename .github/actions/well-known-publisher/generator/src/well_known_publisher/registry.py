@@ -3,17 +3,44 @@
 Generator modules under ``well_known_publisher.resources.*`` self-register
 via the :func:`register` decorator. ``discover()`` imports every submodule
 so decorators fire, then returns the populated registry.
+
+Return contract
+---------------
+
+Each generator MUST return a :class:`GeneratorResult` (a frozen dataclass
+holding ``files: list[Path]`` and ``warnings: int``). The ``warnings``
+counter is the number of ``::warning::`` annotations the generator
+emitted during the run — the framework propagates this into the
+``manifest`` output so caller workflows can fail-on-warning if they
+choose. Generators that emit zero warnings simply return
+``GeneratorResult(files=[...], warnings=0)``.
 """
 
 from __future__ import annotations
 
 import importlib
 import pkgutil
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
-GeneratorFn = Callable[[dict, Path], Iterable[Path]]
-"""(config_subtree, output_dir) -> iterable of emitted file paths."""
+
+@dataclass(frozen=True)
+class GeneratorResult:
+    """What every registered generator returns.
+
+    ``files`` is the list of paths the generator wrote (used to build the
+    ``files_written`` output). ``warnings`` is the number of
+    ``::warning::`` annotations the generator emitted — surfaced in the
+    ``manifest`` output for caller workflows.
+    """
+
+    files: list[Path] = field(default_factory=list)
+    warnings: int = 0
+
+
+GeneratorFn = Callable[[dict, Path], "GeneratorResult"]
+"""(config_subtree, output_dir) -> :class:`GeneratorResult`."""
 
 _REGISTRY: dict[str, GeneratorFn] = {}
 

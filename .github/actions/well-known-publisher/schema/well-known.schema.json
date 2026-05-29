@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hop-top/.github/main/.github/actions/well-known-publisher/schema/well-known.schema.json",
   "title": "well-known publisher config",
+  "description": "Config for the well-known publisher composite action. Any string value may reference an env var via ${{ env.NAME }}; substitution is unconditional and has NO literal escape, so do not rely on round-tripping GitHub Actions expression syntax inside custom.body or other string fields. To emit the literal token, sidestep the regex (Unicode-escape the dollar sign or build the string from a real resource generator instead of custom:).",
   "type": "object",
   "required": ["version", "resources"],
   "additionalProperties": false,
