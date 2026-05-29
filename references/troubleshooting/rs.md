@@ -13,6 +13,18 @@ Rust/crates.io-specific failure modes.
 You can diagnose the most common rs failure modes and pick the
 right fix.
 
+## First publish of a new crate
+
+Post-2023 crates.io tokens carry name-scope restrictions: a
+name-scoped token cannot publish a crate name it doesn't already
+include. First publish of a new crate requires an *unrestricted*
+token or a local `cargo login` session — never put the unrestricted
+token in CI secrets.
+
+Token-scoping reasoning + local `cargo publish` recipe:
+[SKILL.md § First publish of a new package — crates.io](../../SKILL.md#cratesio)
+and [`scripts/bootstrap-first-publish.sh cargo`](../../scripts/README.md).
+
 ## target/ + cargo publish dirty-tree check
 
 `cargo publish` refuses to package if the working tree has

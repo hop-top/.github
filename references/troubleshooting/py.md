@@ -14,6 +14,17 @@ Python/PyPI-specific failure modes.
 You can diagnose the most common py failure modes and pick the
 right fix.
 
+## First publish of a new PyPI project
+
+Project-scoped API tokens cannot create new PyPI projects, and OIDC
+trusted publishing requires pre-registering the project name on
+pypi.org before first publish. Symptoms look like auth failures
+but reflect a chicken-and-egg in PyPI's permission model.
+
+Token scoping rules + OIDC pre-registration walkthrough:
+[SKILL.md § First publish of a new package — PyPI](../../SKILL.md#pypi)
+and [`scripts/bootstrap-first-publish.sh pypi`](../../scripts/README.md).
+
 ## OIDC `invalid-publisher`
 
 Symptom: PyPI publish step fails with `invalid-publisher` even

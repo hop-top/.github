@@ -13,6 +13,36 @@ TypeScript/Node-specific failure modes in the publish-on-tag pipeline.
 You can diagnose the most common ts failure modes and pick the
 right escape hatch.
 
+## First publish of a new `@scope/name`
+
+CI's `NPM_REGISTRY_TOKEN` is scoped to the org and can publish
+*updates* but cannot *create* a new `@scope/name`. Symptoms vary
+(404, 403, "package not found") and look like token problems but
+aren't. Use the local bootstrap path before CI takes over.
+
+See [SKILL.md § First publish of a new package — npm](../../SKILL.md#npm)
+and [`scripts/bootstrap-first-publish.sh npm`](../../scripts/README.md).
+
+## `ERR_PNPM_OTP_NON_INTERACTIVE` in CI publish
+
+Symptom: CI publish fails with `ERR_PNPM_OTP_NON_INTERACTIVE`,
+often after a misleading `OIDC skipped: 404` line. Token is valid,
+package exists. Cause is the npm account's 2FA mode set to "Auth
+and writes" — CI has no interactive OTP channel.
+
+Full diagnosis + fix:
+[SKILL.md § npm 2FA in "Auth and writes" mode breaks CI publish](../../SKILL.md#npm-2fa-in-auth-and-writes-mode-breaks-ci-publish).
+
+## `404 Not Found` on `PUT /@scope%2fname`
+
+Symptom: `pnpm: 404 Not Found - PUT https://registry.npmjs.org/@scope%2fname`.
+Looks like a missing package or scope/permission problem — usually
+it's an expired token. npm returns 404 instead of 401/403 to
+unauthenticated callers to avoid leaking package existence.
+
+Diagnostic + fix:
+[SKILL.md § Expired npm token returns HTTP 404, not 401/403](../../SKILL.md#expired-npm-token-returns-http-404-not-401403).
+
 ## Native bindings + --ignore-scripts
 
 `publish-ts.yml`'s default `test-command` uses `--ignore-scripts`
