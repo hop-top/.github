@@ -9,7 +9,15 @@ commit, GitHub Pages, or a Cloudflare Worker.
 | Name          | Default                     | Description                                   |
 |---------------|-----------------------------|-----------------------------------------------|
 | `config_path` | `.github/well-known.yaml`   | YAML driving the generation.                  |
-| `output_dir`  | `dist/.well-known`          | Where generated files are written.            |
+| `output_dir`  | _unset_                     | Where generated files are written; when omitted, the config's `output_dir` wins, falling back to `dist/.well-known`. |
+
+### `output_dir` precedence
+
+The directory is resolved with the following precedence, highest first:
+
+1. The composite action input `output_dir` (CLI flag `--output-dir`).
+2. The `output_dir` value declared in the YAML config file.
+3. The schema default `dist/.well-known`.
 
 ## Outputs
 
@@ -53,6 +61,55 @@ Per-resource keys under `resources:` are added by individual generator
 modules. See `generator/src/well_known_publisher/resources/` and the JSON
 Schema at `schema/well-known.schema.json` for the contract each generator
 must satisfy.
+
+### Adding a resource
+
+A resource generator is a function with signature
+`(sub_cfg: dict, out_dir: Path) -> GeneratorResult`, decorated with
+`@register("<name>")`. The `<name>` MUST match both the YAML key under
+`resources:` and a `$defs/<name>` entry in the JSON Schema referenced
+from `properties.resources.properties.<name>`.
+
+Return contract:
+
+- `GeneratorResult.files` — list of `Path`s the generator wrote (surface in
+  the `files_written` output).
+- `GeneratorResult.warnings` — number of `::warning::` annotations the
+  generator emitted (surfaced in the `manifest` output so caller
+  workflows can fail-on-warning if desired).
+
+Minimal example:
+
+```python
+from pathlib import Path
+from well_known_publisher.registry import GeneratorResult, register
+
+
+@register("my_resource")
+def generate(sub_cfg: dict, out_dir: Path) -> GeneratorResult:
+    target = out_dir / "my-resource.json"
+    target.write_text("{}")
+    return GeneratorResult(files=[target], warnings=0)
+```
+
+## Environment interpolation
+
+Any string value may reference an environment variable using the
+GitHub-Actions-style placeholder `${{ env.NAME }}`. The loader substitutes
+each occurrence with `os.environ['NAME']` before schema validation and
+emits a workflow `::error::` annotation (with the offending line number)
+for any missing variable.
+
+> **WARNING — no literal escape.** Substitution is unconditional in every
+> string value, including `custom.body`. A `custom:` entry whose body
+> documents `${{ env.GITHUB_SHA }}` (or any other GitHub Actions
+> expression) will be **silently rewritten** at generate time. There is
+> no built-in escape today. To publish the literal token, sidestep the
+> regex — write the dollar sign with its Unicode escape (`$`) inside
+> a JSON-encoded YAML string, split the placeholder across a YAML
+> concatenation, or generate the file from a real resource module instead
+> of `custom:`. Do not rely on this action to round-trip the
+> documentation as-is.
 
 ## Schema validation
 
