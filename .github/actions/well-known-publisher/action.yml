@@ -11,9 +11,11 @@ inputs:
     required: false
     default: .github/well-known.yaml
   output_dir:
-    description: Directory where generated files are written.
+    description: |
+      Directory where generated files are written. When omitted, the
+      generator falls back to the config file's ``output_dir`` (or the
+      schema default ``dist/.well-known`` when that is also unset).
     required: false
-    default: dist/.well-known
 
 outputs:
   files_written:
@@ -46,6 +48,8 @@ runs:
         WKP_CONFIG_PATH: ${{ inputs.config_path }}
         WKP_OUTPUT_DIR: ${{ inputs.output_dir }}
       run: |
-        python -m well_known_publisher \
-          --config "${WKP_CONFIG_PATH}" \
-          --output-dir "${WKP_OUTPUT_DIR}"
+        args=( --config "${WKP_CONFIG_PATH}" )
+        if [ -n "${WKP_OUTPUT_DIR}" ]; then
+          args+=( --output-dir "${WKP_OUTPUT_DIR}" )
+        fi
+        python -m well_known_publisher "${args[@]}"

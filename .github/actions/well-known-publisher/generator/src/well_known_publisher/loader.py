@@ -2,8 +2,10 @@
 
 Responsibilities (in order):
 
-1. Read YAML via ``ruamel.yaml`` in safe mode.
-2. Validate against the JSON Schema bundled with the action.
+1. Read YAML via ``ruamel.yaml`` in round-trip mode (preserves comments,
+   ordering, and line numbers via ``CommentedMap.lc``).
+2. Validate against the JSON Schema bundled with the action; surface each
+   error with the offending source line when available.
 3. Resolve defaults (``output_dir``, ``deploy``).
 4. Resolve any ISO 8601 duration strings tagged in the schema into absolute
    timestamps (used by the security.txt ``Expires:`` field, among others).
@@ -19,9 +21,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from importlib import resources as importlib_resources
 from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence
 
@@ -48,7 +49,6 @@ class Config:
     custom: Sequence[dict]
     source_path: Path
     worker_endpoint: str | None = None
-    extras: Mapping[str, Any] = field(default_factory=dict)
 
 
 class ConfigError(Exception):
@@ -161,6 +161,32 @@ def resolve_duration_to_timestamp(
 
 
 # ---------------------------------------------------------------------------
+# Line-number lookup (round-trip YAML preserves these on CommentedMap.lc)
+# ---------------------------------------------------------------------------
+
+def _line_for_path(data: Any, path: Sequence[Any]) -> int | None:
+    """Walk ``data`` along ``path`` and return the 1-indexed source line.
+
+    Returns the line of the most-specific node we can resolve. Falls back to
+    the deepest parent we could enter when an intermediate key is missing.
+    """
+    node = data
+    line: int | None = None
+    for key in path:
+        lc = getattr(node, "lc", None)
+        if lc is not None and getattr(lc, "data", None):
+            entry = lc.data.get(key) if isinstance(lc.data, dict) else None
+            if entry is not None:
+                # ruamel format: (key_line, key_col, value_line, value_col)
+                line = entry[0] + 1
+        try:
+            node = node[key]
+        except (KeyError, IndexError, TypeError):
+            break
+    return line
+
+
+# ---------------------------------------------------------------------------
 # Env interpolation
 # ---------------------------------------------------------------------------
 
@@ -211,7 +237,10 @@ def load(config_path: Path) -> Config:
         ann.error(msg, file=str(config_path))
         raise ConfigError([msg])
 
-    yaml = YAML(typ="safe")
+    # Round-trip mode preserves ``.lc`` metadata (line/column) on every
+    # ``CommentedMap`` and ``CommentedSeq`` node — needed for line-numbered
+    # workflow annotations.
+    yaml = YAML(typ="rt")
     try:
         with config_path.open("r", encoding="utf-8") as fh:
             raw = yaml.load(fh)
@@ -240,8 +269,9 @@ def load(config_path: Path) -> Config:
     validator = Draft202012Validator(schema)
     for verr in sorted(validator.iter_errors(interpolated), key=lambda e: e.path):
         loc = "/".join(str(p) for p in verr.absolute_path) or "<root>"
+        line = _line_for_path(raw, list(verr.absolute_path))
         msg = f"schema: {loc}: {verr.message}"
-        ann.error(msg, file=str(config_path))
+        ann.error(msg, file=str(config_path), line=line)
         errors.append(msg)
 
     if errors:
@@ -255,14 +285,6 @@ def load(config_path: Path) -> Config:
     resources = dict(interpolated.get("resources") or {})
     custom = list(interpolated.get("custom") or [])
     worker_endpoint = interpolated.get("worker_endpoint")
-    extras = {
-        k: v
-        for k, v in interpolated.items()
-        if k not in {
-            "version", "output_dir", "deploy", "resources",
-            "custom", "worker_endpoint",
-        }
-    }
 
     return Config(
         version=version,
@@ -272,5 +294,4 @@ def load(config_path: Path) -> Config:
         custom=custom,
         source_path=config_path,
         worker_endpoint=worker_endpoint,
-        extras=extras,
     )

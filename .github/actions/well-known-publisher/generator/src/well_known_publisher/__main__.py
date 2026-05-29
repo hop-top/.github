@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import annotations as ann
 from .loader import Config, ConfigError, load
-from .registry import GeneratorFn, discover
+from .registry import GeneratorFn, GeneratorResult, discover
 
 
 def _write_github_output(name: str, value: str) -> None:
@@ -77,13 +77,14 @@ def _run_generators(
                 {"generator": name, "files": [], "warnings": 1, "skipped": True}
             )
             continue
-        produced = [Path(p) for p in fn(sub_cfg, out_dir)]
+        result: GeneratorResult = fn(sub_cfg, out_dir)
+        produced = [Path(p) for p in result.files]
         files.extend(produced)
         manifest.append(
             {
                 "generator": name,
                 "files": [str(p) for p in produced],
-                "warnings": 0,
+                "warnings": int(result.warnings),
             }
         )
     return files, manifest
@@ -92,7 +93,10 @@ def _run_generators(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="well-known-publisher")
     parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--output-dir", required=True, type=Path)
+    # --output-dir is OPTIONAL so the config's ``output_dir`` (or the
+    # schema default) can win when the caller omits the flag. Precedence:
+    # CLI flag > config value > schema/Config default (``dist/.well-known``).
+    parser.add_argument("--output-dir", default=None, type=Path)
     args = parser.parse_args(argv)
 
     try:
@@ -102,7 +106,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(str(exc) + "\n")
         return 2
 
-    # Caller-supplied --output-dir wins over the config value.
     out_dir: Path = args.output_dir or cfg.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
