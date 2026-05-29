@@ -68,6 +68,7 @@ jobs:
     # Runs in parallel with `preflight` (no `needs:`) so the slowest
     # network probe doesn't gate the rest of the checks.
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -80,7 +81,7 @@ jobs:
           CONFIG_PATH: ${{ inputs.config-path }}
           PUBLISH_PATH: ${{ inputs.publish-workflow-path }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           {
             echo "## first-publish registry probe"
             echo ""
@@ -218,7 +219,7 @@ jobs:
             case "$ECOSYSTEM" in
               ts)
                 ENCODED=$(printf '%s' "$PACKAGE" | sed 's|/|%2F|g')
-                HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/$ENCODED")
+                HTTP=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" "https://registry.npmjs.org/$ENCODED")
                 if [[ "$HTTP" == "404" ]]; then
                   MSG="Package $PACKAGE not on npm yet. First publish via CI may fail; bootstrap manually first: scripts/bootstrap-first-publish.sh npm"
                   echo "::warning::$MSG"
@@ -231,7 +232,7 @@ jobs:
                 fi
                 ;;
               py)
-                HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/$PACKAGE/json")
+                HTTP=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/$PACKAGE/json")
                 if [[ "$HTTP" == "404" ]]; then
                   MSG="Package $PACKAGE not on PyPI yet. First publish via CI may fail; bootstrap manually first: scripts/bootstrap-first-publish.sh pypi"
                   echo "::warning::$MSG"
@@ -247,7 +248,7 @@ jobs:
                 # crates.io returns 200 + JSON for both existing and unknown
                 # crates; the discriminator is the `versions` array length.
                 BODY=$(mktemp)
-                HTTP=$(curl -s -o "$BODY" -w "%{http_code}" "https://crates.io/api/v1/crates/$PACKAGE")
+                HTTP=$(curl -s --max-time 10 -o "$BODY" -w "%{http_code}" "https://crates.io/api/v1/crates/$PACKAGE")
                 if [[ "$HTTP" == "200" ]]; then
                   VERSIONS=$(jq -r '.versions // [] | length' "$BODY" 2>/dev/null || echo 0)
                   if [[ "${VERSIONS:-0}" == "0" ]]; then
@@ -269,7 +270,7 @@ jobs:
                 rm -f "$BODY"
                 ;;
               php)
-                HTTP=$(curl -s -o /dev/null -w "%{http_code}" "https://packagist.org/packages/$PACKAGE.json")
+                HTTP=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" "https://packagist.org/packages/$PACKAGE.json")
                 if [[ "$HTTP" == "404" ]]; then
                   MSG="Package $PACKAGE not on Packagist yet. First publish via CI may fail; submit manually at https://packagist.org/packages/submit"
                   echo "::warning::$MSG"

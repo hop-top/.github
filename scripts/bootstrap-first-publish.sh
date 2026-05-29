@@ -93,7 +93,7 @@ bootstrap_npm() {
 
   confirm "Publish $name to npm as $who?"
 
-  pnpm publish --access public --no-git-checks
+  pnpm publish --access public
   info "first publish complete — subsequent versions go through publish-on-tag.yml"
 }
 
@@ -185,8 +185,12 @@ bootstrap_cargo() {
     if [[ "${versions:-0}" -gt 0 ]]; then
       err "crate '$name' already exists on crates.io (${versions} versions) — use CI for version bumps"
     fi
+    info "crate '$name' has no published versions — proceeding"
+  elif [[ "$http" == "404" ]]; then
+    info "crate '$name' not on crates.io yet — first publish"
+  else
+    warn "registry probe inconclusive (HTTP $http) — proceeding cautiously"
   fi
-  info "crate '$name' has no published versions — proceeding"
 
   # crates.io tokens scoped to specific crate names cannot publish a new
   # crate. Require either an unrestricted token in CARGO_REGISTRY_TOKEN
