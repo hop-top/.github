@@ -11,10 +11,13 @@ Standalone packages. Optional composition. Polyglot libraries
 (Go, TypeScript, Python, Rust, PHP). CLI apps in the best language
 for the job.
 
-**Protocols**: MCP · A2A · ACP · AGNTCY · gRPC · REST · WebSocket · SSE · Webhook
+**Protocols**: [MCP](https://modelcontextprotocol.io/specification) · [A2A](https://a2a-protocol.org/latest/) · [ACP](https://agentcommunicationprotocol.dev/) · [AGNTCY](https://docs.agntcy.org/) · [gRPC](https://grpc.io/docs/what-is-grpc/) · [REST](https://ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm) · [WebSocket](https://www.rfc-editor.org/rfc/rfc6455) · [SSE](https://html.spec.whatwg.org/multipage/server-sent-events.html) · [Webhook](https://www.standardwebhooks.com/)
 
-**Vendors**: Anthropic, OpenAI, Google, Ollama (models); GitHub, GitLab,
-Bitbucket, Gitea (repos); Linear (PM) — built in. BYOA: Bring Your Own
+**Vendors**: [Anthropic](https://www.anthropic.com), [OpenAI](https://openai.com),
+[Google](https://ai.google), [Ollama](https://ollama.com) (models);
+[GitHub](https://github.com), [GitLab](https://about.gitlab.com),
+[Bitbucket](https://bitbucket.org), [Gitea](https://about.gitea.com) (repos);
+[Linear](https://linear.app) (PM) — built in. BYOA: Bring Your Own
 Adapter, every interface is yours to implement.
 
 No lock-in.
