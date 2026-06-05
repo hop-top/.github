@@ -30,13 +30,13 @@ Split across seven disciplines — not steps to finish.
 
 | Discipline | Packages |
 |---|---|
-| **Identity Management**  | `aps` |
-| **Context Management**   | `ctxt`* · `ibr` · `crm` · `cxr` |
-| **Project Management**   | `tlc` · `wsm` · `git-hop` · `rux` |
-| **Quality Management**   | `ben` · `xrr` · `12fc` · `fit` |
-| **Harness Management**   | `eva` · `rsx` |
-| **Interop Management**              | `stem` · `nerv` · `vein`† · `aim` · `vstar` · `xat` |
-| **Toolkit Management**      | `x402` · `mxhook`* · `xray`* · `foo` · `pod` · `gym` · `rlz` |
+| **Identity**  | `aps` |
+| **Context**   | `ctxt`* · `ibr` · `crm` · `cxr` |
+| **Project**   | `tlc` · `wsm` · `git-hop` · `rux` |
+| **Quality**   | `ben` · `xrr` · `12fc` · `fit` |
+| **Harness**   | `eva` · `rsx` |
+| **Interop**   | `stem` · `nerv` · `vein`† · `aim` · `vstar` · `xat` |
+| **Toolkit**   | `x402` · `mxhook`* · `xray`* · `foo` · `pod` · `gym` · `rlz` |
 
 <sub>* Affiliated, not hop-top org — `ctxt` (context.help), `mxhook` (mxhook.com), `xray` (xray.codes). † `vein` planned, not yet released.</sub>
 
@@ -52,13 +52,13 @@ in one product. It gives you the *piece*, you keep the rest.
 
 | Discipline | Today, you use… | hop.top |
 |---|---|---|
-| **Identity Management** | scattered API keys, per-tool config, no agent identity at all | **aps** — verifiable agent profiles (Ed25519), workspace isolation, AGNTCY discovery |
-| **Context Management** | Inkeep, Granola, hand-rolled RAG, OpenClaw's gateway | **ctxt · ibr · crm · cxr** — local-first knowledge, browser capture, contacts, context exchange |
-| **Project Management** | Linear, Jira — your workflow trapped in their UI | **tlc · wsm · git-hop · rux** — tracks, workspaces, worktrees, reactive CLI UX |
-| **Quality Management** | LangSmith, Braintrust, promptfoo — eval coupled to one framework | **ben · xrr · 12fc · fit** — benchmarks, cassette replay, 12-Factor CLI conformance, advisor-model steering |
-| **Harness Management** | Pi, OpenAI Evals, DeepEval — opinionated runner, locked-in shape | **eva** — pluggable harness, BYO model, BYO scoring, BYO surface |
+| **Identity** | scattered API keys, per-tool config, no agent identity at all | **aps** — verifiable agent profiles (Ed25519), workspace isolation, AGNTCY discovery |
+| **Context** | Inkeep, Granola, hand-rolled RAG, OpenClaw's gateway | **ctxt · ibr · crm · cxr** — local-first knowledge, browser capture, contacts, context exchange |
+| **Project** | Linear, Jira — your workflow trapped in their UI | **tlc · wsm · git-hop · rux** — tracks, workspaces, worktrees, reactive CLI UX |
+| **Quality** | LangSmith, Braintrust, promptfoo — eval coupled to one framework | **ben · xrr · 12fc · fit** — benchmarks, cassette replay, 12-Factor CLI conformance, advisor-model steering |
+| **Harness** | Pi, OpenAI Evals, DeepEval — opinionated runner, locked-in shape | **eva** — pluggable harness, BYO model, BYO scoring, BYO surface |
 | **Interop** | MCP servers, LangChain adapters, Hermes gateways | **stem · nerv · vein · aim · vstar · xat** — polyglot protocol mirrors, agent-safe model calls, calendar/vCard state, cross-CLI conformance |
-| **Tool Management** | PrintingPress, Smithery, MCP registries, Zapier | **x402 · mxhook · xray · foo · pod · gym · rlz** — payments, inbound email, code maps, LLM piping, remote compute, skills, releases |
+| **Toolkit** | PrintingPress, Smithery, MCP registries, Zapier | **x402 · mxhook · xray · foo · pod · gym · rlz** — payments, inbound email, code maps, LLM piping, remote compute, skills, releases |
 
 **hop.top isn't an AI coding agent.** Claude Code, Codex, Gemini CLI,
 OpenCode, Aider, Pi, Cline — those are the harness around your model.
