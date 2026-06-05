@@ -53,8 +53,8 @@ submodule-key support in the resolver.
 
 ## Why this works for the polyglot mirror pattern
 
-For Go subprojects of a `poly-<name>` repo (e.g. `kit`, `ash`,
-`uri` shipped from `hop-top/poly-kit`), the convention works
+For Go subprojects of a `poly-<name>` repo (e.g. `cite` shipped
+from `hop-top/poly-cite`, `xrr` from `hop-top/poly-xrr`), the convention works
 without any formula because the **mirror** publishes the Go-only
 subtree to `hop-top/<name>` on every tagged release:
 
