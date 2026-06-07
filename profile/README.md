@@ -1,5 +1,7 @@
 # hop.top
 
+> **For agents. By agents. Your data. Your machine.**
+
 Adopt AI agents reliably. Across every role, every department, every team.
 Built for agents and humans from day one.
 
