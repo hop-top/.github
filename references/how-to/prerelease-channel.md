@@ -73,6 +73,86 @@ feat!: breaking redesign of Y
 Release-As: 0.4.0-alpha.0
 ```
 
+## Manifest presence vs `initial-version`
+
+`initial-version` in `release-please-config.json` looks like it
+should set the version a package bootstraps at. **It only applies
+when the manifest has no key for that package at all.** If the
+manifest key is present — even seeded at `"0.0.0-alpha.0"`, which
+looks like "nothing released yet" — release-please treats that as a
+**real prior version** and computes the next release by bumping
+*from* it, ignoring `initial-version` entirely.
+
+Verified empirically (`release-please@17.10.4`, `--dry-run --debug`):
+
+```
+✔ No latest release found for path: pkg, component: , but a
+  previous version (0.0.0-alpha.0) was specified in the manifest.
+```
+
+That debug line is the tell — "a previous version ... was specified
+in the manifest" means `initial-version` is dead for this package,
+regardless of what it says.
+
+| Manifest state | What controls the first version |
+|---|---|
+| Key absent (`{}`, no entry for the package) | `initial-version` from config, honored |
+| Key present at any value, even `"0.0.0-alpha.0"` | The manifest value; `initial-version` ignored; next release bumps the prerelease counter from that seed (e.g. `alpha.0 → alpha.1`), NOT jump to `initial-version`'s target |
+
+**If you want `initial-version: "0.1.0-alpha.0"` to actually apply**:
+omit the package's key from `.release-please-manifest.json` entirely
+— don't seed it at `0.0.0-alpha.0` "just to have something there."
+
+```json
+// .github/.release-please-manifest.json
+{}
+```
+
+not
+
+```json
+// WRONG if you want initial-version honored
+{ "ts": "0.0.0-alpha.0" }
+```
+
+**If the manifest is already seeded and you can't easily strip the
+key** (e.g. mid-project, other tooling depends on the key existing):
+use a `Release-As: <target-version>` footer on the next commit
+instead — it overrides regardless of manifest state. See [Release-As
+is global across components in manifest mode](#release-as-is-global-across-components-in-manifest-mode)
+below for the multi-package caveat.
+
+## Release-As is global across components in manifest mode
+
+In `separate-pull-requests: true` manifest mode (multiple packages
+in one repo, one release-please config), a single unscoped
+`Release-As: X.Y.Z-alpha.0` footer applies to **every** package
+release-please would otherwise consider — not just one.
+
+Verified empirically against a 7-package manifest repo:
+
+- One `Release-As: 0.1.0-alpha.0` footer on a single commit produced
+  candidate releases for all 7 packages, each at `0.1.0-alpha.0`.
+  This is what you want if you're bootstrapping a polyglot repo's
+  first release across every component at the same version — see
+  [docs/bootstrap-checklist.md § Cut the first release](../../docs/bootstrap-checklist.md#6-cut-the-first-release).
+- **There is no per-component scoping syntax.** A footer like
+  `Release-As: my-ts-component: 0.2.0-alpha.0` is NOT parsed as
+  "scope this to my-ts-component." release-please treats the entire
+  string after `Release-As:` as one opaque version token and applies
+  it uniformly to every package — it does not error, it does not
+  warn, it just silently produces a garbage or wrong version across
+  the board. This is worse than the footer being ignored.
+- **Only the first `Release-As:` line wins** if a commit body has
+  more than one. The rest are silently ignored — no error, no merge
+  of the values.
+
+**If you need different starting versions per package** in the same
+bootstrap commit, `Release-As` can't do it. Either bootstrap them in
+separate commits (one `Release-As` footer each), or accept the same
+starting version across all packages and let subsequent normal
+`feat:`/`fix:` commits diverge them from there.
+
 ## Always dry-run before merging a manifest reseed
 
 ```sh
