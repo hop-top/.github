@@ -269,7 +269,7 @@ push that fires release-please before labels exist produces the
 and fix it, you may already be dealing with the sibling-PR
 close+retrigger churn described in [docs/failure-modes.md § Sibling
 PRs and the close+retrigger
-trap](failure-modes.md#sibling-prs-and-the-closeretrigger-trap).
+trap](failure-modes.md#sibling-prs-and-the-close-retrigger-trap).
 
 ## 7. Verify on each registry
 

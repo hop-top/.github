@@ -47,7 +47,7 @@ Repeat per sibling, one at a time (rebase against the just-updated
 `main` each time). This is the path we now recommend for a batch of
 sibling PRs going stale after each merge — see the retrospective in
 [docs/failure-modes.md § Sibling PRs and the close+retrigger
-trap](../../docs/failure-modes.md#sibling-prs-and-the-closeretrigger-trap)
+trap](../../docs/failure-modes.md#sibling-prs-and-the-close-retrigger-trap)
 for why the close+retrigger loop (Fix B) burned through 20+ PR
 numbers on a 7-component repo before we switched to this.
 
