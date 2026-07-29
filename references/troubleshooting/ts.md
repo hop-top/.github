@@ -53,6 +53,52 @@ allowBuilds:
 
 See [docs/failure-modes.md § pnpm 11 strictDepBuilds](../../docs/failure-modes.md#pnpm-11-strictdepbuilds-blocks-install-on-transitive-postinstalls).
 
+## wasm-pack not preinstalled on publish runners
+
+**Symptom (workflow log)**:
+
+```
+$ wasm-pack build ../core --target bundler ...
+sh: 1: wasm-pack: not found
+```
+
+**Root cause**: a `ts` package that wraps a Rust/wasm core (e.g. via
+`wasm-bindgen`) typically has a `pnpm build` script that shells out
+to `wasm-pack` to compile the `.wasm` artifact before `tsc` runs.
+`publish-ts.yml`'s default `build-command` (`pnpm build`) runs on a
+bare GitHub-hosted runner, which does not have `wasm-pack`
+preinstalled.
+
+**Check `ci.yml` first** — if your test workflow already builds and
+tests the wasm bundle, it likely already installs `wasm-pack` for
+that job. That install does NOT carry over to `publish.yml`; they're
+separate workflow files with separate runners. Drift between the
+two is easy to introduce (one gets updated, the other doesn't) and
+won't surface until the next tag push.
+
+**Fix**: override `build-command` to install `wasm-pack` first,
+matching whatever `ci.yml` already does:
+
+```yaml
+ecosystems: |
+  ts:
+    dir: ts
+    ecosystem: ts
+    package: "@org/pkg"
+    mirror: org/pkg-ts
+    build-command: >-
+      curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh &&
+      pnpm build
+```
+
+GitHub-hosted `ubuntu-latest` runners ship a Rust toolchain already
+(`cargo`/`rustc`), so `wasm-pack`'s installer script (which needs
+`cargo install` as its posix fallback) works without an extra
+toolchain-setup step. If you've pinned a custom runner image without
+Rust, add a `dtolnay/rust-toolchain@stable`-equivalent step to
+`ci.yml`'s pattern and replicate it here — `build-command` is a
+plain shell string, it can't add setup steps, only shell commands.
+
 ## `&&` in `test-command` produces resolver errors
 
 Symptom: `ERR_PNPM_SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER "&&"`.
@@ -75,6 +121,7 @@ Tracked in [#9](https://github.com/hop-top/.github/issues/9). See
 | `Could not locate the bindings file` | Native dep build scripts blocked by `--ignore-scripts` | Exclude test OR drop `--ignore-scripts` |
 | `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 strict-mode | Add deps to `pnpm-workspace.yaml` `allowBuilds:` |
 | `ERR_PNPM_SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER "&&"` | Shell operator in `test-command` not re-parsed | Pin `@v0` or use package.json script |
+| `wasm-pack: not found` during build | wasm-consuming package's build script needs a toolchain publish.yml doesn't install | Override `build-command` to install wasm-pack first. See [wasm-pack not preinstalled](#wasm-pack-not-preinstalled-on-publish-runners). |
 
 ## Next steps
 

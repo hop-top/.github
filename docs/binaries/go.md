@@ -59,6 +59,48 @@ jobs:
       winget-fork-repo: winget-pkgs       # omit if no `winget:` block
 ```
 
+**Alternative: combined with `publish.yml`.** A polyglot repo can
+put `goreleaser` as a second job inside the same `publish.yml` file
+instead of a separate `goreleaser.yml`, gated to only the Go tag
+shape via `if:`:
+
+```yaml
+# publish.yml
+jobs:
+  publish:
+    uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0
+    # ...
+
+  goreleaser:
+    if: startsWith(github.ref_name, 'my-cli/v') && !startsWith(github.ref_name, 'my-cli-')
+    uses: hop-top/.github/.github/workflows/goreleaser-on-tag.yml@v0
+    secrets:
+      RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+    with:
+      homebrew-tap-repo: homebrew-tap
+```
+
+Both jobs still trigger independently per tag push — GitHub Actions
+doesn't care which file a job lives in, only which `on:` block and
+`if:` condition match. Functionally equivalent to two files; fewer
+files to keep in sync if your repo already has a `publish.yml`. The
+`if:` guard needs the `!startsWith(..., '<component>-')` half if any
+sibling component's tag prefix starts with the same string (e.g.
+`my-cli/v*` vs `my-cli-ts/v*` — without the negative match, the Go
+job also fires on the ts tag because `startsWith` alone doesn't
+respect the `/` segment boundary).
+
+**Either pattern needs `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY`
+forwarded explicitly** — they are NOT part of `publish-on-tag.yml`'s
+required secrets (that one only needs them if a `go` ecosystem entry
+exists, and even then only for the optional vanity-URL notify), so
+adding a `goreleaser` job to an existing `publish.yml` without also
+adding these two secrets fails at YAML validation time
+(`Secret RELEASE_BOT_APP_ID is required, but not provided`) — before
+any job even starts, so the error can look unrelated to what you
+just changed.
+
 The reusable workflow handles checkout, Go toolchain setup, the
 release-bot App token mint, and the GoReleaser invocation. The
 App token's scope is composed dynamically: caller repo always,

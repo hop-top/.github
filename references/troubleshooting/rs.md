@@ -88,6 +88,55 @@ Fix:
 2. Re-issue the token.
 3. Update the org-level `CARGO_REGISTRY_TOKEN` secret.
 
+## Path deps need a version too
+
+**Symptom (workflow log)**:
+
+```
+error: failed to verify manifest at `.../rs/Cargo.toml`
+Caused by:
+  all dependencies must have a version requirement specified when publishing.
+  dependency `my-crate-core` does not specify a version
+```
+
+**Root cause**: in a Cargo workspace where one crate depends on a
+sibling by path only —
+
+```toml
+[dependencies]
+my-crate-core = { path = "../core" }
+```
+
+— `cargo build`/`cargo test` are fine with this (the path resolves
+locally), but `cargo publish` refuses: once published, the crate
+can't rely on a local path that won't exist for consumers. crates.io
+requires every dependency to also carry a `version =` so it can be
+resolved from the registry after publish.
+
+**Fix**: add the version explicitly, matching the sibling crate's
+current published (or about-to-be-published) version:
+
+```toml
+[dependencies]
+my-crate-core = { path = "../core", version = "0.1.0-alpha.0" }
+```
+
+**Ordering matters in a first release.** If `core` and `rs` release
+together for the first time, `core` must publish successfully
+*before* `rs`'s publish job runs, or the version pin references a
+crate that doesn't exist on crates.io yet (a separate but related
+failure: `error: no matching package named ...`). release-please
+opens independent PRs per component with no ordering guarantee —
+merge (or retry) the dependency crate first if both are landing in
+the same batch.
+
+**This needs updating on every version bump.** `version =` is a
+static string, not resolved from the workspace `Cargo.toml` version
+automatically — bumping `core`'s version without bumping this pin in
+`rs/Cargo.toml` leaves `rs` published against a stale `core` pin
+(cargo will still resolve it as long as semver-compatible, but drift
+accumulates).
+
 ## Common issues
 
 | Problem | Cause | Fix |
@@ -95,6 +144,7 @@ Fix:
 | `1 files in the working directory contain changes` | `cargo test` mutated `target/` and it's tracked or unignored | Add `.gitignore` for `/target/` + `git rm -r --cached <crate>/target/` |
 | `unresolved import <crate>::<feature_module>` under default features | Test under `tests/` depends on feature-gated module | Add `#![cfg(feature = "<name>")]` at top of test file |
 | `cargo publish` fails: `verified email required` | Token's account has no verified email | Verify email; re-issue token |
+| `cargo publish` fails: `all dependencies must have a version requirement specified` | Path-only dependency on a workspace sibling | Add `version = "..."` alongside `path =`. See [Path deps need a version too](#path-deps-need-a-version-too). |
 
 ## Next steps
 

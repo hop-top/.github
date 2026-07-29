@@ -20,29 +20,77 @@ manifest file. When you merge component A's PR, the manifest
 advances — component B's PR is now CONFLICTING because its branch
 still proposes an older manifest.
 
-The fix isn't "rebase the PR" (release-please won't accept manual
-rebases). The fix is **close the conflicted PR + retrigger
-release-please**.
+## Two fixes — pick based on how many siblings are stale
 
-## Steps
+### Fix A: manual rebase (fastest, use this first)
 
-### 1. Close the conflicting PR
+Contrary to older guidance in this doc, release-please **does**
+accept a manually rebased branch — it doesn't own the branch in any
+special way, it just pushes commits to it like any other actor. For
+the common case (N sibling PRs each adding one key to the same
+single-line manifest JSON), the conflict is trivial and mechanical:
 
 ```bash
-gh pr close <conflicting-pr> --repo <org>/<repo>
+git fetch origin
+git checkout -b rebase-<component> origin/release-please--branches--main--components--<component>
+git rebase origin/main
+# CONFLICT (content): Merge conflict in .github/.release-please-manifest.json
+# Resolve by hand — merge both sides' keys into one object:
+#   {"already-released-pkg": "0.1.0-alpha.0", "<component>": "0.1.0-alpha.0"}
+git add .github/.release-please-manifest.json
+git rebase --continue
+git push origin rebase-<component>:release-please--branches--main--components--<component> --force-with-lease
+gh pr merge <pr-number> --repo <org>/<repo> --merge --delete-branch
 ```
 
-### 2. Re-run the release-please workflow
+Repeat per sibling, one at a time (rebase against the just-updated
+`main` each time). This is the path we now recommend for a batch of
+sibling PRs going stale after each merge — see the retrospective in
+[docs/failure-modes.md § Sibling PRs and the close+retrigger
+trap](../../docs/failure-modes.md#sibling-prs-and-the-close-retrigger-trap)
+for why the close+retrigger loop (Fix B) burned through 20+ PR
+numbers on a 7-component repo before we switched to this.
+
+**When Fix A doesn't apply**: if release-please's own automation
+already rewrote the PR's commits (not just a plain "add one key"
+diff) since you last looked, or the conflict is on a file you don't
+understand well enough to hand-resolve, fall back to Fix B.
+
+### Fix B: close + retrigger (when the diff isn't trivial, or you don't trust a hand merge)
+
+#### 1. Close the conflicting PR
+
+```bash
+gh pr close <conflicting-pr> --repo <org>/<repo> --delete-branch
+```
+
+#### 2. Re-run the release-please workflow
 
 ```bash
 gh workflow run release-please.yml --repo <org>/<repo>
 ```
 
-### 3. Verify a fresh PR was opened
+#### 3. Verify a fresh PR was opened
 
 ```bash
 gh pr list --repo <org>/<repo> --label 'autorelease: pending' --state open
 ```
+
+**Watch for spurious duplicate PRs.** After closing a conflicting PR
+for a component that's *already released* (no new commits since),
+the next release-please run can still open a new PR for it with a
+no-op diff (e.g. re-adding an identical CHANGELOG entry). This isn't
+a bug you introduced — check the diff before merging; if it doesn't
+actually change the manifest version, close it too.
+
+**If retriggering doesn't rebase the other stale PRs**: check that
+both `status:release-pending` and `status:release-tagged` labels
+(or whatever your config's `label`/`release-label` fields say) exist
+on the repo. A missing label makes the release-please run fail
+_after_ it's already computed candidates, silently leaving sibling
+PRs un-rebased with no obvious error pointing at "labels." See
+[troubleshooting/common-pitfalls.md § Required repo
+labels](../troubleshooting/common-pitfalls.md#required-repo-labels-for-release-please).
 
 ## Requirement: `workflow_dispatch`
 

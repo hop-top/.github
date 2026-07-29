@@ -103,7 +103,24 @@ Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish
 
 `release-please-config.json` + `.release-please-manifest.json` at `.github/`. The shape is documented separately in the `custom-release-please` skill, but the minimum for a polyglot repo:
 
-**No root `.` package.** Every component listed here must also exist in the caller's `publish.yml` `ecosystems:` map (next step). Tags release-please cuts for a component not in that map fail the publish workflow with `Unknown component`. If you need a Go module at the repo root, give it the `go` component and place its sources under `go/` (matching the per-language layout) or extend the ecosystems map to include the root component name.
+**No root `.` package, unless it's an aggregate with no registry target.** Every component listed here must also exist in the caller's `publish.yml` `ecosystems:` map (next step) — tags release-please cuts for a component not in that map fail the publish workflow with `Unknown component`. If you need a Go module at the repo root, give it the `go` component and place its sources under `go/` (matching the per-language layout) or extend the ecosystems map to include the root component name.
+
+If you DO want a root `.` package purely to version-bump an
+umbrella release across all components (e.g. `release-type: simple`,
+no registry, just a tag + changelog marking "this batch of
+components released together") — don't try to add it to
+`ecosystems:` (it has nothing to publish, so there's no sensible
+entry). Instead, exclude its tag pattern from `publish.yml`'s
+trigger so the tag never invokes the reusable workflow at all:
+
+```yaml
+# publish.yml
+on:
+  push:
+    tags:
+      - '*/v*'
+      - '!my-poly/v*'   # root aggregate component — no registry target
+```
 
 ```json
 {
@@ -123,15 +140,24 @@ Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish
 ```
 
 ```json
-// .release-please-manifest.json — seed values prevent the "0.0.0 trap"
-{
-  "go": "0.1.0-alpha.0",
-  "ts": "0.1.0-alpha.0",
-  "py": "0.1.0-alpha.0",
-  "rs": "0.1.0-alpha.0",
-  "php": "0.1.0-alpha.0"
-}
+// .release-please-manifest.json — LEAVE EMPTY for a true first release.
+{}
 ```
+
+**Do not seed the manifest with a version, even one that looks like
+"nothing released yet."** A manifest entry like `{"go":
+"0.1.0-alpha.0"}` is NOT a hint to release-please about where to
+start — it's read as "this version was already released." The next
+release bumps the prerelease *counter* from that seed
+(`0.1.0-alpha.0 → 0.1.0-alpha.1`), it does not simply "use" the
+seeded value as the first tag. If your `initial-version` in the
+config also says `0.1.0-alpha.0`, you'll never actually see
+`alpha.0` land — the first real release becomes `alpha.1`, silently
+off-by-one from what the config appears to promise. `initial-version`
+only takes effect when the manifest key is **absent** for that
+package (`{}`, not present-at-any-value). Verified empirically — see
+[how-to/prerelease-channel.md § Manifest presence vs
+initial-version](../references/how-to/prerelease-channel.md#manifest-presence-vs-initial-version).
 
 Three critical settings for prerelease counter behavior (`alpha.0 → alpha.1` rather than `alpha.0 → 0.1.0`):
 
@@ -140,6 +166,36 @@ Three critical settings for prerelease counter behavior (`alpha.0 → alpha.1` r
 - `"versioning": "prerelease"`
 
 All three must be set. See `custom-release-please` skill for full coverage.
+
+## 5b. Create required repo labels
+
+`release-please-config.json`'s `label` / `release-label` fields (if
+set) name GitHub labels that must exist on the repo before the first
+run — they are NOT part of GitHub's default set and nothing
+auto-creates them.
+
+```bash
+gh label create "status:release-pending" --repo <org>/<repo> --color ededed
+gh label create "status:release-tagged" --repo <org>/<repo> --color ededed
+```
+
+Skip this and the first release-please run computes candidate PRs
+successfully, then fails at the labeling API call with a
+`Validation Failed` error — which reads as unrelated to labels
+unless you check the error body closely. Worse: this failure can
+silently break release-please's ability to rebase sibling PRs after
+you merge one, producing repeated CONFLICTING states that look like
+a manifest problem but are actually this. See
+[troubleshooting/common-pitfalls.md § Required repo
+labels](../references/troubleshooting/common-pitfalls.md#required-repo-labels-for-release-please).
+
+**Especially important if you recreated the repo** (deleted +
+`gh repo create` to reset PR/issue numbering to 1 before the first
+real release). Recreating drops any custom labels the old repo had,
+along with branch protection rules and merge-method settings — see
+[Fresh-repo recreate
+checklist](../references/troubleshooting/common-pitfalls.md#fresh-repo-recreate-checklist)
+for the full list of what needs reapplying and in what order.
 
 ## 6. Cut the first release
 
@@ -151,6 +207,69 @@ git push origin main
 release-please opens a standing PR per component (`separate-pull-requests: true`). Merge each PR you want to release. Each merge creates a `<component>/v<version>` tag and triggers `publish.yml`, which fans out to the right ecosystem.
 
 For first publish on **PyPI specifically** (OIDC mode), the pending trusted publisher resolves on first successful publish and becomes a project-scoped publisher. After that, the pending entry can be deleted; subsequent publishes use the project-scoped binding.
+
+### If your commit type is `chore:`, not `feat:`
+
+`chore` is a hidden/non-releasing changelog section by default (see
+the `changelog-sections` config). release-please skips a `chore:`-only
+commit entirely — no candidate PR, no error, just
+`✔ No user facing commits found since beginning of time - skipping`
+for every package. This is a common trap for a genuinely "wipe
+history to one clean commit" bootstrap, where `chore: initial public
+release` is the natural message but produces zero PRs.
+
+**Fix**: add a `Release-As: <version>` footer to that commit. In
+manifest mode with multiple packages, ONE unscoped footer forces a
+release for every package in the config simultaneously, at that
+version:
+
+```bash
+git commit -m "chore: initial public release" -m "Release-As: 0.1.0-alpha.0"
+git push origin main
+```
+
+There is no per-component `Release-As` syntax — see [how-to/prerelease-channel.md
+§ Release-As is global across
+components](../references/how-to/prerelease-channel.md#release-as-is-global-across-components-in-manifest-mode)
+before reaching for anything fancier.
+
+### If you want a single, clean initial commit (no intermediate history)
+
+Squashing local history to one commit and pushing normally still
+leaves that commit's SHA permanently on `main` and in the reflog of
+anyone who already cloned. If the actual goal is "public GitHub
+history starts at exactly one commit, PR/issue numbers start at #1,
+nothing before that is visible" — not just "one commit locally" —
+delete and recreate the GitHub repo rather than force-pushing over
+existing history:
+
+```bash
+# 1. Squash local history to one commit (adjust for your situation)
+git reset --soft <first-commit-sha>
+git commit --amend -m "chore: initial public release" -m "Release-As: 0.1.0-alpha.0"
+
+# 2. Delete + recreate the repo (drops PR/issue numbers, labels, branch
+#    protection — see the Fresh-repo recreate checklist above)
+gh repo delete <org>/<repo> --yes
+gh repo create <org>/<repo> --public --description "..." --homepage "..."
+gh api repos/<org>/<repo> -X PATCH -f allow_squash_merge=true -f allow_merge_commit=true -f allow_rebase_merge=true
+
+# 3. Recreate labels BEFORE pushing (see § 5b above) — release-please's
+#    first run needs them
+gh label create "status:release-pending" --repo <org>/<repo> --color ededed
+gh label create "status:release-tagged" --repo <org>/<repo> --color ededed
+
+# 4. Push
+git push origin main
+```
+
+Do steps in this exact order — labels before push, not after. A
+push that fires release-please before labels exist produces the
+`Validation Failed` symptom from § 5b, and by the time you notice
+and fix it, you may already be dealing with the sibling-PR
+close+retrigger churn described in [docs/failure-modes.md § Sibling
+PRs and the close+retrigger
+trap](failure-modes.md#sibling-prs-and-the-close-retrigger-trap).
 
 ## 7. Verify on each registry
 

@@ -215,6 +215,68 @@ If release-please decides there's nothing left to release (because the in-progre
 
 If you need a clean retry after a partial publish, **bump the version** rather than reusing.
 
+## Sibling PRs and the close+retrigger trap
+
+**Symptom**: bootstrapping a 7-component polyglot repo's first
+release. Merge PR 1, sibling PRs 2-7 go CONFLICTING (expected —
+shared manifest file, see [release-please PR goes DIRTY after main
+moves](#release-please-pr-goes-dirty-after-main-moves) above).
+Following the documented fix (close conflicting PR, `gh workflow run
+release-please.yml`, repeat), the cycle doesn't converge: 26 PRs
+opened and closed to land 7 real releases.
+
+**Root causes, compounding**:
+
+1. **A missing repo label silently broke the auto-rebase.**
+   `release-please-config.json` referenced `status:release-pending`
+   / `status:release-tagged` labels that didn't exist on a freshly
+   recreated repo (GitHub's default label set doesn't include them).
+   The release-please run's Action step **succeeded at computing
+   candidate PRs**, then failed at the labeling API call — a failure
+   mode that looks unrelated to labels unless you read the error
+   body (`Validation Failed: {"value":"status:release-pending",...}`).
+   Every "close + retrigger" cycle during this window silently did
+   nothing to the sibling PRs, because the run that was supposed to
+   rebase them errored out after label assignment, before it got
+   around to updating other PRs. See [Required repo
+   labels](../references/troubleshooting/common-pitfalls.md#required-repo-labels-for-release-please).
+
+2. **The regeneration loop spawned spurious duplicate PRs.** After
+   closing a conflicting PR for a component that had *already
+   released* (no new commits since its tag), the next release-please
+   run sometimes reopened a new PR for that same component with a
+   no-op diff (duplicate CHANGELOG entry, no manifest change). These
+   looked like real work but weren't — merging them would have been
+   harmless but pointless; the fix was noticing the diff was empty
+   and closing them too.
+
+3. **Once labels were fixed, the close+retrigger loop still wasn't
+   the fastest path** for this specific conflict shape: 6 remaining
+   sibling PRs, each conflicting only on one line of a shared JSON
+   object (one key per component, no real overlap). Switching to
+   manual local rebase (fetch the release-please branch, rebase onto
+   main, resolve the one-line JSON conflict by hand, force-push,
+   merge) landed all 6 in a few minutes with zero new PRs opened.
+   Contrary to this doc's older guidance, release-please did **not**
+   reject the manually-rebased branch — it just merged normally.
+
+**Takeaway for next time**:
+
+- Create required labels **before** the first release-please run on
+  any repo, especially a freshly recreated one — see [Fresh-repo
+  recreate checklist](../references/troubleshooting/common-pitfalls.md#fresh-repo-recreate-checklist).
+- If a "close + retrigger" cycle doesn't seem to be converging after
+  2-3 attempts, stop and check the release-please run's full log for
+  a labeling/API error — don't assume the loop just needs more
+  iterations.
+- For a **small number of stale sibling PRs** (single-digit) with a
+  **trivial, well-understood conflict** (one shared file, additive
+  changes, no release-please-owned logic being fought), manual local
+  rebase is faster and more reliable than close+retrigger. Reserve
+  close+retrigger for conflicts you don't want to hand-resolve, or
+  when release-please's own commits on the branch are non-trivial.
+  See [how-to/retrigger-release-please.md § Two fixes](../references/how-to/retrigger-release-please.md#two-fixes--pick-based-on-how-many-siblings-are-stale).
+
 ## See also
 
 - [SKILL.md](../SKILL.md) — main consumer guide
