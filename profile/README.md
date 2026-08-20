@@ -35,7 +35,7 @@ Split across seven disciplines — not steps to finish.
 | **Identity**  | `aps` |
 | **Context**   | `crm` · `cxr` · `ctxt`* · `mxhook`* · `xray`* |
 | **Project**   | `tlc` · `wsm` · `git-hop` · `rux` |
-| **Quality**   | `ben` · `xrr` · `12fc` · `fit` |
+| **Quality**   | `ben` · `xrr` · `12fc` · `fit` · `evol` |
 | **Harness**   | `eva` · `rsx` |
 | **Interop**   | `stem` · `nerv` · `vein`† · `aim` · `vstar` · `xat` |
 | **Toolkit**   | `x402` · `ibr` · `foo` · `pod` · `gym` · `rlz` |
@@ -57,7 +57,7 @@ in one product. It gives you the *piece*, you keep the rest.
 | **Identity** | scattered API keys, per-tool config, no agent identity at all | **aps** — verifiable agent profiles (Ed25519), workspace isolation, AGNTCY discovery |
 | **Context** | Inkeep, Granola, hand-rolled RAG, OpenClaw's gateway | **crm · cxr · ctxt · mxhook · xray** — contacts, context exchange, local-first knowledge, inbound email, code maps |
 | **Project** | Linear, Jira — your workflow trapped in their UI | **tlc · wsm · git-hop · rux** — tracks, workspaces, worktrees, reactive CLI UX |
-| **Quality** | LangSmith, Braintrust, promptfoo — eval coupled to one framework | **ben · xrr · 12fc · fit** — benchmarks, cassette replay, 12-Factor CLI conformance, advisor-model steering |
+| **Quality** | LangSmith, Braintrust, promptfoo, DSPy — eval coupled to one framework | **ben · xrr · 12fc · fit · evol** — benchmarks, cassette replay, 12-Factor CLI conformance, advisor-model steering, gated artifact evolution |
 | **Harness** | Pi, OpenAI Evals, DeepEval — opinionated runner, locked-in shape | **eva** — pluggable harness, BYO model, BYO scoring, BYO surface |
 | **Interop** | MCP servers, LangChain adapters, Hermes gateways | **stem · nerv · vein · aim · vstar · xat** — polyglot protocol mirrors, agent-safe model calls, calendar/vCard state, cross-CLI conformance |
 | **Toolkit** | PrintingPress, Smithery, MCP registries, Zapier | **x402 · ibr · foo · pod · gym · rlz** — payments, browser automation, LLM piping, remote compute, skills, releases |
@@ -120,6 +120,7 @@ Framework for building new agent-first CLIs: **[kit](https://github.com/hop-top/
 - **[crm](https://github.com/hop-top/crm)** — Customer relationship CLI — vCard contacts, vJournal interactions, pluggable sync
 - **[cxr](https://github.com/hop-top/cxr)** — Domain-agnostic dispatch runtime — routes by capability/tool intersection
 - **[eva](https://github.com/hop-top/eva)** — Behavioral contract enforcement on AI agent responses — declarative YAML specs
+- **[evol](https://github.com/hop-top/evol)** — Statistically gated evolution of agent artifacts — skills, prompts, commands, tool configs; promotes only significant wins
 - **[fit](https://github.com/hop-top/fit)** — Train small advisor models to steer black-box LLMs without fine-tuning — polyglot serving + GRPO training, frontier model never modified
 - **[foo](https://github.com/hop-top/foo)** — Pipe text through LLMs from the terminal — pattern-based prompts, streaming
 - **[git-hop](https://github.com/hop-top/git)** — Multi-branch parallel worktrees — isolated environments, deterministic ports
