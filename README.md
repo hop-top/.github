@@ -11,7 +11,8 @@ run *after* release-please cuts a tag.
 - Reusable GitHub Actions workflows that publish to npm / PyPI /
   crates.io and push subtree splits to read-only mirror repos
 - Triggered by `<component>/v<version>` tag pushes
-- Org-level community files (CODE_OF_CONDUCT, SECURITY, CONTRIBUTING)
+- Org-level community files (CODE_OF_CONDUCT, SECURITY, CONTRIBUTING,
+  issue forms, PR template)
 - Profile rendered at <https://github.com/hop-top>
 
 **This repo is not**:
@@ -90,6 +91,8 @@ See [`docs/architecture.md`](docs/architecture.md) for full diagrams
     release-please.yml       self-release: opens release PRs
   release-please-config.json self-release config
   .release-please-manifest.json
+ISSUE_TEMPLATE/              org-default issue forms (bug, feature)
+PULL_REQUEST_TEMPLATE.md     org-default PR template
 docs/
   architecture.md            full pipeline diagrams + design rationale
   diagrams/                  Mermaid sources (also embedded inline in docs)
