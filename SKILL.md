@@ -48,6 +48,7 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 | Understand how `hop.top/<x>` vanity URLs resolve | [references/concepts/vanity-imports.md](references/concepts/vanity-imports.md) |
 | Understand SemVer ∩ PEP 440 ∩ Composer constraints | [references/concepts/version-strings.md](references/concepts/version-strings.md) |
 | Understand why release PRs come from release-bot | [references/concepts/release-bot.md](references/concepts/release-bot.md) |
+| Understand when releases ship (lanes, channels, cadence) | [docs/release-schedule.md](docs/release-schedule.md) |
 | Triage a release-pipeline failure | [references/troubleshooting/common-pitfalls.md](references/troubleshooting/common-pitfalls.md) |
 | ts-specific failure | [references/troubleshooting/ts.md](references/troubleshooting/ts.md) |
 | py-specific failure | [references/troubleshooting/py.md](references/troubleshooting/py.md) |
