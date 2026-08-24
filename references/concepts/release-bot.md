@@ -47,11 +47,21 @@ This does two jobs:
 
 1. Path-level required review can't self-deadlock (team, not one person).
 2. **Auto-merge brake.** Every release PR rewrites the manifest, so with
-   "require review from Code Owners" enabled, no generic auto-merge
-   (merge-on-green, dependabot flows) can ever complete on a release PR.
-   Releases cut only after an explicit release-team approval; scheduled
-   auto-cut jobs merge approved-and-green release PRs at cadence — they
-   time the merge, they cannot bypass the approval.
+   code-owner review required, no generic auto-merge (merge-on-green,
+   dependabot flows) can ever complete on a release PR. Releases cut only
+   after an explicit release-team approval; scheduled auto-cut jobs merge
+   approved-and-green release PRs at cadence — they time the merge, they
+   cannot bypass the approval.
+
+The pairing that makes it work (reference shape: poly-kit ruleset
+`production-branch-guardrail`):
+
+- Ruleset on the default branch: `required_approving_review_count: 0` +
+  `require_code_owner_review: true`.
+- CODEOWNERS stays **minimal** — only the release-config lines above, no
+  `*` fallback. A `*` rule would pull every PR into code-owner review and
+  kill frictionless auto-merge for everything else. Zero approvals + owned
+  release paths = review-free repo except release state.
 
 Basename patterns match the files under `.github/` too. With an individual owner instead,
 any release-config change that person authors would hit the same self-approval block the
