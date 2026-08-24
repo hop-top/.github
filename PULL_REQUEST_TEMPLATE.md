@@ -12,6 +12,6 @@
 ## Checks
 
 - [ ] Conventional Commit title; no tracker/internal refs anywhere in the diff
-- [ ] Tests cover the change; `make check` green
+- [ ] Tests cover the change; required checks green (`make check` where the repo has it)
 - [ ] Docs updated (README / SKILL.md / docs/) if behavior changed
 - [ ] Breaking change → `!` in title + migration note above
