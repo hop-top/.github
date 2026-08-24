@@ -1,0 +1,9 @@
+# Generated — managed centrally; do not edit here.
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/hop-top/.github/blob/main/SECURITY.md
+    about: Do not open a public issue — email security@hop.top.
+  - name: Docs + catalog
+    url: https://hop.top
+    about: Full catalog, docs, install paths.

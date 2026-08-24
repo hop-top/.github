@@ -1,0 +1,7 @@
+# Generated — managed centrally; do not edit here.
+* @jadb
+
+# Release configuration → release team (release-bot opens the PRs;
+# ownership must not force self-approval)
+/.github/release-please-config.json    @hop-top/release
+/.github/.release-please-manifest.json @hop-top/release
