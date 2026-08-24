@@ -1,0 +1,45 @@
+# Generated — managed centrally; do not edit here.
+name: Bug report
+description: Something broke
+labels: ["type:fix"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `<tool> --version`.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 15.6 / Ubuntu 24.04 / Windows 11
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal / shell
+      placeholder: iTerm2 + zsh / Windows Terminal + pwsh
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for duplicates
+          required: true

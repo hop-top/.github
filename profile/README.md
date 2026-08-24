@@ -155,7 +155,7 @@ Framework for building new agent-first CLIs: **[kit](https://github.com/hop-top/
 - **Releases** — release-please + Conventional Commits. Rolling major tags. Published to npm, PyPI, crates.io, Packagist, Go vanity.
 - **Cadence** — Independent per-package. Each ships when ready; no linked-version coupling.
 - **Stability** — Pre-1.0 packages carry visible warnings. v1+ packages follow semver strictly.
-- **Security** — security@ideacrafters.com · [`SECURITY.md`](https://github.com/hop-top/.github/blob/main/SECURITY.md)
+- **Security** — security@hop.top · [`SECURITY.md`](https://github.com/hop-top/.github/blob/main/SECURITY.md)
 
 ---
 
