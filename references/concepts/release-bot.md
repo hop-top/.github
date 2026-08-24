@@ -38,9 +38,10 @@ Three problems, one authorship choice:
 Scope the release-config paths to the release team, not an individual:
 
 ```
-# Release configuration — admin or release team only
-release-please-config.json @hop-top/release
+# Release configuration + changelogs — release team only
+release-please-config.json    @hop-top/release
 .release-please-manifest.json @hop-top/release
+CHANGELOG.md                  @hop-top/release
 ```
 
 This does two jobs:
