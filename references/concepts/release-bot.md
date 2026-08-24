@@ -35,14 +35,23 @@ Three problems, one authorship choice:
 
 ## CODEOWNERS note
 
-Scope the release-config paths to the release team, not an individual, so path-level
-required review can't self-deadlock:
+Scope the release-config paths to the release team, not an individual:
 
 ```
 # Release configuration — admin or release team only
 release-please-config.json @hop-top/release
 .release-please-manifest.json @hop-top/release
 ```
+
+This does two jobs:
+
+1. Path-level required review can't self-deadlock (team, not one person).
+2. **Auto-merge brake.** Every release PR rewrites the manifest, so with
+   "require review from Code Owners" enabled, no generic auto-merge
+   (merge-on-green, dependabot flows) can ever complete on a release PR.
+   Releases cut only after an explicit release-team approval; scheduled
+   auto-cut jobs merge approved-and-green release PRs at cadence — they
+   time the merge, they cannot bypass the approval.
 
 Basename patterns match the files under `.github/` too. With an individual owner instead,
 any release-config change that person authors would hit the same self-approval block the
