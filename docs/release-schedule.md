@@ -12,7 +12,7 @@ Cadence is organized as **lanes**; hop-top currently runs two, with three more r
 | `-beta.N` / `-rc.N` | Feature-complete / release candidate | Reached via the promote gate (channel ladder `alpha → beta → rc → release`, all packages in lockstep) |
 | (empty) | Stable | `Release-As: X.Y.Z` footer or `prerelease: false` flip |
 | `-nightly.YYYYMMDD` | Dated builds | Reserved — lane not yet adopted |
-| `-experimental.N` | — | Retired; historical tags only |
+| `-experimental.N` | POC / R&D distributions — end-user feedback, anonymized usage-data collection | Available, per-package opt-in; outside the promote ladder (never promotes — graduate via `alpha → beta → rc`). Packagist: Composer rejects the suffix, php components map to `alpha.N` or skip |
 
 ## Lane 1 — Auto-cut (active)
 
