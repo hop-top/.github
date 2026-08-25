@@ -49,6 +49,7 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 | Understand SemVer ∩ PEP 440 ∩ Composer constraints | [references/concepts/version-strings.md](references/concepts/version-strings.md) |
 | Understand why release PRs come from release-bot | [references/concepts/release-bot.md](references/concepts/release-bot.md) |
 | Understand when releases ship (lanes, channels, cadence) | [docs/release-schedule.md](docs/release-schedule.md) |
+| Generate doc lists from code (kill stale enumerations) | [docs/generated-docs.md](docs/generated-docs.md) |
 | Triage a release-pipeline failure | [references/troubleshooting/common-pitfalls.md](references/troubleshooting/common-pitfalls.md) |
 | ts-specific failure | [references/troubleshooting/ts.md](references/troubleshooting/ts.md) |
 | py-specific failure | [references/troubleshooting/py.md](references/troubleshooting/py.md) |
@@ -151,4 +152,5 @@ jobs:
 - [`docs/failure-modes.md`](docs/failure-modes.md) — extended symptom→cause→fix guide; covers each entry in the Common Pitfalls table with workflow-log excerpts, root-cause analysis, and what does NOT work.
 - [`docs/browser-playbooks.md`](docs/browser-playbooks.md) — verbal step-by-step walkthroughs for web-side setup (PyPI trusted publisher, PyPI API token mint, Packagist registration, Packagist token mint, Packagist unmark abandoned, GitHub Environment creation, crates.io email verification).
 - [`docs/architecture.md`](docs/architecture.md) — full control/data flow diagrams + design rationale.
+- [`docs/generated-docs.md`](docs/generated-docs.md) — generated doc regions: metadata source, in-repo renderer, cog markers, staleness gate.
 - `custom-release-please` skill (separate) — the consumer-side release-please configuration concerns.
