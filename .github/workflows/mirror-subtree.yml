@@ -137,11 +137,36 @@ jobs:
           if [ -f "$CHANGELOG_PATH" ]; then
             BODY=$(sed -n '/^## \[/,/^## \[/{ /^## \[/!p; }' "$CHANGELOG_PATH" | head -50)
           fi
-          gh release create "$TAG" \
-            --repo "$TARGET" \
-            --title "$TAG" \
-            --notes "${BODY:-Release $TAG}" \
-            --latest=false || true
+          # Mirror the tag's channel: anything with a prerelease identifier
+          # (alpha/beta/rc/experimental/...) is not a stable release.
+          PRERELEASE_FLAG=""
+          if [[ "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.]+$ ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          # `create` 422s if $TAG was already released (e.g. release-please
+          # or a manual retry force-moved the tag to a new commit) — that
+          # error used to be swallowed by `|| true`, leaving the mirror's
+          # release notes frozen at the first version forever while the
+          # tag/main silently moved on. Fall back to `edit` so a retag
+          # actually refreshes the release.
+          if ! gh release create "$TAG" \
+                --repo "$TARGET" \
+                --title "$TAG" \
+                --notes "${BODY:-Release $TAG}" \
+                --latest=false \
+                $PRERELEASE_FLAG 2>/tmp/mirror-release-create.err; then
+            if grep -q "already exists" /tmp/mirror-release-create.err; then
+              echo "Tag already released on mirror — updating existing release"
+              gh release edit "$TAG" \
+                --repo "$TARGET" \
+                --title "$TAG" \
+                --notes "${BODY:-Release $TAG}" \
+                $PRERELEASE_FLAG
+            else
+              cat /tmp/mirror-release-create.err >&2
+              exit 1
+            fi
+          fi
 
       - name: Restore mirror read-only
         # The has_*=false fields below disable every human-input surface
