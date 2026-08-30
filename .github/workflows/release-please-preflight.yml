@@ -697,10 +697,16 @@ jobs:
               info "ecosystems keys: $(echo "$ECO_KEYS" | tr '\n' ' ')"
             fi
 
-            # Three-way name alignment
+            # Three-way name alignment. The root '.' aggregate component is
+            # sanctioned to be absent from ecosystems (it has nothing to
+            # publish; publish-on-tag green-skips unknown components since
+            # v0.11.1 — see common-pitfalls "Umbrella / meta-component tag").
+            ROOT_COMPONENT=$(jq -r '.packages["."].component // empty' "$CONFIG_PATH")
             for component in $(jq -r '.packages // {} | to_entries[] | .value.component // empty' "$CONFIG_PATH"); do
               if echo "$ECO_KEYS" | grep -qx "$component"; then
                 ok "three-way alignment: component '$component' matches ecosystems key"
+              elif [ -n "$ROOT_COMPONENT" ] && [ "$component" = "$ROOT_COMPONENT" ]; then
+                info "root aggregate component '$component' intentionally absent from ecosystems — publish-on-tag skips its tags"
               else
                 fail "component '$component' has no matching ecosystems key in publish.yml"
                 fixhint "add '$component:' entry to ecosystems in $PUBLISH_PATH"
