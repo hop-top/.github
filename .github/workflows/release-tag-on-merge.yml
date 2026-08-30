@@ -1,0 +1,162 @@
+name: release-tag-on-merge (reusable)
+
+# Companion for adopters that set `skip-github-release: true`.
+#
+# release-please creates tags ONLY as part of creating a GitHub Release
+# (googleapis/release-please#1561; tag-only mode is an unimplemented
+# feature request, release-please-action#1034). A repo that skips
+# Releases therefore never gets tags: the merged release PR keeps its
+# pending label and every later release-please run aborts with
+# "There are untagged, merged release PRs outstanding".
+#
+# On merge of a release-please PR this workflow does the two skipped
+# steps: push `<component><sep>v<version>` at the merge commit and flip
+# the PR label. The tag is pushed with a release-bot App token — a tag
+# created with the workflow's own GITHUB_TOKEN would NOT trigger
+# publish-on-tag / mirror-subtree (GitHub suppresses workflow-triggering
+# for default-token events).
+#
+# Safe to adopt in repos that do NOT skip Releases: tag creation is
+# idempotent, so it simply loses the race to release-please.
+#
+# Caller template (.github/workflows/release-tag.yml):
+#
+#   name: release-tag
+#   on:
+#     pull_request:
+#       types: [closed]
+#   permissions:
+#     contents: read
+#   jobs:
+#     tag:
+#       if: >
+#         github.event.pull_request.merged == true &&
+#         startsWith(github.event.pull_request.head.ref, 'release-please--branches--')
+#       uses: hop-top/.github/.github/workflows/release-tag-on-merge.yml@v0
+#       secrets:
+#         RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+#         RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path to release-please-config.json
+        type: string
+        default: .github/release-please-config.json
+      manifest-path:
+        description: Path to .release-please-manifest.json
+        type: string
+        default: .github/.release-please-manifest.json
+    secrets:
+      RELEASE_BOT_APP_ID:
+        required: true
+        description: GitHub App ID of the hop-top release-bot (see references/secrets.md)
+      RELEASE_BOT_PRIVATE_KEY:
+        required: true
+        description: Private key paired with RELEASE_BOT_APP_ID
+
+jobs:
+  tag:
+    # Defensive re-check of what the caller template already guards.
+    if: >
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release-please--branches--')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+
+      - name: Derive tag and labels from release config + manifest
+        id: derive
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          CONFIG: ${{ inputs.config-path }}
+          MANIFEST: ${{ inputs.manifest-path }}
+        run: |
+          set -euo pipefail
+          REST="${HEAD_REF#release-please--branches--}"
+          COMPONENT="${REST##*--components--}"
+          if [ "$COMPONENT" = "$REST" ]; then
+            echo "::error::branch '$HEAD_REF' has no '--components--' segment — this workflow requires separate-pull-requests: true"
+            exit 1
+          fi
+
+          PKG_PATH=$(jq -r --arg c "$COMPONENT" \
+            '.packages | to_entries[] | select(.value.component == $c) | .key' "$CONFIG")
+          if [ -z "$PKG_PATH" ] || [ "$PKG_PATH" = "null" ]; then
+            echo "::error::no package in $CONFIG has component '$COMPONENT'"
+            exit 1
+          fi
+
+          VERSION=$(jq -r --arg p "$PKG_PATH" '.[$p]' "$MANIFEST")
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "::error::manifest $MANIFEST has no version for path '$PKG_PATH'"
+            exit 1
+          fi
+
+          SEP=$(jq -r '."tag-separator" // "-"' "$CONFIG")
+          PENDING=$(jq -r '.label // "autorelease: pending"' "$CONFIG")
+          TAGGED=$(jq -r '."release-label" // "autorelease: tagged"' "$CONFIG")
+
+          {
+            echo "tag=${COMPONENT}${SEP}v${VERSION}"
+            echo "pending-label=$PENDING"
+            echo "tagged-label=$TAGGED"
+          } >> "$GITHUB_OUTPUT"
+          echo "Derived tag: ${COMPONENT}${SEP}v${VERSION} (component=$COMPONENT path=$PKG_PATH version=$VERSION)"
+
+      - name: Skip if release PR is not pending
+        id: pending
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
+          PENDING: ${{ steps.derive.outputs.pending-label }}
+        run: |
+          set -euo pipefail
+          if gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels \
+              --jq '.labels[].name' | grep -Fxq "$PENDING"; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            echo "PR #$PR does not carry '$PENDING' — already processed or not a release PR; nothing to do"
+          fi
+
+      - name: Push tag (idempotent)
+        if: steps.pending.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.derive.outputs.tag }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists — skipping create"
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" -f sha="${SHA}"
+            echo "Created ${TAG} at ${SHA}"
+          fi
+
+      - name: Flip release PR label
+        if: steps.pending.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ github.event.pull_request.number }}
+          PENDING: ${{ steps.derive.outputs.pending-label }}
+          TAGGED: ${{ steps.derive.outputs.tagged-label }}
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" \
+            --remove-label "$PENDING" --add-label "$TAGGED"
+          echo "PR #$PR labelled '$TAGGED'"
