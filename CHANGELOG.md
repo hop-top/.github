@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/hop-top/.github/compare/v0.11.0...v0.11.1) (2026-08-30)
+
+
+### Bug Fixes
+
+* **workflows:** publish-on-tag hardening + umbrella support ([#54](https://github.com/hop-top/.github/issues/54)) ([f654b72](https://github.com/hop-top/.github/commit/f654b72ba46804c68b65f621334fcebae36350e3))
+
 ## [0.11.0](https://github.com/hop-top/.github/compare/v0.10.0...v0.11.0) (2026-08-30)
 
 
