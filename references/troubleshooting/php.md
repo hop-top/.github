@@ -94,6 +94,30 @@ updates immediately on unmark; the legacy
 `/packages/<vendor>/<pkg>.json` endpoint can lag the CDN's
 `s-maxage=43200` (12h) cache.
 
+## Packagist credentials missing: clean skip, green run
+
+A php tag pipeline whose caller hasn't wired `PACKAGIST_USERNAME` /
+`PACKAGIST_TOKEN` still publishes the mirror; the `publish-php` step
+emits a `::notice::` and `exit 0` instead of failing. Workflow run
+stays green, Packagist polling eventually picks up the new tag on
+its own schedule (hours, not minutes).
+
+Symptom: workflow green, "Notify Packagist of new tag" step shows
+`::notice::PACKAGIST_USERNAME and/or PACKAGIST_TOKEN not provided;
+skipping Packagist notify`, and the Packagist page shows the new
+version only after the next poll cycle.
+
+Root cause: missing-secret config error, not a publish failure.
+"No credentials" means "don't notify Packagist," not "fail the
+release." Hard-fail on missing creds belongs in the preflight
+check, not the publish path.
+
+Resolution: if you wanted Packagist notified immediately, add the
+secrets to the consumer `publish.yml` `secrets:` block (see
+[references/secrets.md](../secrets.md)). Otherwise the silent-poll
+fallback is the documented behavior — same graceful-skip design as
+[SKILL.md § Umbrella / meta-component tags](../../SKILL.md#umbrella--meta-component-tags).
+
 ## Workflow internals (for debuggers)
 
 - The `publish-php` job's `if:` uses `always() && needs.parse.outputs.ecosystem == 'php' && needs.mirror.result == 'success'`. The `always()` is required because the transitive needs include `publish-ts/publish-py/publish-rs` (via `mirror`), which are `skipped` for a php tag — without `always()`, GitHub Actions applies the implicit "skip downstream if any transitive need is non-success" rule and skips publish-php before evaluating the explicit conditions. Same pattern the `mirror` job uses. See PR [#43](https://github.com/hop-top/.github/pull/43).
@@ -108,6 +132,7 @@ updates immediately on unmark; the legacy
 | `composer install`: `Invalid version string "0.4.0-experimental.1"` | Composer's pre-release stability whitelist | Rename suffix to `alpha.N`. |
 | Packagist shows `"abandoned": true` after re-notify | Packagist-side flag, not in composer.json | Unmark via Packagist web UI. |
 | `parse` fails: `ecosystem=php requires enable-mirror=true` | Caller set `enable-mirror: false` for php | Set `enable-mirror: true`. |
+| Workflow green, Packagist not re-indexed immediately | `PACKAGIST_USERNAME` / `PACKAGIST_TOKEN` missing in consumer secrets; `publish-php` skips notify with `::notice::` and exits 0 (intended) | Wire both secrets to trigger immediate notify, or accept the polling fallback. See [§ Packagist credentials missing: clean skip, green run](#packagist-credentials-missing-clean-skip-green-run). |
 
 ## Next steps
 

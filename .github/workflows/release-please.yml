@@ -3,6 +3,10 @@ name: release-please
 on:
   push:
     branches: [main]
+  # Manual trigger for re-running release-please after sibling-component
+  # PR conflicts force a rebase, or whenever the bot's standing PRs need
+  # to be rebuilt against current main without waiting for the next push.
+  workflow_dispatch: {}
 
 permissions:
   contents: write
