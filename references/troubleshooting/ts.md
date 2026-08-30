@@ -114,6 +114,23 @@ Two fixes:
 Tracked in [#9](https://github.com/hop-top/.github/issues/9). See
 [docs/failure-modes.md § ERR_PNPM_SPEC_NOT_SUPPORTED](../../docs/failure-modes.md#err_pnpm_spec_not_supported_by_any_resolver-on-build-step).
 
+## npm auth failure ladder
+
+`publish-ts` npm failures peel in layers — each error below means the
+previous layer is fixed. Climbed in full on poly-cite (2026-08-30):
+
+| Error | Meaning | Fix |
+|---|---|---|
+| `[E404] 404 - PUT .../@scope%2fpkg` | Token expired or lacks publish rights on the scope (npm 404s instead of 403 on unauthorized PUT). Package existing on npm proves it's auth, not a missing package. | Rotate `NPM_REGISTRY_TOKEN` — or skip tokens: [how-to/npm-trusted-publishing.md](../how-to/npm-trusted-publishing.md) |
+| `[ERR_PNPM_OTP_NON_INTERACTIVE]` | Token authenticates, but the package/account requires 2FA on publish and CI has no TTY for the OTP prompt | Bind a trusted publisher (preferred) or relax the package's publishing-access setting |
+| `[WARN] Skipped OIDC: ERR_PNPM_AUTH_TOKEN_EXCHANGE ... (status code 404)` | pnpm tried OIDC but no trusted publisher is bound for this package; it falls back to the token | Expected noise on the token path; to use OIDC, bind the publisher |
+| `[E422] Error verifying sigstore provenance bundle: Failed to validate repository information` | OIDC worked; npm rejects the provenance cross-check because `package.json` lacks a `repository` field (or it mismatches the build repo) | Add `repository` pointing at the source repo with `directory` — see the how-to |
+
+**A failed `publish-ts` also skips the `mirror` job** — the mirror repo
+gets neither the tag nor its Release. After fixing auth, re-run the
+failed run (`gh run rerun <id> --failed`) or ship the next version;
+don't hand-patch the mirror.
+
 ## Common issues
 
 | Problem | Cause | Fix |
