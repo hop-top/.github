@@ -87,6 +87,10 @@ as before.
 - **Requires `separate-pull-requests: true`** (the org default). The
   component is derived from the release-please branch name; combined
   release PRs have no `--components--` segment and fail loudly.
+- **Umbrella root packages are handled.** The companion tags them like
+  any component; `publish-on-tag` skips components with no `ecosystems:`
+  entry via a `::notice::` (green run, all publish jobs `skipped`) — no
+  tag-exclusion needed.
 - **Safe without the skips too.** Tag creation is idempotent, so in a
   repo where release-please still creates Releases the companion simply
   loses the race.
