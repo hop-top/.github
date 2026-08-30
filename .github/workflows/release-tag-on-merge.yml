@@ -142,10 +142,18 @@ jobs:
           set -euo pipefail
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists — skipping create"
-          else
-            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/${TAG}" -f sha="${SHA}"
+          elif gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" -f sha="${SHA}"; then
             echo "Created ${TAG} at ${SHA}"
+          elif gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            # The existence pre-check and the create race release-please's
+            # own tagging (repos with native Releases on): a 422
+            # "Reference already exists" landing in that window is a lost
+            # race, not a failure.
+            echo "Tag ${TAG} created concurrently — lost the race to release-please; nothing to do"
+          else
+            echo "::error::failed to create tag ${TAG} at ${SHA}"
+            exit 1
           fi
 
       - name: Flip release PR label
