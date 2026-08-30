@@ -33,6 +33,14 @@ it's usually adopted for: no tag means no mirror Release either.
 
 ## Steps
 
+> **Order matters.** A repo with the skips enabled, open release PRs, and
+> NO companion is one merge away from the deadlock — release-please will
+> abort on every subsequent run. Land the companion caller in the same PR
+> as the skips, or before them. (Found live in poly-xrr: the skips had
+> been enabled without the companion; every standing release PR was a
+> loaded trap.)
+
+
 ### 1. Skip Releases in `release-please-config.json`
 
 ```json
@@ -78,6 +86,19 @@ config).
 `publish-on-tag` and `mirror-subtree` trigger from the tag push exactly
 as before.
 
+## Verify
+
+Merge the next release PR and watch the chain:
+
+```bash
+gh run list --workflow release-tag.yml --limit 1     # companion: success
+gh api repos/<org>/<repo>/git/ref/tags/<comp>/v<ver> # tag at merge SHA
+gh pr view <n> --json labels                         # release-label flipped
+gh run list --workflow publish.yml --limit 1         # publish fired
+```
+
+Then confirm the registry and the mirror repo (tag + Release) advanced.
+
 ## Gotchas
 
 - **The tag must not come from `GITHUB_TOKEN`.** Events created with
@@ -94,13 +115,24 @@ as before.
 - **Safe without the skips too.** Tag creation is idempotent, so in a
   repo where release-please still creates Releases the companion simply
   loses the race.
+- **release-please cannot SEE tag-only releases.** Its commit-range
+  anchor is the latest GitHub **Release object**, not tags — so after a
+  companion-tagged (Release-free) release, the next standing release PR
+  for that component **re-lists commits the previous release already
+  shipped** (changelog double-count), and regenerated PRs keep doing so.
+  Versions and tags stay correct; only the proposed changelog and the
+  standing-PR noise are affected. Verified: a commit present in a shipped
+  `alpha.5` changelog reappeared verbatim in the regenerated `alpha.6`
+  proposal. There is no config fix today — the options are: accept the
+  duplicate changelog sections, revert the skips (Releases return), or
+  pursue tag-based lookup upstream. Do NOT merge a standing release PR
+  just because it exists; check its changelog against the last shipped
+  release first.
 - **The merge-push release-please run races the companion.** Merging a
   release PR triggers release-please at the same moment the companion is
-  tagging. Usually that run just aborts (harmless — the next run is
-  clean), but if the label flips mid-run it can emit a **spurious
-  release PR** proposing a bogus version (observed: an umbrella downgrade
-  re-listing released history). Close it; a fresh run will not
-  regenerate it.
+  tagging. Usually that run aborts harmlessly; either way the anchor
+  blindness above means spurious-looking PRs recur — recognize them by
+  their re-listed changelog, and leave them unmerged.
 - **Recovering a release merged before the companion existed**: push
   the tag by hand at the merge commit, then flip the release PR's label
   to your `release-label` — release-please tracks release state by

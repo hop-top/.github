@@ -34,16 +34,20 @@ on:
       - '.github/.release-please-manifest.json'
       - '.github/workflows/release-please.yml'
       - '.github/workflows/publish.yml'
-      - 'pyproject.toml'   # adjust per language
+      # Single-language repo: root-level manifests. Polyglot monorepo:
+      # per-directory manifests for EVERY language you ship, e.g.
+      #   go/go.mod  ts/package.json  py/pyproject.toml  rs/Cargo.toml  php/composer.json
+      - 'pyproject.toml'
       - 'package.json'
       - 'Cargo.toml'
+      - 'go.mod'
+      - 'composer.json'
   workflow_dispatch: {}
 
 jobs:
   preflight:
     permissions:
-      contents: read
-      pull-requests: write
+      contents: read  # annotations + step summary need nothing more
     uses: hop-top/.github/.github/workflows/release-please-preflight.yml@v0
 ```
 
