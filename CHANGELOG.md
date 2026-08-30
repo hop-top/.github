@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/hop-top/.github/compare/v0.11.2...v0.11.3) (2026-08-30)
+
+
+### Bug Fixes
+
+* **release-tag-on-merge:** tolerate losing the tag race ([#68](https://github.com/hop-top/.github/issues/68)) ([c41e4c3](https://github.com/hop-top/.github/commit/c41e4c3cba152124f75ec0f090c14a4aca613310))
+
 ## [0.11.2](https://github.com/hop-top/.github/compare/v0.11.1...v0.11.2) (2026-08-30)
 
 
