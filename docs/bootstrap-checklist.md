@@ -28,7 +28,7 @@ Create at `https://github.com/organizations/<org>/settings/secrets/actions`.
 | `GH_MIRROR_PAT` | every release (mirror push) | Fine-grained PAT, `Administration: RW` + `Contents: RW` on every mirror repo |
 | `RELEASE_BOT_APP_ID` | release-please standing PR | Numeric App ID of the hop-top release-bot GitHub App. The App must be installed on the source repo with `Contents: RW` + `Pull Requests: RW` + `Workflows: RW`. Paired with `RELEASE_BOT_PRIVATE_KEY`. |
 | `RELEASE_BOT_PRIVATE_KEY` | release-please standing PR | PEM private key for the same App. Mint via the App's GitHub settings page. Paired with `RELEASE_BOT_APP_ID`. |
-| `NPM_REGISTRY_TOKEN` | ts component | npm Granular Access Token, publish on your scope |
+| `NPM_REGISTRY_TOKEN` | ts component | npm Granular Access Token, publish on your scope — needed once for the FIRST publish; bind a [trusted publisher](../references/how-to/npm-trusted-publishing.md) right after and the token goes unused |
 | `CARGO_REGISTRY_TOKEN` | rs component | crates.io API token. Account must have a **verified email**. |
 | `PYPI_REGISTRY_TOKEN` | py component (token mode) | OPTIONAL — only if you're using `pypi-auth: token` instead of OIDC. PyPI API token (project-scoped after first publish; account-scoped for bootstrap). |
 | `PACKAGIST_USERNAME` | php component | Packagist account username. Paired with `PACKAGIST_TOKEN`. Find at <https://packagist.org/profile/edit>. |
@@ -59,7 +59,12 @@ The mirror jobs (`mirror-subtree.yml`) auto-flip these to read-only after the fi
 
 ### npm
 
-Nothing to pre-register if you own the scope. First `npm publish` claims the package name under your scope.
+Nothing to pre-register if you own the scope. First `npm publish` claims the package name under your scope (this first publish needs the token — trusted publishing can't create a package).
+
+Immediately after the first publish:
+
+1. Bind a trusted publisher so later publishes use OIDC (no token, no OTP, provenance included): [references/how-to/npm-trusted-publishing.md](../references/how-to/npm-trusted-publishing.md)
+2. Ensure `package.json` declares `repository` (source repo URL + `directory` for monorepos) — provenance validation rejects the publish without it (`E422`).
 
 ### crates.io
 

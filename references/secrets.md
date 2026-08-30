@@ -31,7 +31,7 @@ immediately. No silent fallback to `GITHUB_TOKEN`.
 | `GH_MIRROR_PAT` | `mirror-subtree` (always) | Org | Fine-grained PAT with `Administration: RW` + `Contents: RW` on every mirror repo |
 | `RELEASE_BOT_APP_ID` | release-please job + `release-tag-on-merge` (both mint via `actions/create-github-app-token@v1`) | Org | GitHub App ID for the hop-top release-bot. Paired with `RELEASE_BOT_PRIVATE_KEY`. See [GitHub App permissions](#github-app-permissions). |
 | `RELEASE_BOT_PRIVATE_KEY` | release-please job + `release-tag-on-merge` (both mint via `actions/create-github-app-token@v1`) | Org | GitHub App private key. Paired with `RELEASE_BOT_APP_ID`. |
-| `NPM_REGISTRY_TOKEN` | `publish-ts` (if shipping TS) | Org | npm Granular Access Token with publish on your scope |
+| `NPM_REGISTRY_TOKEN` | `publish-ts` (fallback only) | Org | npm Granular Access Token with publish on your scope. **Prefer [trusted publishing](how-to/npm-trusted-publishing.md)** — with a publisher bound, OIDC wins and this token is unused. Tokens expire, hit 2FA walls in CI, and npm is deprecating 2FA-bypass tokens. |
 | `CARGO_REGISTRY_TOKEN` | `publish-rs` (if shipping Rust) | Org | crates.io API token. Account must have a verified email. |
 | `PYPI_REGISTRY_TOKEN` | `publish-py` (if `pypi-auth: token`) | Org | OPTIONAL — only when using token mode instead of OIDC. PyPI API token. |
 | `PACKAGIST_USERNAME` | `publish-php` (if shipping PHP) | Org | Packagist account username. Paired with `PACKAGIST_TOKEN`. Find at <https://packagist.org/profile/edit>. URL-encoded into the `update-package` query string; `::add-mask::`-registered inside the job. |
@@ -61,6 +61,7 @@ PRs authored by the human owner trip CODEOWNERS self-approval on
 
 | What | Why not |
 |---|---|
+| **npm token (trusted-publishing mode)** | `publish-ts` attempts OIDC first; with a per-package trusted publisher bound on npmjs.com the token path is never used. Bind via `npm trust` — see [how-to/npm-trusted-publishing.md](how-to/npm-trusted-publishing.md). Requires `package.json` `repository` field for provenance. |
 | **PyPI token (default mode)** | `publish-py` uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) by default. Configure on PyPI's side bound to your repo + `pypi-environment` (default: `pypi`). If OIDC won't work, see [PyPI auth modes](#pypi-auth-modes) for the token escape hatch. |
 | **Go module token** | proxy.golang.org pulls from git tags. |
 

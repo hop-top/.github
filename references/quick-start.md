@@ -82,7 +82,7 @@ jobs:
       id-token: write  # required for PyPI OIDC trusted publishing
     uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0
     secrets:
-      NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
+      NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}  # fallback; prefer npm trusted publishing (how-to/npm-trusted-publishing.md)
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
       PACKAGIST_TOKEN: ${{ secrets.PACKAGIST_TOKEN }}

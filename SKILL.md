@@ -41,6 +41,7 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 | Re-trigger release-please after sibling-PR conflicts | [references/how-to/retrigger-release-please.md](references/how-to/retrigger-release-please.md) |
 | Ship installable binaries (Homebrew, Scoop, WinGet, …) | [references/how-to/ship-binaries.md](references/how-to/ship-binaries.md) |
 | Look up a secret name | [references/secrets.md](references/secrets.md) |
+| Publish to npm without tokens (trusted publishing) | [references/how-to/npm-trusted-publishing.md](references/how-to/npm-trusted-publishing.md) |
 | Look up an `ecosystems` field | [references/ecosystems.md](references/ecosystems.md) |
 | Pick the right `@v0` / `@v0.x.y` / `@main` pin | [references/pinning.md](references/pinning.md) |
 | Understand the overall flow | [references/concepts/mental-model.md](references/concepts/mental-model.md) |
