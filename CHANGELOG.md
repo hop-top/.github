@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/hop-top/.github/compare/v0.10.0...v0.11.0) (2026-08-30)
+
+
+### Features
+
+* **community:** org defaults, release-bot concept, docs alignment ([#57](https://github.com/hop-top/.github/issues/57)) ([1eda4ff](https://github.com/hop-top/.github/commit/1eda4ff02f5c993f3fce07ab76f5d47f32235aad))
+* **workflows:** add release-tag-on-merge reusable ([#62](https://github.com/hop-top/.github/issues/62)) ([594540b](https://github.com/hop-top/.github/commit/594540b9b91126788d80f61b29fbad3cd6e9d535))
+
+
+### Bug Fixes
+
+* **mirror-subtree:** correct prerelease flag and stale releases on retag ([#61](https://github.com/hop-top/.github/issues/61)) ([cdcc3c8](https://github.com/hop-top/.github/commit/cdcc3c8550e545a8772a4bf8b43f2ce381d7205d))
+
 ## [0.10.0](https://github.com/hop-top/.github/compare/v0.9.2...v0.10.0) (2026-05-25)
 
 
