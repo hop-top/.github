@@ -154,6 +154,30 @@ Example: adding Java/Maven publishing.
    ecosystem is technically backward-compatible, but cut a new
    minor on `v1` to signal it)
 
+## Adding a well-known publisher resource
+
+The well-known publisher is a composite action whose generators
+register via a Python decorator. To add a new generator, see its
+README — recap below.
+
+1. Add `.github/actions/well-known-publisher/generator/src/well_known_publisher/resources/<name>.py`
+   with an `@register('<name>')`-decorated function returning
+   `GeneratorResult`.
+2. Append a `$defs/<name>` schema entry to
+   `.github/actions/well-known-publisher/schema/well-known.schema.json`.
+3. Append a `properties.resources.<name>` reference
+   (`{"$ref": "#/$defs/<name>"}`) in the same schema.
+
+Schema uses strict `additionalProperties: false` at every level —
+typos in resource keys fail loudly. Don't relax it.
+
+Tests: pytest fixtures live under
+`.github/actions/well-known-publisher/generator/tests/fixtures/`.
+Add a fixture per resource.
+
+Canonical extension reference:
+[`.github/actions/well-known-publisher/README.md`](.github/actions/well-known-publisher/README.md).
+
 ## Releasing this repo
 
 dotgithub uses its own release-please setup. Plain semver, no

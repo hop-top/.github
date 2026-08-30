@@ -1,0 +1,6 @@
+version: 1
+resources: {}
+custom:
+  - path: .well-known/note.txt
+    body: |
+      build sha: ${{ env.GITHUB_SHA }}
