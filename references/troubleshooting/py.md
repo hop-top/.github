@@ -14,6 +14,26 @@ Python/PyPI-specific failure modes.
 You can diagnose the most common py failure modes and pick the
 right fix.
 
+## pip installs nothing from `[dependency-groups]`
+
+Symptom: publish test phase fails `ModuleNotFoundError` for a dev
+dependency (e.g. `grpc`) even though `pip install -e '.[dev]'` ran —
+while CI using `uv run pytest` passes.
+
+Cause: the dev deps live under **`[dependency-groups]` (PEP 735)**, not
+`[project.optional-dependencies]`. pip's extras syntax (`.[dev]`)
+**silently installs nothing** from a dependency group — no error, no
+warning. `uv` resolves groups natively, which masks it in CI.
+
+Fix (pip >= 25.1, present after the runner's pip self-upgrade):
+
+```
+test-command: pip install -e . --group dev && pytest
+```
+
+Verified live in poly-xrr (two fix rounds: `.[dev]` looked right and
+changed nothing).
+
 ## First publish of a new PyPI project
 
 Project-scoped API tokens cannot create new PyPI projects, and OIDC
