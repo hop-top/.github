@@ -90,6 +90,13 @@ as before.
 - **Safe without the skips too.** Tag creation is idempotent, so in a
   repo where release-please still creates Releases the companion simply
   loses the race.
+- **The merge-push release-please run races the companion.** Merging a
+  release PR triggers release-please at the same moment the companion is
+  tagging. Usually that run just aborts (harmless — the next run is
+  clean), but if the label flips mid-run it can emit a **spurious
+  release PR** proposing a bogus version (observed: an umbrella downgrade
+  re-listing released history). Close it; a fresh run will not
+  regenerate it.
 - **Recovering a release merged before the companion existed**: push
   the tag by hand at the merge commit, then flip the release PR's label
   to your `release-label` — release-please tracks release state by
