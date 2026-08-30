@@ -20,28 +20,14 @@ CI's `NPM_REGISTRY_TOKEN` is scoped to the org and can publish
 (404, 403, "package not found") and look like token problems but
 aren't. Use the local bootstrap path before CI takes over.
 
-See [SKILL.md § First publish of a new package — npm](../../SKILL.md#npm)
-and [`scripts/bootstrap-first-publish.sh npm`](../../scripts/README.md).
+Trusted publishing can't create the name either — `npm trust` binds to
+an existing package. Bootstrap locally first, then bind.
 
-## `ERR_PNPM_OTP_NON_INTERACTIVE` in CI publish
-
-Symptom: CI publish fails with `ERR_PNPM_OTP_NON_INTERACTIVE`,
-often after a misleading `OIDC skipped: 404` line. Token is valid,
-package exists. Cause is the npm account's 2FA mode set to "Auth
-and writes" — CI has no interactive OTP channel.
-
-Full diagnosis + fix:
-[SKILL.md § npm 2FA in "Auth and writes" mode breaks CI publish](../../SKILL.md#npm-2fa-in-auth-and-writes-mode-breaks-ci-publish).
-
-## `404 Not Found` on `PUT /@scope%2fname`
-
-Symptom: `pnpm: 404 Not Found - PUT https://registry.npmjs.org/@scope%2fname`.
-Looks like a missing package or scope/permission problem — usually
-it's an expired token. npm returns 404 instead of 401/403 to
-unauthenticated callers to avoid leaking package existence.
-
-Diagnostic + fix:
-[SKILL.md § Expired npm token returns HTTP 404, not 401/403](../../SKILL.md#expired-npm-token-returns-http-404-not-401403).
+See [SKILL.md § First publish of a new package — npm](../../SKILL.md#npm),
+[`scripts/bootstrap-first-publish.sh npm`](../../scripts/README.md), and
+[how-to/npm-trusted-publishing.md](../how-to/npm-trusted-publishing.md).
+For post-bootstrap publish failures, see the
+[npm auth failure ladder](#npm-auth-failure-ladder) below.
 
 ## Native bindings + --ignore-scripts
 
@@ -151,7 +137,7 @@ previous layer is fixed. Climbed in full on poly-cite (2026-08-30):
 
 | Error | Meaning | Fix |
 |---|---|---|
-| `[E404] 404 - PUT .../@scope%2fpkg` | Token expired or lacks publish rights on the scope (npm 404s instead of 403 on unauthorized PUT). Package existing on npm proves it's auth, not a missing package. | Rotate `NPM_REGISTRY_TOKEN` — or skip tokens: [how-to/npm-trusted-publishing.md](../how-to/npm-trusted-publishing.md) |
+| `[E404] 404 - PUT .../@scope%2fpkg` | Token expired or lacks publish rights on the scope (npm 404s instead of 401/403 on unauthorized PUT to avoid leaking package existence). Package existing on npm proves it's auth, not a missing package. | Rotate `NPM_REGISTRY_TOKEN` — or skip tokens: [how-to/npm-trusted-publishing.md](../how-to/npm-trusted-publishing.md) |
 | `[ERR_PNPM_OTP_NON_INTERACTIVE]` | Token authenticates, but the package/account requires 2FA on publish and CI has no TTY for the OTP prompt | Bind a trusted publisher (preferred) or relax the package's publishing-access setting |
 | `[WARN] Skipped OIDC: ERR_PNPM_AUTH_TOKEN_EXCHANGE ... (status code 404)` | pnpm tried OIDC but no trusted publisher is bound for this package; it falls back to the token | Expected noise on the token path; to use OIDC, bind the publisher |
 | `[E422] Error verifying sigstore provenance bundle: Failed to validate repository information` | OIDC worked; npm rejects the provenance cross-check because `package.json` lacks a `repository` field (or it mismatches the build repo) | Add `repository` pointing at the source repo with `directory` — see the how-to |

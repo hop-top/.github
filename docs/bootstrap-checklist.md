@@ -59,7 +59,7 @@ The mirror jobs (`mirror-subtree.yml`) auto-flip these to read-only after the fi
 
 ### npm
 
-Nothing to pre-register if you own the scope. First `npm publish` claims the package name under your scope (this first publish needs the token — trusted publishing can't create a package).
+Nothing to pre-register if you own the scope. First `npm publish` claims the package name under your scope — but it must be a LOCAL maintainer publish: neither trusted publishing nor the org-scoped CI token can create a new name (see `scripts/bootstrap-first-publish.sh npm`).
 
 Immediately after the first publish:
 
