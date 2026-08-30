@@ -78,7 +78,9 @@ Expected: `type: github`, your repo, `file: publish.yml`,
 
 ## First publish of a NEW package
 
-Trusted publishing can't create a package that doesn't exist yet. First
-`npm publish` needs the token path once (see
-[bootstrap-checklist § npm](../../docs/bootstrap-checklist.md)); bind the
-trusted publisher immediately after.
+Trusted publishing can't create a package that doesn't exist yet — and
+neither can the org-scoped CI token (scoped tokens publish updates, not
+new names). Bootstrap the first publish locally
+([`scripts/bootstrap-first-publish.sh npm`](../../scripts/README.md),
+[SKILL.md § First publish](../../SKILL.md#first-publish-of-a-new-package)),
+then bind the trusted publisher immediately after.

@@ -33,6 +33,8 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 |---|---|
 | Set up a brand-new repo's release pipeline | [references/quick-start.md](references/quick-start.md) |
 | Run the full first-time-setup checklist | [docs/bootstrap-checklist.md](docs/bootstrap-checklist.md) |
+| Publish a brand-new package for the first time | [First publish of a new package](#first-publish-of-a-new-package) |
+| Diagnose a first-publish CI failure | [Diagnosing first-publish failures](#diagnosing-first-publish-failures) |
 | Catch misconfigurations at PR time | [references/how-to/add-preflight.md](references/how-to/add-preflight.md) |
 | Configure a single-language repo (no polyglot split) | [references/how-to/single-language-repo.md](references/how-to/single-language-repo.md) |
 | Stay in an alpha/beta/rc channel | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
@@ -220,6 +222,137 @@ jobs:
         ts:  { dir: ts,  ecosystem: ts,  package: "@org/pkg",  mirror: org/pkg-ts }
         # … py / rs / php / go as needed
 ```
+
+## First publish of a new package
+
+Scoped registry tokens grant "publish update" on existing packages
+but not "create new package in scope". The first publish of any
+new `<scope>/<name>` MUST be done with a higher-privilege
+credential — usually a local interactive session. After that first
+publish lands, the standard CI token works for every subsequent
+version bump.
+
+Use the helper:
+
+```sh
+scripts/bootstrap-first-publish.sh npm   # @scope/name
+scripts/bootstrap-first-publish.sh pypi  # new PyPI project
+scripts/bootstrap-first-publish.sh cargo # new crates.io crate
+```
+
+It runs the right local build, verifies auth state, and publishes
+with the equivalent of `--access public`. Run from the package
+directory.
+
+### npm
+
+Automation tokens scoped to an org/scope can `publish` versions of
+packages that already exist in the scope, but cannot create the
+first one. First publish of a new `@scope/name`:
+
+1. `npm login` locally as a user with `publish` on the scope.
+2. `pnpm publish --access public` from the package dir
+   (`--access public` is required for the very first publish; npm
+   defaults new scoped packages to restricted).
+3. Bind a trusted publisher immediately
+   (`npm trust github @scope/name --repo <org>/<repo> --file publish.yml
+   --allow-publish --yes`) so subsequent versions publish via OIDC —
+   no token, no OTP, provenance included. See
+   [how-to/npm-trusted-publishing.md](references/how-to/npm-trusted-publishing.md).
+   `NPM_REGISTRY_TOKEN` remains the fallback for unbound packages.
+   No further `--access public` needed — access is now a server-side
+   property of the package.
+
+### PyPI
+
+Project-scoped API tokens cannot create new projects — by
+definition they can only act on projects that already exist. The
+first publish of a brand-new PyPI name has two options:
+
+1. **Account-scoped token** (recommended for one-shot bootstrap):
+   mint a token with scope "Entire account" at
+   <https://pypi.org/manage/account/token/>, use it locally:
+
+   ```sh
+   uv build
+   uv run twine upload dist/*
+   ```
+
+   After the project exists on PyPI, **delete the account-wide
+   token** and mint a per-project token for CI.
+
+2. **OIDC trusted publishing**: works for first publish too, but
+   requires pre-registering the workflow on pypi.org via
+   <https://pypi.org/manage/account/publishing/> with the future
+   project name. PyPI ties the trusted publisher to a name string
+   — you can register one before the project exists. After first
+   publish, the entry becomes scoped to the now-claimed project.
+
+   Cross-ref: `publish-py.yml` accepts `pypi-auth: oidc` or
+   `pypi-auth: token`. OIDC requires the GitHub Environment
+   binding (`pypi-environment`, default `pypi`).
+
+### crates.io
+
+Post-2023, crates.io API tokens carry crate-name scope restrictions
+(`crates: <name>` or unrestricted). A scoped token cannot publish
+a name it doesn't already include. First publish of a new crate
+requires an **unrestricted** token OR a local `cargo login`
+session.
+
+Recommended:
+
+1. Keep an unrestricted "bootstrap" token in your personal keyring
+   (1Password, macOS Keychain) — NEVER in CI secrets.
+2. `cargo login <bootstrap-token>` locally, then
+   `cargo publish` from the crate dir.
+3. After first publish, mint a name-scoped token for CI's
+   `CARGO_REGISTRY_TOKEN` secret.
+
+The reasoning for "not in CI secrets": an unrestricted token can
+publish to ANY crate name on the account. CI secrets are accessible
+to anyone with `pull_request` against the repo via malicious
+workflow edits in a branch. Keep blast radius small.
+
+## Diagnosing first-publish failures
+
+### npm 2FA in "Auth and writes" mode breaks CI publish
+
+Symptom: CI publish fails with `ERR_PNPM_OTP_NON_INTERACTIVE` even
+when `NPM_REGISTRY_TOKEN` is valid and the package already exists.
+Often preceded by `Skipped OIDC: ... 404` in the same log — that
+line means no trusted publisher is bound for the package, so pnpm
+fell back to the token, which then hit the OTP wall.
+
+Cause: 2FA is required on publish (account "Auth and writes" mode
+or the package's publishing-access setting). CI has no interactive
+session — no amount of token rotation fixes this.
+
+Fix: bind a trusted publisher so CI publishes via OIDC — no OTP
+involved. See
+[how-to/npm-trusted-publishing.md](references/how-to/npm-trusted-publishing.md).
+(Downgrading the account to "Auth only" 2FA also works but weakens
+the account and keeps you on the token path, which npm is
+deprecating.) Full error sequence:
+[troubleshooting/ts.md § npm auth failure ladder](references/troubleshooting/ts.md#npm-auth-failure-ladder).
+
+### Expired npm token returns HTTP 404, not 401/403
+
+Symptom:
+`pnpm: 404 Not Found - PUT https://registry.npmjs.org/@scope%2fname - Not found`.
+
+This looks identical to "package doesn't exist in scope" or
+"token lacks publish permission". It's actually "token expired" —
+npm returns 404 instead of 401/403 to avoid leaking package
+existence to unauthenticated callers.
+
+Diagnostic: before assuming scope / permission issues, check the
+token's expiry at
+<https://www.npmjs.com/settings/~/tokens>. If expired, mint a
+replacement, update the `NPM_REGISTRY_TOKEN` secret, and re-run
+the failed workflow run. Long-term fix: bind a trusted publisher
+and stop depending on token freshness —
+[how-to/npm-trusted-publishing.md](references/how-to/npm-trusted-publishing.md).
 
 ## See also
 

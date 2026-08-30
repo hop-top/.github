@@ -13,6 +13,22 @@ TypeScript/Node-specific failure modes in the publish-on-tag pipeline.
 You can diagnose the most common ts failure modes and pick the
 right escape hatch.
 
+## First publish of a new `@scope/name`
+
+CI's `NPM_REGISTRY_TOKEN` is scoped to the org and can publish
+*updates* but cannot *create* a new `@scope/name`. Symptoms vary
+(404, 403, "package not found") and look like token problems but
+aren't. Use the local bootstrap path before CI takes over.
+
+Trusted publishing can't create the name either — `npm trust` binds to
+an existing package. Bootstrap locally first, then bind.
+
+See [SKILL.md § First publish of a new package — npm](../../SKILL.md#npm),
+[`scripts/bootstrap-first-publish.sh npm`](../../scripts/README.md), and
+[how-to/npm-trusted-publishing.md](../how-to/npm-trusted-publishing.md).
+For post-bootstrap publish failures, see the
+[npm auth failure ladder](#npm-auth-failure-ladder) below.
+
 ## Native bindings + --ignore-scripts
 
 `publish-ts.yml`'s default `test-command` uses `--ignore-scripts`
@@ -121,7 +137,7 @@ previous layer is fixed. Climbed in full on poly-cite (2026-08-30):
 
 | Error | Meaning | Fix |
 |---|---|---|
-| `[E404] 404 - PUT .../@scope%2fpkg` | Token expired or lacks publish rights on the scope (npm 404s instead of 403 on unauthorized PUT). Package existing on npm proves it's auth, not a missing package. | Rotate `NPM_REGISTRY_TOKEN` — or skip tokens: [how-to/npm-trusted-publishing.md](../how-to/npm-trusted-publishing.md) |
+| `[E404] 404 - PUT .../@scope%2fpkg` | Token expired or lacks publish rights on the scope (npm 404s instead of 401/403 on unauthorized PUT to avoid leaking package existence). Package existing on npm proves it's auth, not a missing package. | Rotate `NPM_REGISTRY_TOKEN` — or skip tokens: [how-to/npm-trusted-publishing.md](../how-to/npm-trusted-publishing.md) |
 | `[ERR_PNPM_OTP_NON_INTERACTIVE]` | Token authenticates, but the package/account requires 2FA on publish and CI has no TTY for the OTP prompt | Bind a trusted publisher (preferred) or relax the package's publishing-access setting |
 | `[WARN] Skipped OIDC: ERR_PNPM_AUTH_TOKEN_EXCHANGE ... (status code 404)` | pnpm tried OIDC but no trusted publisher is bound for this package; it falls back to the token | Expected noise on the token path; to use OIDC, bind the publisher |
 | `[E422] Error verifying sigstore provenance bundle: Failed to validate repository information` | OIDC worked; npm rejects the provenance cross-check because `package.json` lacks a `repository` field (or it mismatches the build repo) | Add `repository` pointing at the source repo with `directory` — see the how-to |
