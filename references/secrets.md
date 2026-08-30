@@ -29,8 +29,8 @@ immediately. No silent fallback to `GITHUB_TOKEN`.
 | Secret | Required by | Scope | Notes |
 |---|---|---|---|
 | `GH_MIRROR_PAT` | `mirror-subtree` (always) | Org | Fine-grained PAT with `Administration: RW` + `Contents: RW` on every mirror repo |
-| `RELEASE_BOT_APP_ID` | release-please job (via `actions/create-github-app-token@v1`) | Org | GitHub App ID for the hop-top release-bot. Paired with `RELEASE_BOT_PRIVATE_KEY`. See [GitHub App permissions](#github-app-permissions). |
-| `RELEASE_BOT_PRIVATE_KEY` | release-please job (via `actions/create-github-app-token@v1`) | Org | GitHub App private key. Paired with `RELEASE_BOT_APP_ID`. |
+| `RELEASE_BOT_APP_ID` | release-please job + `release-tag-on-merge` (both mint via `actions/create-github-app-token@v1`) | Org | GitHub App ID for the hop-top release-bot. Paired with `RELEASE_BOT_PRIVATE_KEY`. See [GitHub App permissions](#github-app-permissions). |
+| `RELEASE_BOT_PRIVATE_KEY` | release-please job + `release-tag-on-merge` (both mint via `actions/create-github-app-token@v1`) | Org | GitHub App private key. Paired with `RELEASE_BOT_APP_ID`. |
 | `NPM_REGISTRY_TOKEN` | `publish-ts` (if shipping TS) | Org | npm Granular Access Token with publish on your scope |
 | `CARGO_REGISTRY_TOKEN` | `publish-rs` (if shipping Rust) | Org | crates.io API token. Account must have a verified email. |
 | `PYPI_REGISTRY_TOKEN` | `publish-py` (if `pypi-auth: token`) | Org | OPTIONAL — only when using token mode instead of OIDC. PyPI API token. |
