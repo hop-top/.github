@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/hop-top/.github/compare/v0.11.1...v0.11.2) (2026-08-30)
+
+
+### Bug Fixes
+
+* **preflight:** root aggregate component may be absent from ecosystems ([#65](https://github.com/hop-top/.github/issues/65)) ([2f49568](https://github.com/hop-top/.github/commit/2f495681239f682c6c3ccec33bed952b4af7f392))
+
 ## [0.11.1](https://github.com/hop-top/.github/compare/v0.11.0...v0.11.1) (2026-08-30)
 
 
