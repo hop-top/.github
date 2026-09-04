@@ -58,7 +58,7 @@ The reusable workflow:
 - mints a short-lived token from the hop-top release-bot GitHub App,
   so release PRs are opened by `release-bot[bot]` rather than the
   human owner — they trigger downstream workflows, and sidestep the
-  CODEOWNERS self-approval block on `.release-please-manifest.json`;
+  CODEOWNERS self-approval block on the changelogs;
 - runs one release-please job per branch at a time, newest push wins.
   A run that started before a release PR merged and finished after it
   would otherwise re-open a release PR for the version just tagged;

@@ -53,7 +53,7 @@ the client ID) and `private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}`.
 
 Avoid long-lived PATs (`GH_RELEASE_PLEASE_PAT`); delivery to fresh
 repos has proved unreliable, and PR authorship as the human owner
-trips CODEOWNERS self-approval on the manifest file.
+trips CODEOWNERS self-approval on the changelogs.
 
 ## What this means for consumers
 

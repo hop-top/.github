@@ -21,7 +21,7 @@ The standing release-please PR is merged automatically at cadence:
 - Cron daily **04:00 UTC** finds the PR at head `release-please--branches--main`;
   if CI is green, `gh pr merge --squash --auto`.
 - The merge completes only after release-team approval: release PRs always rewrite
-  `.release-please-manifest.json`, which is code-owner-gated — see
+  a component's `CHANGELOG.md`, which is code-owner-gated — see
   [release-bot](../references/concepts/release-bot.md) for the full mechanism
   (guardrail ruleset: zero required approvals + code-owner review). The cron times the
   merge; it can never bypass the review.
