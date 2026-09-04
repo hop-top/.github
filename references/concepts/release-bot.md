@@ -35,20 +35,19 @@ Three problems, one authorship choice:
 
 ## CODEOWNERS note
 
-Scope the release-config paths to the release team, not an individual:
+Scope the release-please-managed changelogs to the release team, not an
+individual:
 
 ```
-# Release configuration + changelogs — release team only
-release-please-config.json    @hop-top/release
-.release-please-manifest.json @hop-top/release
-CHANGELOG.md                  @hop-top/release
+# Changelogs — release team only
+CHANGELOG.md @hop-top/release
 ```
 
 This does two jobs:
 
 1. Path-level required review can't self-deadlock (team, not one person).
-2. **Auto-merge brake.** Every release PR rewrites the manifest, so with
-   code-owner review required, no generic auto-merge (merge-on-green,
+2. **Auto-merge brake.** Every release PR rewrites a component's changelog,
+   so with code-owner review required, no generic auto-merge (merge-on-green,
    dependabot flows) can ever complete on a release PR. Releases cut only
    after an explicit release-team approval; scheduled auto-cut jobs merge
    approved-and-green release PRs at cadence — they time the merge, they
@@ -59,11 +58,14 @@ The pairing that makes it work (reference shape: poly-kit ruleset
 
 - Ruleset on the default branch: `required_approving_review_count: 0` +
   `require_code_owner_review: true`.
-- CODEOWNERS stays **minimal** — only the release-config lines above, no
+- CODEOWNERS stays **minimal** — only the changelog line above, no
   `*` fallback. A `*` rule would pull every PR into code-owner review and
   kill frictionless auto-merge for everything else. Zero approvals + owned
   release paths = review-free repo except release state.
 
-Basename patterns match the files under `.github/` too. With an individual owner instead,
-any release-config change that person authors would hit the same self-approval block the
-bot authorship exists to avoid.
+The config and manifest are deliberately **not** owned: channel promotions and
+counter reseeds are human edits to those files, and owning them hands the
+self-approval block to the human maintainer — a single-member release team can
+never approve its own promotion PR. Anchor with a leading `/` when the repo
+carries scaffold or template copies of `CHANGELOG.md`; the basename form
+above is right otherwise.
