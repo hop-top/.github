@@ -68,7 +68,7 @@ access tokens, users have to `brew tap` once per tool). The
 org-wide tap pattern means users `brew tap hop-top/tap` once and
 get every hop-top binary via `brew install hop-top/tap/<name>`.
 
-goreleaser's `brews[].repository.name` field controls this; set
+goreleaser's `homebrew_casks[].repository.name` field controls this; set
 it to `homebrew-tap`. Same for `scoops[].repository.name` — set
 it to `scoop-bucket`.
 
@@ -82,7 +82,7 @@ Created `homebrew-<binary>` or `scoop-<binary>` tap/bucket repo
 per binary: misread convention. Use `<org>/homebrew-tap` +
 `<org>/scoop-bucket` (single repos serving every org binary).
 Delete the per-binary tap/bucket; point goreleaser's
-`brews[].repository.name` at `homebrew-tap` and
+`homebrew_casks[].repository.name` at `homebrew-tap` and
 `scoops[].repository.name` at `scoop-bucket`.
 
 ## Next steps

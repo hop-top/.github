@@ -54,7 +54,7 @@ jobs:
       RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
       RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
     with:
-      homebrew-tap-repo: homebrew-tap     # omit if no `brews:` block
+      homebrew-tap-repo: homebrew-tap     # omit if no `homebrew_casks:` block
       scoop-bucket-repo: scoop-bucket     # omit if no `scoops:` block
       winget-fork-repo: winget-pkgs       # omit if no `winget:` block
 ```
@@ -121,7 +121,7 @@ Two adopter requirements:
   the reusable workflow handles GitHub Release uploads itself via
   `gh release upload` to the real prefixed tag.
 - **`{{ .Env.RELEASE_TAG }}`** in every package-manager URL template
-  (Homebrew `brews:`, Scoop `scoops:`, WinGet `winget:`) — these are
+  (Homebrew `homebrew_casks:`, Scoop `scoops:`, WinGet `winget:`) — these are
   the spots that need the real prefixed tag, because the GitHub
   Release asset path uses it verbatim.
 
@@ -161,7 +161,13 @@ release:
   # a different tag name on its own (release.tag: is Pro-only).
   disable: true
 
-brews:
+# `brews:` is DEPRECATED as of goreleaser 2.x — it wrote a formula,
+# and Homebrew now wants binary distributions as casks. Use
+# `homebrew_casks:`. Note the schema differs: no `install:` /
+# `test:` stanzas, and the binary list is `binaries:` (plural) —
+# singular `binary:` is itself deprecated. `goreleaser check`
+# reports both, so validate before committing.
+homebrew_casks:
   - name: usp
     repository:
       owner: hop-top
@@ -171,14 +177,14 @@ brews:
     homepage: https://github.com/hop-top/usp
     description: "Universal Sessions Protocol"
     license: MIT
+    binaries: [usp]
     # {{ .Env.RELEASE_TAG }} is the literal `usp/v<version>` tag,
     # which is the path segment GitHub Releases use for asset
     # downloads. {{.Tag}} here would resolve to the synthesized
-    # bare tag — wrong for the URL.
+    # bare tag — wrong for the URL. Root-artifact repos (plain
+    # `vX.Y.Z` tags, no synthesized tag) can use {{ .Tag }} and omit
+    # url_template entirely.
     url_template: "https://github.com/hop-top/usp/releases/download/{{ .Env.RELEASE_TAG }}/{{ .ArtifactName }}"
-    install: bin.install "usp"
-    test: |
-      system "#{bin}/usp", "--version"
 
 scoops:
   - name: usp
@@ -227,7 +233,7 @@ release-please cuts tag <component>/v<version>
 publish-on-tag.yml fires        ← language-registry publishes + mirror push
   ↓ (in parallel)
 goreleaser-on-tag.yml fires     ← cross-platform binaries
-                                  + Homebrew formula (brews:)
+                                  + Homebrew cask (homebrew_casks:)
                                   + Scoop manifest (scoops:)
                                   + WinGet manifest (winget:)
 ```
@@ -262,7 +268,7 @@ based on the corresponding `with:` input.
 
 | Manager | Platform | GoReleaser block | Workflow input | Target repo convention |
 |---|---|---|---|---|
-| Homebrew | macOS + Linux | `brews:` | `homebrew-tap-repo: homebrew-tap` | `<org>/homebrew-tap` |
+| Homebrew | macOS + Linux | `homebrew_casks:` | `homebrew-tap-repo: homebrew-tap` | `<org>/homebrew-tap` |
 | Scoop | Windows | `scoops:` | `scoop-bucket-repo: scoop-bucket` | `<org>/scoop-bucket` |
 | WinGet | Windows (default on Win 11+) | `winget:` | `winget-fork-repo: winget-pkgs` | `<org>/winget-pkgs` (fork of `microsoft/winget-pkgs`) |
 
@@ -381,8 +387,11 @@ The reusable workflow defaults to `~> v2` (latest 2.x). The
 - `monorepo:` not used (Pro-only)
 - `archives.ids:` (renamed from `archives.builds:` in 2.x)
 - `archives.format_overrides.formats:` (renamed from `format:` in 2.x)
-- `brews:` (still works in 2.x but deprecated in favor of
-  `homebrew_casks:`; will need a migration in a future major)
+- `homebrew_casks:` — `brews:` still parses in 2.x but
+  `goreleaser check` fails the config as deprecated, so CI that
+  runs `check` will not pass with it. Verified against 2.18.0.
+  `homebrew_casks.binary` (singular) is likewise deprecated in
+  favour of `binaries:`
 
 ### Why `release.disable: true` is mandatory
 

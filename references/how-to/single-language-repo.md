@@ -81,6 +81,30 @@ mirror slug, not the source. There is no "publish to Packagist
 without the mirror" path. See [troubleshooting/php.md § PHP
 requires the mirror](../troubleshooting/php.md#php-requires-the-mirror).
 
+## Go-only: what you still need
+
+Dropping `publish.yml` leaves a real gap — nothing publishes, so
+be explicit about the remaining pieces:
+
+| Piece | Needed? | Notes |
+|---|---|---|
+| `publish.yml` | No | proxy.golang.org pulls tags from the source repo |
+| Mirror repo | No | source already holds the bare-name slot |
+| release-please | **Yes** | nothing cuts tags otherwise, and `go install @latest` needs a version |
+| Vanity import registration | No | `hop.top/<name>` resolves by convention the moment the repo exists |
+| `LICENSE` | **Yes** | a public repo without one grants no rights |
+| `.goreleaser.yaml` + `homebrew_casks:` | Only if shipping binaries | see [docs/binaries/go.md](../../docs/binaries/go.md) |
+
+Tag shape for a Go-only root-artifact repo is plain `vX.Y.Z` —
+`include-component-in-tag: false`. That is the one place the
+`<component>/v<version>` rule in the top-level SKILL does not
+apply, because there is no publish router to key off the prefix
+and goreleaser / `go install` both want a bare module-root tag.
+
+Consequence for casks: with a plain tag there is no synthesized
+bare tag, so `{{ .Env.RELEASE_TAG }}` is unnecessary — omit
+`url_template` and let goreleaser derive the asset URL.
+
 ## Next steps
 
 - [Quick-start](../quick-start.md) — the polyglot template.
