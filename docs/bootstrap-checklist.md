@@ -136,13 +136,23 @@ on:
   "tag-separator": "/",
   "packages": {
     "ts":  { "release-type": "node",   "component": "ts",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "py":  { "release-type": "python", "component": "py",     "package-name": "my-pkg", "extra-files": [{"type":"toml","path":"pyproject.toml","jsonpath":"$.project.version"}], "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
+    "py":  { "release-type": "python", "component": "py",     "package-name": "my-pkg", "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
     "rs":  { "release-type": "rust",   "component": "rs",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
     "php": { "release-type": "php",    "component": "php",    "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
     "go":  { "release-type": "go",     "component": "go",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" }
   }
 }
 ```
+
+**No `extra-files` override on `pyproject.toml` for `release-type:
+python`.** `release-type: python` already writes `pyproject.toml`
+(and `setup.py`, `_version.py`) with PEP 440-normalized strings
+(`0.1.0a1`). A generic `extra-files` entry of `{"type": "toml",
+"path": "pyproject.toml"}` bypasses that normalization and writes
+raw SemVer (`0.1.0-alpha.1`), which is invalid PEP 440 and fails
+`pip install` / `twine check`. The preflight gate rejects it — see
+[concepts/version-strings.md § Don't break the
+normalization](../references/concepts/version-strings.md#dont-break-the-normalization).
 
 ```json
 // .release-please-manifest.json — pure go / pure ts: LEAVE EMPTY.
