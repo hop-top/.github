@@ -21,7 +21,7 @@ prefixes (e.g. `kit-ts` → tag `kit-ts/v1.2.3`).
 ecosystems: |
   <component>:
     dir: <subdir>
-    ecosystem: ts|py|rs|php|go
+    ecosystem: ts|py|rs|php|go|none
     mirror: <org>/<mirror-repo>
     package: <registry-name>
     # … optional overrides
@@ -32,7 +32,7 @@ ecosystems: |
 | Field | Required | Notes |
 |---|---|---|
 | `dir` | yes | Subdirectory in the repo (`.` for root) |
-| `ecosystem` | yes | `ts` \| `py` \| `rs` \| `php` \| `go` — picks the publish job (none for `go`; `php` runs a Packagist notify after the mirror push, not a publish-from-source step) |
+| `ecosystem` | yes | `ts` \| `py` \| `rs` \| `php` \| `go` \| `none` — picks the publish job. `go` and `none` have no publish job: Go releases through the mirror plus the module proxy, and `none` is a payload with no registry at all (a spec tree, say). Both still run the mirror job. `php` runs a Packagist notify after the mirror push, not a publish-from-source step. Prefer `none` over omitting the field: an absent `ecosystem` yields an empty output, which the mirror job's `!= ''` guard reads as an umbrella tag and skips |
 | `mirror` | yes | Full slug of the read-only mirror repo (e.g. `hop-top/kit-ts`) |
 | `package` | no | Registry package name (informational; required for php's Packagist notify) |
 | `test-command` | no | Override default test step |

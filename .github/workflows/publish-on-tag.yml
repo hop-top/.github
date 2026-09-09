@@ -15,7 +15,15 @@ on:
 
           Required fields per component:
             dir          subdirectory in the repo (e.g. "ts")
-            ecosystem    one of: ts | py | rs | php | go
+            ecosystem    one of: ts | py | rs | php | go | none
+                         `go` and `none` have no publish job: Go releases
+                         through the mirror plus the module proxy, and
+                         `none` is a payload with no registry at all (a
+                         spec tree, say). Both still run the mirror job.
+                         Use `none` rather than omitting `ecosystem`:
+                         an absent entry yields an empty output, which
+                         the mirror job's `!= ''` guard reads as an
+                         umbrella tag and skips.
             mirror       full slug of the read-only mirror
 
           Optional override fields (empty = use built-in defaults):
