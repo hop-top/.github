@@ -19,6 +19,9 @@ on:
             mirror       full slug of the read-only mirror
 
           Optional override fields (empty = use built-in defaults):
+            target-prefix    path on the mirror to publish under (e.g.
+                             "specs/v0.1"); empty publishes at the mirror
+                             root, which is the default
             package          registry name (informational)
             test-command     override default test step
             build-command    override default build step (ts, py)
@@ -75,6 +78,7 @@ jobs:
       dir: ${{ steps.lookup.outputs.dir }}
       ecosystem: ${{ steps.lookup.outputs.ecosystem }}
       mirror: ${{ steps.lookup.outputs.mirror }}
+      target_prefix: ${{ steps.lookup.outputs.target_prefix }}
       package: ${{ steps.lookup.outputs.package }}
       test_command: ${{ steps.lookup.outputs.test_command }}
       build_command: ${{ steps.lookup.outputs.build_command }}
@@ -118,7 +122,7 @@ jobs:
                   f"::notice::Component {comp!r} has no ecosystem entry; "
                   f"skipping publish (umbrella component)\n"
               )
-              for k in ("dir", "ecosystem", "mirror", "package"):
+              for k in ("dir", "ecosystem", "mirror", "target_prefix", "package"):
                   print(f"{k}=")
               sys.exit(0)
           # Fields: `dir`, `ecosystem`, `mirror` are required by downstream jobs;
@@ -128,6 +132,7 @@ jobs:
           # Optional overrides — empty string means "use reusable workflow default".
           # Output keys use underscores (GITHUB_OUTPUT doesn't like hyphens).
           for src, dst in [
+              ("target-prefix",    "target_prefix"),
               ("test-command",     "test_command"),
               ("build-command",    "build_command"),
               ("node-version",     "node_version"),
@@ -209,6 +214,7 @@ jobs:
     with:
       source-prefix: ${{ needs.parse.outputs.dir }}
       target-repo: ${{ needs.parse.outputs.mirror }}
+      target-prefix: ${{ needs.parse.outputs.target_prefix }}
       tag: ${{ needs.parse.outputs.version }}
       homepage: ${{ inputs.homepage }}
       description: ${{ inputs.description-prefix }} of ${{ github.repository }} ${{ needs.parse.outputs.component }}
