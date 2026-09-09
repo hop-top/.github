@@ -145,14 +145,50 @@ on:
 ```
 
 ```json
-// .release-please-manifest.json — LEAVE EMPTY for a true first release.
+// .release-please-manifest.json — pure go / pure ts: LEAVE EMPTY.
 {}
 ```
 
-**Do not seed the manifest with a version, even one that looks like
-"nothing released yet."** A manifest entry like `{"go":
-"0.1.0-alpha.0"}` is NOT a hint to release-please about where to
-start — it's read as "this version was already released." The next
+```json
+// .release-please-manifest.json — poly-* or ANY repo with a python
+// component: seed EVERY component. Accept that the first tag is alpha.1.
+{
+  ".":  "0.1.0-alpha.0",
+  "go": "0.1.0-alpha.0",
+  "ts": "0.1.0-alpha.0",
+  "py": "0.1.0-alpha.0"
+}
+```
+
+**Which one depends on whether the repo has a python component.**
+
+| Repo | Manifest | First tag |
+|---|---|---|
+| Pure go, pure ts (no python) | `{}` | `alpha.0` |
+| `poly-*`, or any repo with a `release-type: python` package | Seed every component at `0.1.0-alpha.0` | `alpha.1` |
+
+An empty manifest makes the **python** strategy compute a *stable* first
+version even with `prerelease: true` set — the release PR proposes
+`0.1.0`, writes `{"py": "0.1.0"}` and a stable `version` into
+`pyproject.toml`, and `release-please-preflight` fails it with
+"package py declares prerelease but manifest seed '0.1.0' is stable".
+The go and node strategies honor `initial-version` from the same config
+and propose `0.1.0-alpha.0` correctly, so a polyglot repo left empty gets
+three good components and one broken one. Observed on `poly-axon`
+2026-09-09; `poly-kit` seeded every component from its first commit and
+its python channel has shipped through `kit-py/v0.5.0-alpha.5`.
+
+Seed **all** components, not just the python one — mixed seeded/absent
+gives inconsistent first versions across a single repo.
+
+The rest of this section explains why seeding costs you `alpha.0`. That
+cost is real and accepted for python repos; it is avoidable for pure
+go/ts, which is why they stay empty.
+
+**What a seed actually means (and why pure go/ts should skip it).** A
+manifest entry like `{"go": "0.1.0-alpha.0"}` is NOT a hint to
+release-please about where to start — it's read as "this version was
+already released." The next
 release bumps the prerelease *counter* from that seed
 (`0.1.0-alpha.0 → 0.1.0-alpha.1`), it does not simply "use" the
 seeded value as the first tag. If your `initial-version` in the
