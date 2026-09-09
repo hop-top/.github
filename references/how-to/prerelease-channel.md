@@ -99,6 +99,30 @@ regardless of what it says.
 | Key absent (`{}`, no entry for the package) | `initial-version` from config, honored |
 | Key present at any value, even `"0.0.0-alpha.0"` | The manifest value; `initial-version` ignored; next release bumps the prerelease counter from that seed (e.g. `alpha.0 → alpha.1`), NOT jump to `initial-version`'s target |
 
+### `release-type: python` does not honor `initial-version`
+
+The "key absent" row above holds for `go` and `node`. It does **not** hold
+for `python`: with no manifest key, the python strategy computes a
+**stable** first version even when `prerelease: true`,
+`prerelease-type: alpha.0` and `versioning: prerelease` are all set. The
+release PR proposes `0.1.0`, writes `{"py": "0.1.0"}` plus a stable
+`version` into `pyproject.toml`, and `release-please-preflight` fails it:
+
+```
+::error::package py declares prerelease but manifest seed '0.1.0' is stable
+```
+
+Observed on `poly-axon` 2026-09-09 with all four components on byte-identical
+prerelease config — only the `release-type: python` one diverged.
+
+**So seed the manifest for any repo with a python component**, and seed every
+component in it, not just the python one. `poly-kit` does exactly this and its
+python channel has shipped through `kit-py/v0.5.0-alpha.5`; its earliest
+`kit-py` tag is `v0.4.0-alpha.1`, never `alpha.0` — the off-by-one this page
+describes, paid deliberately.
+
+Pure go and pure ts repos keep an empty manifest and do get `alpha.0`.
+
 **If you want `initial-version: "0.1.0-alpha.0"` to actually apply**:
 omit the package's key from `.release-please-manifest.json` entirely
 — don't seed it at `0.0.0-alpha.0` "just to have something there."
