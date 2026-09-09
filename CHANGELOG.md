@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/hop-top/.github/compare/v0.11.3...v0.12.0) (2026-09-09)
+
+
+### Features
+
+* **mirror:** optional target-prefix for grafted mirror publish ([0cfb33f](https://github.com/hop-top/.github/commit/0cfb33ff1e223ea7d6bed9311bf588653612a8b9))
+* **mirror:** optional target-prefix for grafted mirror publish ([350980d](https://github.com/hop-top/.github/commit/350980dacf6375518cf3eb72074a09606f9e8841))
+
 ## [0.11.3](https://github.com/hop-top/.github/compare/v0.11.2...v0.11.3) (2026-08-30)
 
 
