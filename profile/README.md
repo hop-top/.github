@@ -7,10 +7,12 @@ non-deterministic; your workflow doesn't have to be. Behavioral contracts,
 conformance gates, cassette replay and statistically gated promotion make
 agent work reproducible and reviewable.
 
-**Agnostic.** Claude Code, Codex, Gemini CLI, OpenCode, Aider, Pi, Cline —
-whatever you and your teammates run. hop.top isn't another coding agent;
-it manages the layer around them: identity, tasks, workspaces, recordings,
-evaluation. Sane defaults out of the box, every one of them configurable.
+**Agnostic.** To your coding agent, and to everything around it: model,
+project tracker, repo host, container runtime, database. Claude Code or
+Codex, Anthropic or Ollama, GitHub or Gitea — hop.top isn't another one of
+those. It manages the layer around whatever you and your teammates already
+run: identity, tasks, workspaces, recordings, evaluation. Sane defaults out
+of the box, every one of them configurable.
 
 **Composable.** Run the whole ecosystem or a select few. Every package is
 standalone — adopt one, adopt a row, adopt the matrix.
