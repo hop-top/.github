@@ -1,17 +1,40 @@
 # hop.top
 
-> **For agents. By agents. Your data. Your machine.**
+> **AI-native tools: composable, interoperable, event-driven, deterministic and agnostic.**
 
-Adopt AI agents reliably. Across every role, every department, every team.
-Built for agents and humans from day one.
+**Deterministic.** A deterministic layer over agentic teams. Agents are
+non-deterministic; your workflow doesn't have to be. Behavioral contracts,
+conformance gates, cassette replay and statistically gated promotion make
+agent work reproducible and reviewable.
 
-For solo builders shipping a side project, teams replacing manual
-workflows, enterprises rolling out agents at scale — many primitives,
-in one stack that scales with you.
+**Agnostic.** To your coding agent, and to everything around it: model,
+project tracker, repo host, container runtime, database. Claude Code or
+Codex, Anthropic or Ollama, GitHub or Gitea — hop.top isn't another one of
+those. It manages the layer around whatever you and your teammates already
+run: identity, tasks, workspaces, recordings, evaluation. Sane defaults out
+of the box, every one of them configurable.
 
-Standalone packages. Optional composition. Polyglot libraries
-(Go, TypeScript, Python, Rust, PHP). CLI apps in the best language
-for the job.
+**Composable.** Run the whole ecosystem or a select few. Every package is
+standalone — adopt one, adopt a row, adopt the matrix.
+
+**Event-driven.** Tools publish and react to events instead of polling each
+other. Multiple developers, each with their own agentic team, coordinate on
+one codebase without stepping on each other.
+
+**A common base for agent-built tooling.** A polyglot framework
+([kit](https://github.com/hop-top/poly-kit)) and published specs
+([12-Factor AI-CLI](https://github.com/hop-top/spec-12fc),
+[crtx](https://github.com/hop-top/spec-crtx),
+[V\*](https://github.com/hop-top/vstar)) — so the tools agents write for
+themselves inherit guardrails, interoperability and conformance instead of
+reimplementing them.
+
+**Interoperable.** Build on kit and a tool speaks gRPC, REST, MCP,
+WebSocket and SSE natively — one command core, every surface — and joins
+the shared event bus, so anything in the stack can call or subscribe to
+anything else. Polyglot libraries (Go, TypeScript, Python, Rust, PHP) with
+parity enforced in CI keep that contract identical across languages.
+Local-first: your data, your machine.
 
 **Protocols**: [MCP](https://modelcontextprotocol.io/specification) · [A2A](https://a2a-protocol.org/latest/) · [ACP](https://agentcommunicationprotocol.dev/) · [AGNTCY](https://docs.agntcy.org/) · [gRPC](https://grpc.io/docs/what-is-grpc/) · [REST](https://ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm) · [WebSocket](https://www.rfc-editor.org/rfc/rfc6455) · [SSE](https://html.spec.whatwg.org/multipage/server-sent-events.html) · [Webhook](https://www.standardwebhooks.com/)
 
@@ -154,7 +177,7 @@ Framework for building new agent-first CLIs: **[kit](https://github.com/hop-top/
 - **License** — Most packages MIT; some Apache 2.0; `rlz` under BSL-1.1. See each repo's LICENSE for specifics.
 - **Releases** — release-please + Conventional Commits. Rolling major tags. Published to npm, PyPI, crates.io, Packagist, Go vanity.
 - **Cadence** — Independent per-package. Each ships when ready; no linked-version coupling.
-- **Stability** — Pre-1.0 packages carry visible warnings. v1+ packages follow semver strictly.
+- **Stability** — Active development across the board: usable today, with some rough edges as features evolve. v1+ packages follow semver strictly.
 - **Security** — security@hop.top · [`SECURITY.md`](https://github.com/hop-top/.github/blob/main/SECURITY.md)
 
 ---
