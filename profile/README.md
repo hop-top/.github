@@ -29,8 +29,11 @@ one codebase without stepping on each other.
 themselves inherit guardrails, interoperability and conformance instead of
 reimplementing them.
 
-**Interoperable.** Polyglot libraries (Go, TypeScript, Python, Rust, PHP)
-with parity enforced in CI. CLI apps in the best language for the job.
+**Interoperable.** Build on kit and a tool speaks gRPC, REST, MCP,
+WebSocket and SSE natively — one command core, every surface — and joins
+the shared event bus, so anything in the stack can call or subscribe to
+anything else. Polyglot libraries (Go, TypeScript, Python, Rust, PHP) with
+parity enforced in CI keep that contract identical across languages.
 Local-first: your data, your machine.
 
 **Protocols**: [MCP](https://modelcontextprotocol.io/specification) · [A2A](https://a2a-protocol.org/latest/) · [ACP](https://agentcommunicationprotocol.dev/) · [AGNTCY](https://docs.agntcy.org/) · [gRPC](https://grpc.io/docs/what-is-grpc/) · [REST](https://ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm) · [WebSocket](https://www.rfc-editor.org/rfc/rfc6455) · [SSE](https://html.spec.whatwg.org/multipage/server-sent-events.html) · [Webhook](https://www.standardwebhooks.com/)
