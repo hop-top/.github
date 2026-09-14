@@ -1,17 +1,35 @@
 # hop.top
 
-> **For agents. By agents. Your data. Your machine.**
+> **AI-native tools: composable, interoperable, event-driven, deterministic and agnostic.**
 
-Adopt AI agents reliably. Across every role, every department, every team.
-Built for agents and humans from day one.
+**Deterministic.** A deterministic layer over agentic teams. Agents are
+non-deterministic; your workflow doesn't have to be. Behavioral contracts,
+conformance gates, cassette replay and statistically gated promotion make
+agent work reproducible and reviewable.
 
-For solo builders shipping a side project, teams replacing manual
-workflows, enterprises rolling out agents at scale — many primitives,
-in one stack that scales with you.
+**Agnostic.** Claude Code, Codex, Gemini CLI, OpenCode, Aider, Pi, Cline —
+whatever you and your teammates run. hop.top isn't another coding agent;
+it manages the layer around them: identity, tasks, workspaces, recordings,
+evaluation. Sane defaults out of the box, every one of them configurable.
 
-Standalone packages. Optional composition. Polyglot libraries
-(Go, TypeScript, Python, Rust, PHP). CLI apps in the best language
-for the job.
+**Composable.** Run the whole ecosystem or a select few. Every package is
+standalone — adopt one, adopt a row, adopt the matrix.
+
+**Event-driven.** Tools publish and react to events instead of polling each
+other. Multiple developers, each with their own agentic team, coordinate on
+one codebase without stepping on each other.
+
+**A common base for agent-built tooling.** A polyglot framework
+([kit](https://github.com/hop-top/poly-kit)) and published specs
+([12-Factor AI-CLI](https://github.com/hop-top/spec-12fc),
+[crtx](https://github.com/hop-top/spec-crtx),
+[V\*](https://github.com/hop-top/vstar)) — so the tools agents write for
+themselves inherit guardrails, interoperability and conformance instead of
+reimplementing them.
+
+**Interoperable.** Polyglot libraries (Go, TypeScript, Python, Rust, PHP)
+with parity enforced in CI. CLI apps in the best language for the job.
+Local-first: your data, your machine.
 
 **Protocols**: [MCP](https://modelcontextprotocol.io/specification) · [A2A](https://a2a-protocol.org/latest/) · [ACP](https://agentcommunicationprotocol.dev/) · [AGNTCY](https://docs.agntcy.org/) · [gRPC](https://grpc.io/docs/what-is-grpc/) · [REST](https://ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm) · [WebSocket](https://www.rfc-editor.org/rfc/rfc6455) · [SSE](https://html.spec.whatwg.org/multipage/server-sent-events.html) · [Webhook](https://www.standardwebhooks.com/)
 
