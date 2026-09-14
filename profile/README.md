@@ -156,7 +156,7 @@ Framework for building new agent-first CLIs: **[kit](https://github.com/hop-top/
 - **[rux](https://github.com/hop-top/rux)** — Interactive Terminal Execution Runtime
 - **[tlc](https://github.com/hop-top/tlc)** — Multi-agent task orchestration with Task Line Syntax
 - **[upgrade](https://github.com/hop-top/upgrade)** — Self-upgrade library for hop family CLIs — Go package + @hop/upgrade (ESM) + @hop/upgrade-ts
-- **[vstar](https://github.com/hop-top/vstar)** — Calendar/vCard-shaped data convention for agentic systems (RFC 5545 + 6350)
+- **[vstar](https://github.com/hop-top/poly-vstar)** — Calendar/vCard-shaped data convention for agentic systems (RFC 5545 + 6350); spec in [spec-vstar](https://github.com/hop-top/spec-vstar)
 - **[wsm](https://github.com/hop-top/wsm)** — Workspace state manager — mutation history, access control, handoffs
 - **[x402](https://github.com/hop-top/x402)** — Protocol-agnostic x402 payment module for agent-native wallets
 - **[xat](https://github.com/hop-top/xat)** — Cross-Assistant Tester — cross-CLI conformance + regression harness for AI-assistant plugins (Claude Code, Gemini, Codex, OpenCode)
