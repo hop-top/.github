@@ -24,6 +24,10 @@ Under GitHub Actions' default `bash -e {0}` shell, `$BUILD_CMD` undergoes word-s
 
 **Tracked at**: [hop-top/.github#9](https://github.com/hop-top/.github/issues/9).
 
+**Resolved** at `publish-{py,rs,ts}.yml@v0.4.3+` — test and build
+steps run `bash -c "$CMD"`, so shell operators work on the `@v0`
+rolling pin. The workaround below is only for older pins.
+
 **Fix (caller-side workaround)**: collapse the pipeline into a single npm/cargo/make script invocation so the GitHub-Actions-side command is a single argv token. Example for ts:
 
 ```jsonc
