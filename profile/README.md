@@ -172,7 +172,7 @@ Framework for building new agent-first CLIs: **[kit](https://github.com/hop-top/
 - **License** — Most packages MIT; some Apache 2.0; `rlz` under BSL-1.1. See each repo's LICENSE for specifics.
 - **Releases** — release-please + Conventional Commits. Rolling major tags. Published to npm, PyPI, crates.io, Packagist, Go vanity.
 - **Cadence** — Independent per-package. Each ships when ready; no linked-version coupling.
-- **Stability** — Pre-1.0 packages carry visible warnings. v1+ packages follow semver strictly.
+- **Stability** — Active development across the board: usable today, with some rough edges as features evolve. v1+ packages follow semver strictly.
 - **Security** — security@hop.top · [`SECURITY.md`](https://github.com/hop-top/.github/blob/main/SECURITY.md)
 
 ---
