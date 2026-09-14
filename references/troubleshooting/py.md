@@ -58,6 +58,16 @@ Two common causes:
 Escape hatch: switch to `pypi-auth: token` mode. See
 [references/secrets.md § PyPI auth modes](../secrets.md#pypi-auth-modes).
 
+**What ships today**: `poly-cite` and `poly-c12n` both run
+`pypi-auth: token` (+ `PYPI_REGISTRY_TOKEN` forwarded in the
+caller's `secrets:`) after their pending publishers never matched
+the OIDC claims. Treat token as the known-good path; keep OIDC as
+the target. OIDC needs, before the first tag: a `pypi` GitHub
+Environment on the source repo (`gh api -X PUT
+repos/<org>/<repo>/environments/pypi`) and a pending publisher on
+pypi.org registered against the **caller's** `publish.yml` with
+that environment name.
+
 ## `403 You're not allowed to upload to project '<name>'`
 
 Bare PyPI names like `eva`, `uri`, `kit` are owned by third
@@ -66,9 +76,33 @@ parties. Prefix the install slug:
 1. Rename `[project].name` to `hop-top-<name>` in `pyproject.toml`.
 2. Update `package:` in `publish.yml`'s `ecosystems` block.
 3. Update `package-name` in `release-please-config.json`.
-4. Keep `[tool.hatch.build.targets.wheel].packages` at the clean import name (e.g. `uri/`).
+4. Keep `[tool.hatch.build.targets.wheel].packages` at the clean import name (`["uri"]`, or `["src/uri"]` for a src layout). hatchling can't infer the package once the slug and the import name differ — without this line the wheel ships empty.
 
-See [concepts/install-model.md § py: package naming](../concepts/install-model.md#py-package-naming-install-slug-vs-import-name) for the full pattern.
+See [concepts/install-model.md § py: package naming](../concepts/install-model.md#py-package-naming-install-slug-vs-import-name) for the full pattern, and [`__version__` never bumps](#__version__-never-bumps-when-the-slug-differs-from-the-import-name) below for the runtime-version consequence.
+
+## `__version__` never bumps when the slug differs from the import name
+
+Symptom: `pyproject.toml` says `0.2.0a1` after a release, but
+`<name>/__init__.py` still hard-codes `__version__ = "0.1.0"`.
+
+Cause: `release-type: python` derives the package dir from
+`[project].name` — it looks for `<slug>/__init__.py` and
+`src/<slug>/__init__.py` (with `-` → `_`), and only updates a file
+it finds. With slug `hop-top-<name>` and import module `<name>`,
+`src/<name>/__init__.py` is never a candidate, so nothing bumps it.
+
+Fix: don't hard-code it. Read the installed metadata:
+
+```python
+from importlib.metadata import version
+
+__version__ = version("hop-top-<name>")   # the install slug, not the import name
+```
+
+One source of truth (`pyproject.toml`, which the strategy does
+update), no drift. Don't reach for `extra-files` to patch
+`__init__.py` — that's the same PEP 440 bypass as the
+`pyproject.toml` case below.
 
 ## `uv pip install -e .` rejects after rename
 
@@ -228,6 +262,8 @@ See [concepts/version-strings.md § Don't break the normalization](../concepts/v
 | `invalid-publisher` despite correct claims | Caller-vs-reusable `workflow_ref` confusion | Use the CALLER's filename in PyPI config |
 | `403 You're not allowed to upload to project '<name>'` | Bare name owned by third party | Prefix to `hop-top-<name>` |
 | `uv pip install -e .`: `not a workspace member` | Stale `[tool.uv.sources]` after rename | Update all four references |
+| `__version__` in `__init__.py` stuck after a release | Slug ≠ import name, so the python strategy never finds the file | `importlib.metadata.version("hop-top-<name>")`. See [`__version__` never bumps](#__version__-never-bumps-when-the-slug-differs-from-the-import-name). |
+| Wheel builds but contains no package | `[tool.hatch.build.targets.wheel].packages` missing after prefixing the slug | Set it to the import dir (`["src/<name>"]`) |
 | Version on PyPI is `0.2.0a1` not `0.2.0-alpha.1` | PEP 440 normalization | Cosmetic; pip accepts both |
 | `invalid-token-bad-audience` | OIDC config mismatch | Re-verify org/repo/workflow/environment |
 | Environment binding fails | `pypi` environment doesn't exist | `gh api -X PUT repos/<org>/<repo>/environments/pypi` |

@@ -51,6 +51,31 @@ Two options:
    test-command: pnpm install --frozen-lockfile && pnpm test
    ```
 
+## Overriding `test-command` drops the implicit install
+
+Symptom: `test-command: pnpm test` (or any override that doesn't
+install) fails with `vitest: not found` / `Cannot find module` —
+`node_modules` is empty.
+
+Cause: the default `test-command` is what installs
+(`pnpm install --frozen-lockfile --ignore-scripts && pnpm test`),
+and `build-command` relies on that install having happened. An
+override **replaces** the whole string, install included — see
+[concepts/install-model.md § ts](../concepts/install-model.md#ts).
+
+Fix: keep the install in the override, or go `node_modules`-free:
+
+```yaml
+test-command: pnpm install --frozen-lockfile --ignore-scripts && pnpm test
+# or
+test-command: pnpm dlx --allow-build=esbuild vitest@2.1.8 run
+```
+
+If you take the `dlx` route, `build-command` no longer has a
+populated `node_modules` either — put the install in the build
+script (`"ci:build": "pnpm install --ignore-scripts && pnpm build"`,
+then `build-command: pnpm ci:build`). `poly-cite` ships this shape.
+
 ## pnpm 11 strict-mode build failures
 
 pnpm 11 sets `strictDepBuilds: true` by default. Transitive deps
@@ -120,12 +145,13 @@ plain shell string, it can't add setup steps, only shell commands.
 Symptom: `ERR_PNPM_SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER "&&"`.
 
 Cause: `run: $CMD` doesn't re-parse shell operators in env-var
-commands.
+commands. Pre-`v0.4.3` only — both the test and the build step now
+run `bash -c "$CMD"`.
 
 Two fixes:
 
-1. **Pin to `@v0` or `@v1`** rolling tag — fixed at `publish-ts.yml@v0.4.3+` (now `run: bash -c "$TEST_CMD"`).
-2. **Move the pipeline into a package.json script** (`ci:build`) so the workflow command is single-token.
+1. **Pin to `@v0` or `@v1`** rolling tag — fixed for `test-command` AND `build-command` at `publish-{ts,py,rs}.yml@v0.4.3+`. `&&` is safe in either field at that pin.
+2. **On an older pin, move the pipeline into a package.json script** (`ci:build`) so the workflow command is single-token. Harmless to keep after upgrading (`poly-cite` still does).
 
 Tracked in [#9](https://github.com/hop-top/.github/issues/9). See
 [docs/failure-modes.md § ERR_PNPM_SPEC_NOT_SUPPORTED](../../docs/failure-modes.md#err_pnpm_spec_not_supported_by_any_resolver-on-build-step).
@@ -153,7 +179,8 @@ don't hand-patch the mirror.
 |---|---|---|
 | `Could not locate the bindings file` | Native dep build scripts blocked by `--ignore-scripts` | Exclude test OR drop `--ignore-scripts` |
 | `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 strict-mode | Add deps to `pnpm-workspace.yaml` `allowBuilds:` |
-| `ERR_PNPM_SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER "&&"` | Shell operator in `test-command` not re-parsed | Pin `@v0` or use package.json script |
+| `vitest: not found` / `Cannot find module` after overriding `test-command` | Override replaced the default's implicit `pnpm install` | Keep the install in the override, or `pnpm dlx … vitest run` + `ci:build` script. See [Overriding `test-command` drops the implicit install](#overriding-test-command-drops-the-implicit-install). |
+| `ERR_PNPM_SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER "&&"` | Shell operator in `test-command` / `build-command` not re-parsed (pre-`v0.4.3`) | Pin `@v0` or use package.json script |
 | `wasm-pack: not found` during build | wasm-consuming package's build script needs a toolchain publish.yml doesn't install | Override `build-command` to install wasm-pack first. See [wasm-pack not preinstalled](#wasm-pack-not-preinstalled-on-publish-runners). |
 
 ## Next steps

@@ -17,7 +17,7 @@ my-repo/
 
 Each component directory contains its own manifest (`package.json`, `pyproject.toml`, `Cargo.toml`, `composer.json`, `go.mod`).
 
-The git-tag scheme is `<component>/v<version>` (e.g. `ts/v0.2.0`). The publish workflow keys off the prefix.
+The git-tag scheme is `<component>/v<version>` (e.g. `my-pkg-ts/v0.2.0`). The publish workflow keys off the prefix. Component, registry slug, import name and mirror slug per language are fixed by the bare name — copy them from [how-to/polyglot-repo.md § Package identities](../references/how-to/polyglot-repo.md#package-identities).
 
 ## 1. Org-level secrets
 
@@ -113,10 +113,13 @@ Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish
 If you DO want a root `.` package purely to version-bump an
 umbrella release across all components (e.g. `release-type: simple`,
 no registry, just a tag + changelog marking "this batch of
-components released together") — don't try to add it to
-`ecosystems:` (it has nothing to publish, so there's no sensible
-entry). Instead, exclude its tag pattern from `publish.yml`'s
-trigger so the tag never invokes the reusable workflow at all:
+components released together") — give it `exclude-paths` listing
+every language dir (see [how-to/polyglot-repo.md § Root umbrella
+package](../references/how-to/polyglot-repo.md#4-decide-on-a-root-umbrella-package-optional))
+and don't try to add it to `ecosystems:` (it has nothing to publish,
+so there's no sensible entry). Optionally exclude its tag pattern
+from `publish.yml`'s trigger so the tag never invokes the reusable
+workflow at all (the workflow green-skips it either way):
 
 ```yaml
 # publish.yml
@@ -135,14 +138,18 @@ on:
   "include-component-in-tag": true,
   "tag-separator": "/",
   "packages": {
-    "ts":  { "release-type": "node",   "component": "ts",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "py":  { "release-type": "python", "component": "py",     "package-name": "my-pkg", "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "rs":  { "release-type": "rust",   "component": "rs",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "php": { "release-type": "php",    "component": "php",    "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "go":  { "release-type": "go",     "component": "go",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" }
+    "ts":  { "release-type": "node",   "component": "my-pkg-ts",  "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
+    "py":  { "release-type": "python", "component": "my-pkg-py",  "package-name": "org-my-pkg", "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
+    "rs":  { "release-type": "rust",   "component": "my-pkg-rs",  "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
+    "php": { "release-type": "php",    "component": "my-pkg-php", "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
+    "go":  { "release-type": "go",     "component": "my-pkg",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" }
   }
 }
 ```
+
+Component names carry the bare name (`my-pkg-ts`, not `ts`) because
+the component must equal the mirror repo basename — see [SKILL.md §
+Three-way name alignment](../SKILL.md#three-way-name-alignment).
 
 **No `extra-files` override on `pyproject.toml` for `release-type:
 python`.** `release-type: python` already writes `pyproject.toml`
@@ -153,6 +160,11 @@ raw SemVer (`0.1.0-alpha.1`), which is invalid PEP 440 and fails
 `pip install` / `twine check`. The preflight gate rejects it — see
 [concepts/version-strings.md § Don't break the
 normalization](../references/concepts/version-strings.md#dont-break-the-normalization).
+The same "the strategy owns its manifest" rule holds for `node`
+(`package.json`), `rust` (`Cargo.toml`) and `php` (`composer.json`);
+there the `extra-files` entry is merely redundant and the preflight
+does not catch it — omit it for all four
+([how-to/polyglot-repo.md § 2](../references/how-to/polyglot-repo.md#2-add-the-release-please-package)).
 
 ```json
 // .release-please-manifest.json — pure go / pure ts: LEAVE EMPTY.
