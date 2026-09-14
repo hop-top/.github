@@ -37,6 +37,7 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 | Diagnose a first-publish CI failure | [Diagnosing first-publish failures](#diagnosing-first-publish-failures) |
 | Catch misconfigurations at PR time | [references/how-to/add-preflight.md](references/how-to/add-preflight.md) |
 | Configure a single-language repo (no polyglot split) | [references/how-to/single-language-repo.md](references/how-to/single-language-repo.md) |
+| Add a ts/py/rs/php/go tree to an existing `poly-<name>` repo (names, root package, first tag) | [references/how-to/polyglot-repo.md](references/how-to/polyglot-repo.md) |
 | Stay in an alpha/beta/rc channel | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
 | Keep a monorepo Release-free (Releases only on mirrors) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
 | Re-trigger a failed publish | [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md) |
@@ -89,6 +90,11 @@ does NOT exist in this org — ever. See [vanity imports
 concept](references/concepts/vanity-imports.md) for the resolver
 mechanism and how to override per-name.
 
+The table covers repo slugs only. Registry, import and component
+names per language (`@hop-top/<name>`, `hop-top-<name>` / `<name>`,
+`hop_top_<name>`, `HopTop\<Name>`, `<name>-ts` …) are in
+[how-to/polyglot-repo.md § Package identities](references/how-to/polyglot-repo.md#package-identities).
+
 **Tag shape is `<component>/v<version>` everywhere**, including
 single-language repos (e.g. `tlc/v1.4.2`, not `v1.4.2`). The
 `tags: ['*/v*']` glob in `publish.yml` requires this — bare
@@ -135,6 +141,12 @@ match, and **skips cleanly with a `::notice::`** — every downstream
 job no-ops via the empty `ecosystem` output. The workflow finishes
 green with all publish jobs marked `skipped`. Do NOT add a stub
 entry to `ecosystems` for the umbrella; the skip is the contract.
+
+On the release-please side the umbrella needs `exclude-paths`
+listing every language dir, or language commits bump it too. Shape,
+and the optional `!<umbrella>/v*` trigger exclusion that saves the
+no-op run: [how-to/polyglot-repo.md § Root umbrella
+package](references/how-to/polyglot-repo.md#4-decide-on-a-root-umbrella-package-optional).
 
 ## Bootstrap-mirror gotcha
 

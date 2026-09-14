@@ -49,6 +49,11 @@ job synthesizes a commit excluding `.github/workflows/` because:
 `mirror-subtree.yml@v0.4.2+` handles this automatically. No
 consumer-side config needed.
 
+This path is for Go-only repos. In a `poly-<name>` repo the module
+lives under `go/` and the entry must say `dir: go` — `dir: "."`
+ships `docs/`, `ts/`, `py/` and the rest to the bare-name mirror.
+See [how-to/polyglot-repo.md § 3](../how-to/polyglot-repo.md#3-add-the-ecosystems-entry).
+
 If you're pinned to an older version, you'll see errors like:
 
 - `fatal: . does not exist; use git subtree add` (resolved at `v0.4.1+`)
