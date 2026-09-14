@@ -44,6 +44,7 @@ spec-versioning rules before release-please ever sees it — see
 | Guard release-version literals and `<root>/vX.Y` paths on every PR | [references/how-to/spec-versioning.md § version-check](references/how-to/spec-versioning.md#version-check) |
 | Understand annotated `extra-files` — where it belongs, where it breaks | [references/concepts/version-strings.md § Where `extra-files` is right](references/concepts/version-strings.md#where-extra-files-is-right) |
 | Configure a single-language repo (no polyglot split) | [references/how-to/single-language-repo.md](references/how-to/single-language-repo.md) |
+| Add a ts/py/rs/php/go tree to an existing `poly-<name>` repo (names, root package, first tag) | [references/how-to/polyglot-repo.md](references/how-to/polyglot-repo.md) |
 | Stay in an alpha/beta/rc channel on stock `versioning: "prerelease"` (what the counter does, what a `Release-As` pin reaches, stock `linked-versions`) | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
 | Version by branch role (recommended; no pins): one target per prerelease line, stable cut from the rc without `Release-As` (non-rc packages skipped, stable packages patch-only), patch-only `release/x.y`, families linked only on a new major (or a pre-1.0 minor), on `main` too (cut together once every member is at rc) | [references/how-to/target-versioning.md](references/how-to/target-versioning.md) |
 | Migrate from `versioning: "prerelease"` + `Release-As` to target versioning | [references/how-to/target-versioning.md § Migrate](references/how-to/target-versioning.md#migrate) |
@@ -102,6 +103,11 @@ does NOT exist in this org — ever. See [vanity imports
 concept](references/concepts/vanity-imports.md) for the resolver
 mechanism and how to override per-name.
 
+The table covers repo slugs only. Registry, import and component
+names per language (`@hop-top/<name>`, `hop-top-<name>` / `<name>`,
+`hop_top_<name>`, `HopTop\<Name>`, `<name>-ts` …) are in
+[how-to/polyglot-repo.md § Package identities](references/how-to/polyglot-repo.md#package-identities).
+
 **Tag shape is `<component>/v<version>` everywhere**, including
 single-language repos (e.g. `tlc/v1.4.2`, not `v1.4.2`). The
 `tags: ['*/v*']` glob in `publish.yml` requires this — bare
@@ -155,6 +161,14 @@ match, and **skips cleanly with a `::notice::`** — every downstream
 job no-ops via the empty `ecosystem` output. The workflow finishes
 green with all publish jobs marked `skipped`. Do NOT add a stub
 entry to `ecosystems` for the umbrella; the skip is the contract.
+
+On the release-please side the umbrella needs `exclude-paths`
+listing every language dir and every nested Go module, or their
+commits bump it too ([bootstrap-checklist §
+5](docs/bootstrap-checklist.md#5-configure-release-please)). Shape,
+and the optional `!<umbrella>/v*` trigger exclusion that saves the
+no-op run: [how-to/polyglot-repo.md § Root umbrella
+package](references/how-to/polyglot-repo.md#4-decide-on-a-root-umbrella-package-optional).
 
 ## Bootstrap-mirror gotcha
 
