@@ -50,8 +50,8 @@ jobs:
       # Mint a short-lived installation token from the hop-top
       # release-bot GitHub App so the release PRs are opened by
       # `release-bot[bot]` rather than the human owner — sidesteps
-      # the CODEOWNERS self-approval block on
-      # `.release-please-manifest.json` and avoids the long-lived-PAT
+      # the CODEOWNERS self-approval block on the changelogs and
+      # avoids the long-lived-PAT
       # delivery quirks that have bitten fresh repos.
       - uses: actions/create-github-app-token@v1
         id: app-token

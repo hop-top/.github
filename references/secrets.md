@@ -55,7 +55,7 @@ Required scopes: `Contents: RW` + `Pull Requests: RW` + `Workflows: RW`.
 downstream workflows. **Legacy `GH_RELEASE_PLEASE_PAT` is
 deprecated** — PAT delivery proved unreliable on fresh repos, and
 PRs authored by the human owner trip CODEOWNERS self-approval on
-`.release-please-manifest.json`.
+the changelogs.
 
 ## Secrets the shared workflows DO NOT need
 
