@@ -1,0 +1,8 @@
+version: 1
+output_dir: ${{ env.OUT }}
+resources: {}
+custom:
+  - path: .well-known/hello.txt
+    content_type: text/plain
+    body: |
+      hello ${{ env.WHO }}
