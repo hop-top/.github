@@ -221,6 +221,12 @@ file, which then fails `pip install` and `twine check`.
 
 See [concepts/version-strings.md § Don't break the normalization](../concepts/version-strings.md#dont-break-the-normalization).
 
+That is the one file `extra-files` must never name. Every other
+release-version literal in the package (a pinned example in the
+README, say) *is* an `extra-files` entry, on a line annotated
+`x-release-please-version` — see
+[how-to/spec-versioning.md § Annotate the literals](../how-to/spec-versioning.md#5-annotate-the-literals-release-please-must-rewrite).
+
 ## Common issues
 
 | Problem | Cause | Fix |

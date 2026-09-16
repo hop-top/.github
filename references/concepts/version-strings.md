@@ -6,6 +6,7 @@ How the pipeline reconciles four conflicting version grammars.
 
 - You're surprised that `pyproject.toml` shows `0.1.0a1` while the git tag is `0.1.0-alpha.1`.
 - You're tempted to add an `extra-files` block to keep one canonical version string everywhere.
+- You need to know which files `extra-files` should name, and the one it must not.
 - You're adding a new ecosystem and wondering which format to author in.
 
 ## Result
@@ -65,6 +66,44 @@ SemVer into the file, which then fails `pip install` and
 
 The preflight workflow catches this misconfiguration; see
 [how-to/add-preflight.md](../how-to/add-preflight.md).
+
+## Where `extra-files` is right
+
+`pyproject.toml` is the one file `extra-files` must never name. For
+every *other* release-version literal in the tree — a TypeScript
+`VERSION` constant, an exact-pin example in a README, a spec
+document's own version line — `extra-files` is the right tool, and
+the only one: release-please rewrites nothing it is not told about,
+and a version typed anywhere else drifts on the first release after
+it is written.
+
+The pair that makes it work, always together:
+
+1. The literal's line carries the `x-release-please-version`
+   annotation. The generic updater rewrites the first version on an
+   annotated line and nothing else — one version literal per line.
+2. The file is an `extra-files` entry of the package whose version it
+   carries. Paths are relative to the package path.
+
+```jsonc
+// release-please-config.json
+"ts": {
+  "release-type": "node",
+  "extra-files": ["src/version.ts"]     // package.json stays native
+}
+```
+
+```ts
+// ts/src/version.ts
+export const VERSION = "1.0.0-alpha.3"; // x-release-please-version
+```
+
+The `version-check` reusable workflow guards the pair on every pull
+request: an annotated literal must equal the manifest, an
+`extra-files` entry must carry the annotation and vice versa, and an
+un-annotated line must not carry a release version at all. The
+preflight rejects an `extra-files` entry that points at no file. See
+[how-to/spec-versioning.md](../how-to/spec-versioning.md).
 
 ## Why SemVer is the canonical internal form
 
