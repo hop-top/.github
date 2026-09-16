@@ -1,4 +1,6 @@
-.PHONY: help lint install-hooks
+PYTHON ?= python3
+
+.PHONY: help lint test-scripts install-hooks
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -6,6 +8,9 @@ help: ## Show available targets
 lint: ## Run all linters
 	@command -v actionlint >/dev/null 2>&1 || { echo "actionlint not installed. Run: brew install actionlint"; exit 1; }
 	actionlint .github/workflows/*.yml
+
+test-scripts: ## Run the unit tests for scripts/spec
+	$(PYTHON) -m unittest discover -s scripts/spec/tests -v
 
 install-hooks: ## Install pre-commit git hooks
 	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit not installed. Run: brew install pre-commit"; exit 1; }
