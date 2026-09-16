@@ -1,0 +1,148 @@
+name: version-check (reusable)
+
+# Guard over release-version literals and spec version paths.
+#
+# Runs scripts/spec/version_check.py from this repository against the
+# caller's tracked files. Five rules, one finding per line, non-zero exit
+# on any finding:
+#   annotated   every `x-release-please-version` line sits under one
+#               release-please package, holds exactly one version literal,
+#               and that literal equals the manifest's version
+#   configured  the annotated files and the `extra-files` entries are one set
+#   literal     no un-annotated line carries a manifest version or a
+#               prerelease-channel literal (X.Y.Z-alpha.N, PEP 440 X.Y.ZaN)
+#               outside the manifest, changelogs, lockfiles, the natively
+#               rewritten files and the `allow` globs
+#   spec-path   every `<root>/vX.Y` path names a manifest spec version
+#               (inert when the config has no `<root>/vX.Y` package)
+#   forbidden   no un-annotated line matches a `forbid-literal` regex
+#
+# The scripts are not on the caller's disk. The job resolves the commit
+# of the reusable workflow file that is running (`job.workflow_sha` /
+# `job.workflow_repository`) and checks that revision of hop-top/.github
+# out into `.hop-top-dotgithub`, so the Python and the workflow always
+# match. `tooling-ref` is the fallback when the runner does not expose
+# the SHA; it defaults to `v0`, the pin every caller uses. The log line
+# `Shared tooling: <repo>@<ref>` names what actually ran.
+#
+# Caller template (.github/workflows/version-check.yml):
+#
+#   name: version-check
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
+#   permissions:
+#     contents: read
+#   jobs:
+#     guard:
+#       uses: hop-top/.github/.github/workflows/version-check.yml@v0
+#
+# Override example (one glob or regex per line; blank lines ignored):
+#
+#   with:
+#     forbid-literal: |
+#       vstar-(go|ts|py|rs|php) v\d
+#     allow: |
+#       docs/examples/*
+#     config-path: release/config.json          # default .github/release-please-config.json
+#     manifest-path: release/manifest.json      # default .github/.release-please-manifest.json
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path to release-please-config.json in the caller; its packages, extra-files and `<root>/vX.Y` spec roots drive the rules
+        type: string
+        default: .github/release-please-config.json
+      manifest-path:
+        description: Path to .release-please-manifest.json in the caller; the versions every literal is checked against
+        type: string
+        default: .github/.release-please-manifest.json
+      allow:
+        description: |
+          Tracked paths to skip for the literal, spec-path and forbidden
+          rules, one fnmatch glob per line (`*` crosses `/`). Empty by
+          default: use it for a file that must pin a third-party
+          prerelease, and say why in the caller.
+        type: string
+        default: ""
+      forbid-literal:
+        description: |
+          Regexes no un-annotated line may match, one per line. Empty by
+          default: name the shapes the caller's own code must never spell
+          (a version-bearing product identifier, say).
+        type: string
+        default: ""
+      tooling-ref:
+        description: Ref of hop-top/.github to check the scripts out at when the runner does not expose the running workflow's SHA (normally never used)
+        type: string
+        default: v0
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve the shared tooling revision
+        id: tooling
+        # The reusable workflow's own commit is the revision of hop-top/.github
+        # to run the scripts from. GitHub documents it as job.workflow_sha /
+        # job.workflow_repository, but actionlint types the `job` context
+        # strictly (container, services, status only) and rejects those as
+        # property accesses; toJSON(job) passes the type check and jq reads
+        # the keys at run time.
+        env:
+          JOB_CONTEXT: ${{ toJSON(job) }}
+          FALLBACK_REF: ${{ inputs.tooling-ref }}
+        run: |
+          set -euo pipefail
+          sha=$(jq -r '.workflow_sha // empty' <<<"$JOB_CONTEXT")
+          repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_CONTEXT")
+          if [ -z "$sha" ]; then
+            echo "::warning::job.workflow_sha is empty on this runner; checking out the shared tooling at '$FALLBACK_REF' instead"
+            sha="$FALLBACK_REF"
+          fi
+          [ -n "$repo" ] || repo="hop-top/.github"
+          echo "Shared tooling: $repo@$sha"
+          { echo "repository=$repo"; echo "ref=$sha"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.tooling.outputs.repository }}
+          ref: ${{ steps.tooling.outputs.ref }}
+          path: .hop-top-dotgithub
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check the version literals and spec paths
+        env:
+          CONFIG_PATH: ${{ inputs.config-path }}
+          MANIFEST_PATH: ${{ inputs.manifest-path }}
+          ALLOW: ${{ inputs.allow }}
+          FORBID_LITERAL: ${{ inputs.forbid-literal }}
+        run: |
+          set -euo pipefail
+          # The two multiline inputs become repeated flags; a blank line is
+          # skipped, everything else is passed through untouched.
+          cmd=(python3 .hop-top-dotgithub/scripts/spec/version_check.py
+               --root . --config "$CONFIG_PATH" --manifest "$MANIFEST_PATH")
+          while IFS= read -r glob; do
+            if [ -n "$glob" ]; then cmd+=(--allow "$glob"); fi
+          done <<<"$ALLOW"
+          while IFS= read -r regex; do
+            if [ -n "$regex" ]; then cmd+=(--forbid-literal "$regex"); fi
+          done <<<"$FORBID_LITERAL"
+          printf 'Running:'; printf ' %q' "${cmd[@]}"; echo
+          "${cmd[@]}"

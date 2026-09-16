@@ -1,0 +1,114 @@
+name: spec-commit-rules (reusable)
+
+# Per-spec-version commit isolation on pull requests.
+#
+# Runs scripts/spec/spec_commit_rules.py from this repository against the
+# caller's pull request: every commit in base..head must stay inside one
+# `<root>/vX.Y/` spec directory (a whole-directory rename is the one
+# admitted cross-directory shape) and must not carry breaking-change
+# syntax. The spec roots come from the caller's release-please config —
+# the packages whose path is `<root>/vX.Y`. A config with no such package
+# fails the run (exit 2): calling this workflow without a spec package is
+# a wiring error, never "nothing to validate".
+#
+# The scripts are not on the caller's disk. The job resolves the commit
+# of the reusable workflow file that is running (`job.workflow_sha` /
+# `job.workflow_repository`) and checks that revision of hop-top/.github
+# out into `.hop-top-dotgithub`, so the Python and the workflow always
+# match. `tooling-ref` is the fallback when the runner does not expose
+# the SHA; it defaults to `v0`, the pin every caller uses. The log line
+# `Shared tooling: <repo>@<ref>` names what actually ran.
+#
+# Caller template (.github/workflows/spec-commit-rules.yml):
+#
+#   name: spec-commit-rules
+#   on:
+#     pull_request:
+#       paths: ["specs/**"]        # the spec root: specs/ or spec/
+#   permissions:
+#     contents: read
+#   jobs:
+#     rules:
+#       uses: hop-top/.github/.github/workflows/spec-commit-rules.yml@v0
+#
+# Override example:
+#
+#   with:
+#     config-path: release/config.json   # default .github/release-please-config.json
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path to release-please-config.json in the caller; its `<root>/vX.Y` packages define the spec roots
+        type: string
+        default: .github/release-please-config.json
+      tooling-ref:
+        description: Ref of hop-top/.github to check the scripts out at when the runner does not expose the running workflow's SHA (normally never used)
+        type: string
+        default: v0
+
+permissions:
+  contents: read
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require a pull_request event
+        if: github.event_name != 'pull_request'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "::error::spec-commit-rules needs the pull request's base and head commits; called on a '$EVENT' event — trigger it with 'on: pull_request'"
+          exit 1
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the shared tooling revision
+        id: tooling
+        # The reusable workflow's own commit is the revision of hop-top/.github
+        # to run the scripts from. GitHub documents it as job.workflow_sha /
+        # job.workflow_repository, but actionlint types the `job` context
+        # strictly (container, services, status only) and rejects those as
+        # property accesses; toJSON(job) passes the type check and jq reads
+        # the keys at run time.
+        env:
+          JOB_CONTEXT: ${{ toJSON(job) }}
+          FALLBACK_REF: ${{ inputs.tooling-ref }}
+        run: |
+          set -euo pipefail
+          sha=$(jq -r '.workflow_sha // empty' <<<"$JOB_CONTEXT")
+          repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_CONTEXT")
+          if [ -z "$sha" ]; then
+            echo "::warning::job.workflow_sha is empty on this runner; checking out the shared tooling at '$FALLBACK_REF' instead"
+            sha="$FALLBACK_REF"
+          fi
+          [ -n "$repo" ] || repo="hop-top/.github"
+          echo "Shared tooling: $repo@$sha"
+          { echo "repository=$repo"; echo "ref=$sha"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.tooling.outputs.repository }}
+          ref: ${{ steps.tooling.outputs.ref }}
+          path: .hop-top-dotgithub
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Validate the pull request's commits
+        env:
+          CONFIG_PATH: ${{ inputs.config-path }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 .hop-top-dotgithub/scripts/spec/spec_commit_rules.py --config "$CONFIG_PATH"
