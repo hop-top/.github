@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.0](https://github.com/hop-top/.github/compare/v0.12.0...v0.13.0) (2026-09-16)
+
+
+### Features
+
+* **preflight:** check spec packages and extra-files targets ([4ad4d16](https://github.com/hop-top/.github/commit/4ad4d16637e4295c43bef4ec6182000b199d6803))
+* **spec-versioning:** reusable spec-commit-rules, spec-status-line and version-check workflows ([12fef6e](https://github.com/hop-top/.github/commit/12fef6e906e1b29521201470e2aa9af919c92c61))
+* **spec-versioning:** share the spec commit rules, status-line and version-check scripts ([832be4e](https://github.com/hop-top/.github/commit/832be4e7c1eeb7c37254d91ddcbc5a5441b0417b))
+
 ## [0.12.0](https://github.com/hop-top/.github/compare/v0.11.3...v0.12.0) (2026-09-09)
 
 
