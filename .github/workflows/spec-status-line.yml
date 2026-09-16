@@ -1,0 +1,148 @@
+name: spec-status-line (reusable)
+
+# Channel-derived `**Status:**` lines on release-please pull requests.
+#
+# Runs scripts/spec/status_lines.py from this repository on the caller's
+# labelled release PR. The PR title names the component and the version;
+# the caller's release-please config maps the component to its package
+# path. When that path is a spec package (`<root>/vX.Y`), every `*.md`
+# under it and `<root>/README.md` get their status line rewritten from
+# the channel (alpha → Draft, beta → Pre-release, rc → Release Candidate,
+# unsuffixed → General Availability) and the change is committed and
+# pushed to the PR branch. A release PR for any other component is a
+# no-op (`::notice::`, exit 0). The push that follows re-triggers the
+# caller's `synchronize` event; that second run finds nothing to patch.
+#
+# The push is authenticated with the hop-top release-bot App token,
+# minted here from the two declared secrets and handed to git through an
+# inline credential helper — never a token in a URL, never persisted
+# checkout credentials. GITHUB_TOKEN stays read-only; the caller grants
+# `contents: read` and nothing more.
+#
+# The scripts are not on the caller's disk. The job resolves the commit
+# of the reusable workflow file that is running (`job.workflow_sha` /
+# `job.workflow_repository`) and checks that revision of hop-top/.github
+# out into `.hop-top-dotgithub`, so the Python and the workflow always
+# match. `tooling-ref` is the fallback when the runner does not expose
+# the SHA; it defaults to `v0`, the pin every caller uses. The log line
+# `Shared tooling: <repo>@<ref>` names what actually ran.
+#
+# Caller template (.github/workflows/spec-status-line.yml):
+#
+#   name: spec-status-line
+#   on:
+#     pull_request:
+#       types: [labeled, opened, synchronize]
+#   permissions:
+#     contents: read
+#   jobs:
+#     status-line:
+#       uses: hop-top/.github/.github/workflows/spec-status-line.yml@v0
+#       secrets:
+#         RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+#         RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+#
+# Override example:
+#
+#   with:
+#     release-label: "autorelease: pending"   # default status:release-pending
+#     config-path: release/config.json        # default .github/release-please-config.json
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        description: Path to release-please-config.json in the caller; maps the PR title's component to its package path
+        type: string
+        default: .github/release-please-config.json
+      release-label:
+        description: Label that marks a release-please PR; the job runs only when the PR carries it
+        type: string
+        default: status:release-pending
+      tooling-ref:
+        description: Ref of hop-top/.github to check the scripts out at when the runner does not expose the running workflow's SHA (normally never used)
+        type: string
+        default: v0
+    secrets:
+      RELEASE_BOT_APP_ID:
+        required: true
+        description: GitHub App ID of the hop-top release-bot (see references/secrets.md); its token pushes the status-line commit
+      RELEASE_BOT_PRIVATE_KEY:
+        required: true
+        description: Private key paired with RELEASE_BOT_APP_ID
+
+permissions:
+  contents: read
+
+jobs:
+  status-line:
+    if: contains(github.event.pull_request.labels.*.name, inputs.release-label)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve the shared tooling revision
+        id: tooling
+        # The reusable workflow's own commit is the revision of hop-top/.github
+        # to run the scripts from. GitHub documents it as job.workflow_sha /
+        # job.workflow_repository, but actionlint types the `job` context
+        # strictly (container, services, status only) and rejects those as
+        # property accesses; toJSON(job) passes the type check and jq reads
+        # the keys at run time.
+        env:
+          JOB_CONTEXT: ${{ toJSON(job) }}
+          FALLBACK_REF: ${{ inputs.tooling-ref }}
+        run: |
+          set -euo pipefail
+          sha=$(jq -r '.workflow_sha // empty' <<<"$JOB_CONTEXT")
+          repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_CONTEXT")
+          if [ -z "$sha" ]; then
+            echo "::warning::job.workflow_sha is empty on this runner; checking out the shared tooling at '$FALLBACK_REF' instead"
+            sha="$FALLBACK_REF"
+          fi
+          [ -n "$repo" ] || repo="hop-top/.github"
+          echo "Shared tooling: $repo@$sha"
+          { echo "repository=$repo"; echo "ref=$sha"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.tooling.outputs.repository }}
+          ref: ${{ steps.tooling.outputs.ref }}
+          path: .hop-top-dotgithub
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Let git push with the App token
+        # The helper reads GH_TOKEN from the environment of the git process
+        # at push time; nothing is written to the checkout's config but the
+        # helper itself. The script's `git push origin HEAD:refs/heads/<branch>`
+        # picks it up unchanged.
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016  # $GH_TOKEN expands when git runs the helper, not here
+          git config credential.helper '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+
+      - name: Sync the spec status lines
+        env:
+          CONFIG_PATH: ${{ inputs.config-path }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          python3 .hop-top-dotgithub/scripts/spec/status_lines.py --config "$CONFIG_PATH"
