@@ -11,6 +11,12 @@ run *after* release-please cuts a tag.
 - Reusable GitHub Actions workflows that publish to npm / PyPI /
   crates.io and push subtree splits to read-only mirror repos
 - Triggered by `<component>/v<version>` tag pushes
+- PR-time spec-versioning gates for repos with a spec tree —
+  per-version commit rules, channel-derived `**Status:**` lines on
+  release PRs, a guard over release-version literals and
+  `<root>/vX.Y` paths (`spec-commit-rules`, `spec-status-line`,
+  `version-check`; see
+  [`references/how-to/spec-versioning.md`](references/how-to/spec-versioning.md))
 - Org-level community files (CODE_OF_CONDUCT, SECURITY, CONTRIBUTING,
   issue forms, PR template)
 - Profile rendered at <https://github.com/hop-top>
@@ -87,7 +93,11 @@ See [`docs/architecture.md`](docs/architecture.md) for full diagrams
     publish-py.yml           reusable: PyPI publish (OIDC)
     publish-rs.yml           reusable: crates.io publish
     mirror-subtree.yml       reusable: subtree split + mirror push
-    ci.yml                   self-CI: actionlint
+    spec-commit-rules.yml    reusable: per-spec-version commit isolation (PRs)
+    spec-status-line.yml     reusable: channel-derived status lines (release PRs)
+    version-check.yml        reusable: release-version literal + spec-path guard
+    release-please-preflight.yml  reusable: config-shape checks at PR time
+    ci.yml                   self-CI: actionlint + script tests
     release-please.yml       self-release: opens release PRs
   release-please-config.json self-release config
   .release-please-manifest.json
@@ -98,6 +108,8 @@ docs/
   diagrams/                  Mermaid sources (also embedded inline in docs)
 profile/
   README.md                  org-page content
+scripts/
+  spec/                      Python behind the spec-versioning workflows (+ tests)
 SKILL.md                     consumer-facing how-to
 DEVELOPING.md                collaborator-facing how-to
 VERSION                      current release-please-managed version

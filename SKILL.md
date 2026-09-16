@@ -1,6 +1,6 @@
 ---
 name: hop-top-dotgithub
-description: Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io/Packagist) and push subtree mirrors. Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, adding the release-please-preflight check, mapping registry secrets, troubleshooting why a tag didn't trigger a publish, registering a new package on PyPI/Packagist (via OIDC trusted publishing or API tokens), creating GitHub Environments, or debugging pnpm 11 strict-mode install failures.
+description: "Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io/Packagist), push subtree mirrors, and gate spec versioning (per-version commit rules, channel-derived status lines, the version-literal guard). Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, adding the release-please-preflight check, adopting the spec-commit-rules / spec-status-line / version-check workflows for a spec tree, deciding where `extra-files` with the x-release-please-version annotation belongs, mapping registry secrets, troubleshooting why a tag didn't trigger a publish, registering a new package on PyPI/Packagist (via OIDC trusted publishing or API tokens), creating GitHub Environments, or debugging pnpm 11 strict-mode install failures."
 ---
 
 # Using hop-top/.github
@@ -27,6 +27,10 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 - A read-only mirror push to `<org>/<name>-<lang>` (or `<org>/<name>` for Go, which takes the bare-name slot — see [Repo naming convention](#repo-naming-convention) below).
 - (Optionally) language-specific installable artifacts via `<lang>-on-tag.yml`.
 
+And, for a repo with a spec tree, every pull request is held to the
+spec-versioning rules before release-please ever sees it — see
+[references/how-to/spec-versioning.md](references/how-to/spec-versioning.md).
+
 ## Find your intent
 
 | What you're trying to do | Go to |
@@ -36,6 +40,9 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 | Publish a brand-new package for the first time | [First publish of a new package](#first-publish-of-a-new-package) |
 | Diagnose a first-publish CI failure | [Diagnosing first-publish failures](#diagnosing-first-publish-failures) |
 | Catch misconfigurations at PR time | [references/how-to/add-preflight.md](references/how-to/add-preflight.md) |
+| Adopt the spec-versioning gates (commit rules, status lines, version guard) | [references/how-to/spec-versioning.md](references/how-to/spec-versioning.md) |
+| Guard release-version literals and `<root>/vX.Y` paths on every PR | [references/how-to/spec-versioning.md § version-check](references/how-to/spec-versioning.md#version-check) |
+| Understand annotated `extra-files` — where it belongs, where it breaks | [references/concepts/version-strings.md § Where `extra-files` is right](references/concepts/version-strings.md#where-extra-files-is-right) |
 | Configure a single-language repo (no polyglot split) | [references/how-to/single-language-repo.md](references/how-to/single-language-repo.md) |
 | Stay in an alpha/beta/rc channel | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
 | Keep a monorepo Release-free (Releases only on mirrors) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |

@@ -144,15 +144,24 @@ on:
 }
 ```
 
-**No `extra-files` override on `pyproject.toml` for `release-type:
-python`.** `release-type: python` already writes `pyproject.toml`
-(and `setup.py`, `_version.py`) with PEP 440-normalized strings
-(`0.1.0a1`). A generic `extra-files` entry of `{"type": "toml",
-"path": "pyproject.toml"}` bypasses that normalization and writes
-raw SemVer (`0.1.0-alpha.1`), which is invalid PEP 440 and fails
-`pip install` / `twine check`. The preflight gate rejects it — see
-[concepts/version-strings.md § Don't break the
-normalization](../references/concepts/version-strings.md#dont-break-the-normalization).
+**`extra-files` names every release-version literal release-please
+does not rewrite natively — and never `pyproject.toml`.** Each
+strategy already writes its own file (`package.json`,
+`pyproject.toml`, `Cargo.toml`, `composer.json`), so an `extra-files`
+entry for that file is redundant for three of them and breaking for
+python: `release-type: python` writes PEP 440-normalized strings
+(`0.1.0a1`) into `pyproject.toml` (and `setup.py`, `_version.py`),
+while a generic `{"type": "toml", "path": "pyproject.toml"}` entry
+bypasses that normalization and writes raw SemVer (`0.1.0-alpha.1`),
+invalid PEP 440, failing `pip install` / `twine check`. The preflight
+rejects that one case — see [concepts/version-strings.md § Don't break
+the normalization](../references/concepts/version-strings.md#dont-break-the-normalization).
+Every other version literal in the tree (a `version.ts` constant, an
+exact-pin example in a README) *is* an `extra-files` entry of its
+package, on a line annotated `x-release-please-version`; the
+`version-check` workflow guards the pair — see
+[concepts/version-strings.md § Where `extra-files` is
+right](../references/concepts/version-strings.md#where-extra-files-is-right).
 
 ```json
 // .release-please-manifest.json — pure go / pure ts: LEAVE EMPTY.
@@ -247,6 +256,31 @@ along with branch protection rules and merge-method settings — see
 [Fresh-repo recreate
 checklist](../references/troubleshooting/common-pitfalls.md#fresh-repo-recreate-checklist)
 for the full list of what needs reapplying and in what order.
+
+## 5c. Spec trees: commit rules, status lines, the version guard
+
+Skip unless the repo carries a spec version directory (`specs/v0.1/`
+in a spec repo, `spec/v1.0/` next to the ports in a product repo).
+Full guide: [how-to/spec-versioning.md](../references/how-to/spec-versioning.md).
+
+1. Declare the directory as a release-please package: path
+   `<root>/vX.Y`, `release-type: simple`, a single-segment
+   `component`, a prerelease-shaped manifest seed. The preflight fails
+   a spec package with no directory or no manifest key.
+2. Put `**Status:** Draft` (bold, exactly) in the first fifteen lines
+   of every spec document. `spec-status-line` rewrites it from the
+   channel on each release PR; a plain `Status:` line is never managed.
+3. Add the three callers, pinned `@v0`: `spec-commit-rules.yml`
+   (`paths:` on the spec root), `spec-status-line.yml` (with
+   `RELEASE_BOT_APP_ID` / `RELEASE_BOT_PRIVATE_KEY`),
+   `version-check.yml`.
+4. Add the [preflight caller](../references/how-to/add-preflight.md)
+   if step 4 above did not; its path filter covers the config, the
+   manifest and `release-please.yml`.
+5. Annotate every other release-version literal
+   (`x-release-please-version` + `extra-files`, per § 5), then run
+   the guard locally once before the first PR — the snippet is in the
+   how-to's step 7.
 
 ## 6. Cut the first release
 

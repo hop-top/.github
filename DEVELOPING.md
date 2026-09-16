@@ -31,7 +31,8 @@ For non-brew users:
 ## Local checks
 
 ```sh
-make lint   # actionlint on all workflows
+make lint           # actionlint on all workflows
+make test-scripts   # unit tests for scripts/spec
 ```
 
 CI runs the same on every PR.
@@ -41,6 +42,12 @@ CI runs the same on every PR.
 - `.github/workflows/` — reusable workflows. Callable as
   `hop-top/.github/.github/workflows/<name>.yml@<ref>` from
   consuming repos
+- `scripts/spec/` — the Python behind the spec-versioning workflows
+  (`spec-commit-rules`, `spec-status-line`, `version-check`). A caller
+  has none of it on disk: each workflow checks this repo out at its
+  own commit and runs the scripts from there, so a script and the
+  workflow that wraps it always ship together. Standard library only;
+  tests in `scripts/spec/tests/`, run with `make test-scripts`
 - `docs/` — architecture diagrams + consumer-facing reference
 - `SKILL.md` — consumer-facing skill (how to USE the workflows)
 - `DEVELOPING.md` — this file (how to MODIFY the workflows)
@@ -95,16 +102,13 @@ on:
 declare what it expects. Makes the contract explicit and fails fast
 on missing secrets.
 
-**Document every secret AND env var.** Adding a new secret or step
-env without updating [`SKILL.md`](SKILL.md) leaves consumers
-guessing. SKILL.md has two tables:
-
-- **Secrets reference** — what consuming repos must define and where
-- **Env vars exported inside workflow steps** — what's available to
-  `test-command` / `build-command` overrides
-
-If you add `secrets.X` or `env: X:` anywhere, add a row to one of
-these tables in the same commit.
+**Document every secret.** Adding a new secret without updating
+[`references/secrets.md`](references/secrets.md) leaves consumers
+guessing. Its "Secrets the shared workflows expect" table is what
+consuming repos must define, where to scope it, and which workflow
+consumes it. If you add `secrets.X` anywhere, or a new workflow
+starts consuming an existing secret, add or extend the row in the
+same commit.
 
 ### 4. Set `permissions:` minimally
 
@@ -149,7 +153,7 @@ Example: adding Java/Maven publishing.
    ```
 3. Add the `mirror` job's `needs:` list to include the new publish
    job
-4. Document the secret in [`SKILL.md`](SKILL.md)
+4. Document the secret in [`references/secrets.md`](references/secrets.md)
 5. Bump major tag (consumers pin to `@v1`/`@v2` — adding an
    ecosystem is technically backward-compatible, but cut a new
    minor on `v1` to signal it)
@@ -203,5 +207,6 @@ prerelease modes.
 - [ ] All `actions/checkout` have `persist-credentials: false`
 - [ ] New reusable workflows declare `secrets:` explicitly
 - [ ] Permissions are minimal
-- [ ] If new secret/env added, [`SKILL.md`](SKILL.md) tables updated
+- [ ] If a secret is added or newly consumed, the [`references/secrets.md`](references/secrets.md) table is updated
+- [ ] If `scripts/spec/` changed, `make test-scripts` green
 - [ ] If new ecosystem added, SKILL.md ecosystems section updated
