@@ -657,6 +657,106 @@ jobs:
             done
           fi
 
+          # ---------- Check 5c: spec packages ----------
+          # A package whose path is `<root>/vX.Y` is a spec version directory
+          # (the shared spec-commit-rules / spec-status-line / version-check
+          # workflows derive the spec roots from exactly this shape). The
+          # directory must exist, the manifest must know the package (the
+          # version-check spec-path rule reads `<root>/vX.Y` manifest keys —
+          # a missing key is a hard failure here, where check 5 only warns
+          # for an ordinary package), and the strategy should be `simple`.
+          if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            {
+              echo ""
+              echo "### spec packages"
+            } >> "$GITHUB_STEP_SUMMARY"
+            MANIFEST_OK=false
+            if [[ -f "$MANIFEST_PATH" ]] && jq empty "$MANIFEST_PATH" 2>/dev/null; then
+              MANIFEST_OK=true
+            fi
+            SPEC_SEEN=0
+            for path in $PACKAGES; do
+              if [[ ! "$path" =~ ^[A-Za-z0-9_.-]+/v[0-9]+\.[0-9]+$ ]]; then
+                continue
+              fi
+              SPEC_SEEN=$((SPEC_SEEN+1))
+              if [[ -d "$path" ]]; then
+                ok "spec package $path: directory exists"
+              else
+                fail "spec package $path: no such directory in the checkout"
+                fixhint "create $path/ (the released major.minor line) or drop the package from $CONFIG_PATH"
+              fi
+              if [[ "$MANIFEST_OK" == "true" ]]; then
+                SEED=$(jq -r --arg p "$path" '.[$p] // empty' "$MANIFEST_PATH")
+                if [[ -n "$SEED" ]]; then
+                  ok "spec package $path: manifest key present ($SEED)"
+                else
+                  fail "spec package $path has no manifest key — the version-check spec-path rule cannot know its version"
+                  fixhint "add \"$path\": \"<version>\" to $MANIFEST_PATH (prerelease-shaped when the package is prerelease, e.g. 0.1.0-alpha.0)"
+                fi
+              fi
+              RT=$(jq -r --arg p "$path" '.packages[$p]["release-type"] // .["release-type"] // empty' "$CONFIG_PATH")
+              if [[ "$RT" == "simple" ]]; then
+                ok "spec package $path: release-type simple"
+              else
+                warn "spec package $path has release-type '${RT:-unset}' — a spec directory has no native version file; expected 'simple'"
+                fixhint "set .packages.\"$path\".\"release-type\" to \"simple\" in $CONFIG_PATH"
+              fi
+            done
+            if [[ $SPEC_SEEN -eq 0 ]]; then
+              info "no spec package (<root>/vX.Y) in $CONFIG_PATH"
+            fi
+          fi
+
+          # ---------- Check 5d: extra-files targets ----------
+          # Every `extra-files` entry (a string, or an object with `path`),
+          # joined with its package path, must name a file in the checkout.
+          # A configured file that does not exist is a config-shape defect.
+          # The literal's value stays with the version-check guard; whether
+          # the file carries the `x-release-please-version` annotation the
+          # generic updater rewrites is surfaced here as a warning (the
+          # pyproject.toml case belongs to check 5b).
+          if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            {
+              echo ""
+              echo "### extra-files targets"
+            } >> "$GITHUB_STEP_SUMMARY"
+            EXTRA_SEEN=0
+            for path in $PACKAGES; do
+              ENTRIES=$(jq -r --arg p "$path" '
+                .packages[$p]["extra-files"] // []
+                | .[]
+                | if type == "string" then . else (.path // empty) end
+              ' "$CONFIG_PATH" 2>/dev/null)
+              [[ -n "$ENTRIES" ]] || continue
+              while IFS= read -r rel; do
+                [[ -n "$rel" ]] || continue
+                EXTRA_SEEN=$((EXTRA_SEEN+1))
+                if [[ "$path" == "." ]]; then
+                  target="$rel"
+                else
+                  target="${path%/}/$rel"
+                fi
+                if [[ ! -f "$target" ]]; then
+                  fail "package $path lists extra-files entry '$rel' but $target does not exist"
+                  fixhint "create $target with an x-release-please-version annotation, or remove the entry from $CONFIG_PATH"
+                  continue
+                fi
+                ok "package $path: extra-files entry '$rel' exists ($target)"
+                if [[ "$(basename "$rel")" == "pyproject.toml" ]]; then
+                  continue  # check 5b owns this case
+                fi
+                if ! grep -q "x-release-please-version" "$target"; then
+                  warn "extra-files target $target carries no x-release-please-version annotation — release-please rewrites nothing in it"
+                  fixhint "annotate the version literal's line in $target with x-release-please-version (see references/how-to/spec-versioning.md); the version-check guard fails this as 'configured'"
+                fi
+              done <<<"$ENTRIES"
+            done
+            if [[ $EXTRA_SEEN -eq 0 ]]; then
+              info "no extra-files entries in $CONFIG_PATH"
+            fi
+          fi
+
           # ---------- Check 6: publish.yml triggers + ecosystems map ----------
           {
             echo ""
