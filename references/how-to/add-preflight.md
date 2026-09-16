@@ -67,6 +67,8 @@ Auto-infers from your config — no inputs required:
 - Prerelease packages have the [four-piece combo](prerelease-channel.md)
 - Manifest seed shape matches prerelease declaration
 - [SemVer ∩ PEP 440 intersection](../concepts/version-strings.md): Python packages don't have an `extra-files` override on `pyproject.toml` (the trap that bypasses PEP 440 normalization), and `pyproject.toml`'s current version is PEP 440-shaped (not SemVer-shaped)
+- Spec packages: every package whose path is `<root>/vX.Y` exists as a directory, has a manifest key (a hard failure — the [version-check guard](spec-versioning.md) reads that key), and uses `release-type: simple` (warning otherwise)
+- `extra-files` targets: every entry (a string, or an object with `path`), joined with its package path, names an existing file; a target without an `x-release-please-version` line is warned about (the guard fails it), `pyproject.toml` entries stay with the PEP 440 check above
 - `publish.yml` triggers on `*/v*` and delegates to `publish-on-tag.yml`
 - Three-way name alignment holds
 - `release-please.yml` uses the release-bot App token (not the deprecated PAT) and declares `workflow_dispatch`
