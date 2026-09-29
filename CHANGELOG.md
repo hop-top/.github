@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/hop-top/.github/compare/v0.13.0...v0.13.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **preflight:** resolve root-relative `extra-files` paths ([7dd0e99](https://github.com/hop-top/.github/commit/7dd0e996a118ce004fd9c10e73cfc8c0728049d2))
+* **spec-versioning:** resolve root-relative `extra-files` paths in version-check ([d849596](https://github.com/hop-top/.github/commit/d84959661d90c10a3b4fb6f3d3b4db80c49bb14e))
+
 ## [0.13.0](https://github.com/hop-top/.github/compare/v0.12.0...v0.13.0) (2026-09-16)
 
 
