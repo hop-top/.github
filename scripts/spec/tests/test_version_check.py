@@ -29,7 +29,7 @@ PACKAGES = {
 }
 
 
-def _config(extra: dict[str, list[str]] | None = None,
+def _config(extra: dict[str, list[str | dict]] | None = None,
             packages: dict[str, dict] | None = None) -> str:
     packages = {k: dict(v) for k, v in (packages or PACKAGES).items()}
     for pkg, files in (extra or {}).items():
@@ -131,6 +131,56 @@ class VersionCheckTests(unittest.TestCase):
         r = self.run_check()
         self.assertEqual(r.returncode, 1)
         self.assertIn("py/README.md:0: configured: carries x-release-please-version but is not an extra-files entry", r.stdout)
+
+    # --- extra-files paths resolve the way release-please resolves them ----
+    # A leading `/` anchors the entry at the repository root; the root
+    # package `.` joins nothing; any other package joins its own path.
+
+    def test_root_relative_entry_outside_its_package_is_configured(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": [
+            "/templates/cli-ts/package.json.tmpl",
+            {"type": "generic", "path": "/internal/cli-ts/package.json.tmpl"}]}))
+        for rel in ("templates/cli-ts/package.json.tmpl", "internal/cli-ts/package.json.tmpl"):
+            self.write(rel, '"version": "1.0.0-alpha.0", // x-release-please-version\n')
+        r = self.run_check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("version-check: ok (2 annotated,", r.stdout)
+
+    def test_root_relative_entry_holds_its_configuring_package_version(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": ["/templates/v.tmpl"]}))
+        self.write("templates/v.tmpl", '"1.0.0-alpha.3" // x-release-please-version\n')
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("templates/v.tmpl:1: annotated: 1.0.0-alpha.3 != manifest[ts] = 1.0.0-alpha.0",
+                      r.stdout)
+
+    def test_root_relative_entry_missing_its_annotation_fails(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": ["/templates/v.tmpl"]}))
+        self.write("templates/v.tmpl", "no annotation here\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "templates/v.tmpl:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line"])
+
+    def test_root_package_entries_resolve_from_the_repo_root(self) -> None:
+        self.write(".github/.release-please-manifest.json", json.dumps({".": "1.0.0-alpha.0"}))
+        self.write(".github/release-please-config.json", _config(
+            {".": ["VERSION", "/docs/install.md"]},
+            packages={".": {"release-type": "simple", "component": "example"}}))
+        self.write("VERSION", "1.0.0-alpha.0 # x-release-please-version\n")
+        self.write("docs/install.md", "pin 1.0.0-alpha.0 <!-- x-release-please-version -->\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("version-check: ok (2 annotated,", r.stdout)
+
+    def test_root_package_native_file_is_not_scanned(self) -> None:
+        self.write(".github/.release-please-manifest.json", json.dumps({".": "1.0.0-alpha.0"}))
+        self.write(".github/release-please-config.json", _config(
+            packages={".": {"release-type": "node", "component": "example"}}))
+        self.write("package.json", '{"version": "1.0.0-alpha.0"}\n')
+        r = self.run_check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     # --- rule 3: no stray literals ----------------------------------------
 

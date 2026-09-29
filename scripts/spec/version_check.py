@@ -10,9 +10,13 @@ rewrites, and it drifts on the first release after it is written.
 Rules, each with its own message and a non-zero exit on any finding:
 
 1. ``annotated``  -- every line carrying ``x-release-please-version``
-   sits under exactly one release-please package path, holds exactly
-   one version literal (SemVer or PEP 440), and that literal equals the
-   manifest's version for the package. Outside every package a line
+   belongs to a release-please package -- the package whose
+   ``extra-files`` lists the file, else the one whose path contains it
+   -- holds exactly one version literal (SemVer or PEP 440), and that
+   literal equals the manifest's version for the package. An
+   ``extra-files`` entry resolves as release-please resolves it: a
+   leading ``/`` is repo-root-relative, anything else joins the package
+   path (nothing, for the root package ``.``). Outside every package a line
    that names the annotation but carries no version literal is prose
    about the mechanism, not an annotation, and is ignored.
 2. ``configured`` -- the set of annotated files equals the set of
@@ -93,6 +97,18 @@ NATIVE_FILES = {
 LOCKFILES = ("Cargo.lock", "composer.lock", "pnpm-lock.yaml", "uv.lock")
 
 
+def package_file(pkg: str, rel: str) -> str:
+    """The repo-root path of ``rel`` as package ``pkg`` names it.
+
+    Mirrors release-please's ``Strategy#addPath``: a leading ``/``
+    anchors the path at the repository root, the root package ``.``
+    joins nothing, any other package joins its own path.
+    """
+    if pkg in ("", ".") or rel.startswith("/"):
+        return rel.lstrip("/")
+    return f"{pkg.rstrip('/')}/{rel}"
+
+
 def spec_path_re(root: str) -> re.Pattern[str]:
     """A spec version directory under ``root``, with or without a trailing slash."""
     return re.compile(rf"(?<![\w/]){re.escape(root)}/v(\d+\.\d+)(?![\w.])")
@@ -125,6 +141,7 @@ class Repo:
         self.manifest: dict[str, str] = self._load(manifest)
         self.config: dict = self._load(config)
         self.packages: dict[str, dict] = self.config.get("packages", {})
+        self.extra_files: dict[str, str] = self._extra_file_owners()
         self.allow = allow
         self.forbid = forbid
         # root -> compiled path regex, for every spec package root.
@@ -152,7 +169,15 @@ class Repo:
         return [f for f in result.stdout.split("\0") if f]
 
     def package_of(self, path: str) -> str | None:
-        """The package whose path contains ``path``; the longest wins."""
+        """The package release-please rewrites ``path`` for.
+
+        An extra-files entry belongs to the package that lists it, even
+        outside that package's directory (a root-relative ``/`` entry);
+        otherwise the package whose path contains ``path``; the longest wins.
+        """
+        owner = self.extra_files.get(path)
+        if owner is not None:
+            return owner
         best = None
         for pkg in self.packages:
             prefix = pkg.rstrip("/") + "/"
@@ -164,17 +189,22 @@ class Repo:
         out: set[str] = set()
         for pkg, cfg in self.packages.items():
             for name in NATIVE_FILES.get(cfg.get("release-type", ""), ()):
-                out.add(f"{pkg.rstrip('/')}/{name}")
+                out.add(package_file(pkg, name))
         return out
 
-    def configured_extra_files(self) -> set[str]:
-        out: set[str] = set()
+    def _extra_file_owners(self) -> dict[str, str]:
+        """Every extra-files entry as a repo-root path, mapped to the
+        package that lists it (the first, if several do)."""
+        out: dict[str, str] = {}
         for pkg, cfg in self.packages.items():
             for entry in cfg.get("extra-files", ()):
                 rel = entry if isinstance(entry, str) else entry.get("path", "")
                 if rel:
-                    out.add(f"{pkg.rstrip('/')}/{rel}")
+                    out.setdefault(package_file(pkg, rel), pkg)
         return out
+
+    def configured_extra_files(self) -> set[str]:
+        return set(self.extra_files)
 
     def spec_versions(self) -> dict[str, set[str]]:
         """Manifest-known spec versions, by root: ``{"spec": {"1.0"}}``."""
