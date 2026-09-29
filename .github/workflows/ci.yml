@@ -34,3 +34,6 @@ jobs:
 
       - name: Unit tests for scripts/spec
         run: make test-scripts
+
+      - name: Tests for the workflows' inline check scripts
+        run: make test-workflows
