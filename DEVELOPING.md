@@ -33,6 +33,7 @@ For non-brew users:
 ```sh
 make lint           # actionlint on all workflows
 make test-scripts   # unit tests for scripts/spec
+make test-workflows # tests for the workflows' inline check scripts
 ```
 
 CI runs the same on every PR.
@@ -48,6 +49,10 @@ CI runs the same on every PR.
   own commit and runs the scripts from there, so a script and the
   workflow that wraps it always ship together. Standard library only;
   tests in `scripts/spec/tests/`, run with `make test-scripts`
+- `tests/workflows/` — tests that lift a workflow step's `run:`
+  block out of its `.yml` and run it with bash against a fixture
+  repository (`release-please-preflight`'s checks). Standard library
+  only; run with `make test-workflows`
 - `docs/` — architecture diagrams + consumer-facing reference
 - `SKILL.md` — consumer-facing skill (how to USE the workflows)
 - `DEVELOPING.md` — this file (how to MODIFY the workflows)
@@ -209,4 +214,5 @@ prerelease modes.
 - [ ] Permissions are minimal
 - [ ] If a secret is added or newly consumed, the [`references/secrets.md`](references/secrets.md) table is updated
 - [ ] If `scripts/spec/` changed, `make test-scripts` green
+- [ ] If a tested workflow step changed, `make test-workflows` green
 - [ ] If new ecosystem added, SKILL.md ecosystems section updated

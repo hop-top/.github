@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: help lint test-scripts install-hooks
+.PHONY: help lint test-scripts test-workflows install-hooks
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -11,6 +11,9 @@ lint: ## Run all linters
 
 test-scripts: ## Run the unit tests for scripts/spec
 	$(PYTHON) -m unittest discover -s scripts/spec/tests -v
+
+test-workflows: ## Run the tests for the workflows' inline check scripts
+	$(PYTHON) -m unittest discover -s tests/workflows -v
 
 install-hooks: ## Install pre-commit git hooks
 	@command -v pre-commit >/dev/null 2>&1 || { echo "pre-commit not installed. Run: brew install pre-commit"; exit 1; }

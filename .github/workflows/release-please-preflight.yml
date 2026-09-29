@@ -415,6 +415,27 @@ jobs:
           ok()      { echo "[OK]    $1" >> "$GITHUB_STEP_SUMMARY"; }
           fixhint() { echo "[FIX]   $1" >> "$GITHUB_STEP_SUMMARY"; }
 
+          # extra_files <package>: one `<entry>\t<target>` line per extra-files
+          # entry of the package -- the entry as written (a string, or an
+          # object's `path`) and the repo-root path release-please rewrites.
+          # Mirrors release-please's Strategy#addPath: a leading `/` anchors
+          # the entry at the repository root, the root package `.` joins
+          # nothing, any other package joins its own path.
+          extra_files() {
+            jq -r --arg p "$1" '
+              .packages[$p]["extra-files"] // []
+              | .[]
+              | (if type == "string" then . else (.path // "") end) as $rel
+              | select($rel != "")
+              | [$rel,
+                 (if ($rel | startswith("/")) or $p == "."
+                  then ($rel | sub("^/+"; ""))
+                  else ($p | sub("/+$"; "")) + "/" + $rel
+                  end)]
+              | @tsv
+            ' "$CONFIG_PATH" 2>/dev/null
+          }
+
           # apply_fail_on: runs at the end (and on early-stop paths) so the
           # `fail-on` policy is honored consistently. Never `exit 0` early
           # without going through this.
@@ -609,14 +630,14 @@ jobs:
               if [[ "$RT" != "python" ]]; then
                 continue
               fi
-              HAS_PYPROJECT_EXTRA=$(jq -r --arg p "$path" '
-                .packages[$p]["extra-files"] // []
-                | map(select(
-                    (type == "string" and . == "pyproject.toml") or
-                    (type == "object" and (.path // "") == "pyproject.toml")
-                  ))
-                | length
-              ' "$CONFIG_PATH")
+              # The package's own pyproject.toml, however the entry spells it
+              # (`pyproject.toml`, or root-relative `/<package>/pyproject.toml`).
+              if [[ "$path" == "." ]]; then
+                NATIVE_PYPROJECT="pyproject.toml"
+              else
+                NATIVE_PYPROJECT="${path%/}/pyproject.toml"
+              fi
+              HAS_PYPROJECT_EXTRA=$(extra_files "$path" | cut -f2 | grep -cxF "$NATIVE_PYPROJECT" || true)
               if [[ "${HAS_PYPROJECT_EXTRA:-0}" -gt 0 ]]; then
                 fail "package $path (release-type python) has an extra-files block targeting pyproject.toml — bypasses PEP 440 normalization, writes SemVer (0.1.0-alpha.1) instead of PEP 440 (0.1.0a1)"
                 fixhint "remove the pyproject.toml entry from extra-files in $CONFIG_PATH — release-type python updates it natively with PEP 440 normalization"
@@ -710,7 +731,9 @@ jobs:
 
           # ---------- Check 5d: extra-files targets ----------
           # Every `extra-files` entry (a string, or an object with `path`),
-          # joined with its package path, must name a file in the checkout.
+          # resolved the way release-please resolves it (see extra_files:
+          # a leading `/` is repo-root-relative, anything else joins the
+          # package path), must name a file in the checkout.
           # A configured file that does not exist is a config-shape defect.
           # The literal's value stays with the version-check guard; whether
           # the file carries the `x-release-please-version` annotation the
@@ -723,20 +746,11 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             EXTRA_SEEN=0
             for path in $PACKAGES; do
-              ENTRIES=$(jq -r --arg p "$path" '
-                .packages[$p]["extra-files"] // []
-                | .[]
-                | if type == "string" then . else (.path // empty) end
-              ' "$CONFIG_PATH" 2>/dev/null)
+              ENTRIES=$(extra_files "$path")
               [[ -n "$ENTRIES" ]] || continue
-              while IFS= read -r rel; do
-                [[ -n "$rel" ]] || continue
+              while IFS=$'\t' read -r rel target; do
+                [[ -n "$rel" && -n "$target" ]] || continue
                 EXTRA_SEEN=$((EXTRA_SEEN+1))
-                if [[ "$path" == "." ]]; then
-                  target="$rel"
-                else
-                  target="${path%/}/$rel"
-                fi
                 if [[ ! -f "$target" ]]; then
                   fail "package $path lists extra-files entry '$rel' but $target does not exist"
                   fixhint "create $target with an x-release-please-version annotation, or remove the entry from $CONFIG_PATH"
