@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.0](https://github.com/hop-top/.github/compare/v0.13.1...v0.14.0) (2026-09-30)
+
+
+### Features
+
+* **preflight:** accept `release-please-on-push` callers ([9c58457](https://github.com/hop-top/.github/commit/9c5845741883746ecd24118b241fe9bb1ef4fafe))
+* **workflows:** reusable `release-please-on-push` with per-branch concurrency guard ([006b2dd](https://github.com/hop-top/.github/commit/006b2dd4d07e1910b9cae26c04a8e6b34ae84e1a))
+* **workflows:** skip `release-please-on-push` in repos without release-please config ([590d791](https://github.com/hop-top/.github/commit/590d7917e660df4e7d32634043be16eb20f6c25a))
+
 ## [0.13.1](https://github.com/hop-top/.github/compare/v0.13.0...v0.13.1) (2026-09-29)
 
 
