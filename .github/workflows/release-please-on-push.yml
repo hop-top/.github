@@ -1,0 +1,206 @@
+name: release-please-on-push (reusable)
+
+# Runs release-please for an adopter repo: keeps the standing release
+# PR(s) current and, once one merges, cuts the tag + GitHub Release.
+# One shared implementation of the job every hop-top repo used to
+# hand-roll in its own release-please.yml.
+#
+# What it adds over a hand-rolled job:
+#
+#   - Concurrency guard. One release-please run per branch, newest
+#     push wins. A run that started before a release PR merged still
+#     sees the old latest release; if it finishes after the merge it
+#     no longer finds that PR open and re-opens a release PR for the
+#     version just tagged. Cancelling it on the next push closes that
+#     window. The guard is JOB-level on purpose: in a called workflow
+#     that is the supported place (`github.ref` resolves to the
+#     caller's ref), and it cancels only the stale release-please job,
+#     never a publish job the caller chained on an earlier run's
+#     outputs. The group name is distinct from the
+#     `release-please-${{ github.ref }}` group hand-written callers
+#     carry — equal caller/callee groups with cancel-in-progress cancel
+#     the run itself — so a caller keeping its own guard stays safe.
+#   - release-bot App token (release PRs authored by release-bot[bot]:
+#     they trigger downstream workflows, and sidestep the CODEOWNERS
+#     self-approval block on the manifest). GITHUB_TOKEN stays
+#     read-only.
+#   - Config check: a missing / malformed config or manifest fails with
+#     the path named instead of release-please's generic error.
+#   - target-branch defaults to the branch that triggered the run, so a
+#     caller pushing on several integration branches (main + next)
+#     releases each against itself.
+#
+# Caller template (.github/workflows/release-please.yml):
+#
+#   name: release-please
+#   on:
+#     push:
+#       branches: [main]
+#     workflow_dispatch: {}
+#   permissions:
+#     contents: read
+#   jobs:
+#     release-please:
+#       uses: hop-top/.github/.github/workflows/release-please-on-push.yml@v0
+#       secrets:
+#         RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+#         RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+#
+# Chaining a publish job on the outputs (in the caller). Outputs keep
+# release-please-action's names; per-path outputs of a manifest with
+# several packages (`<path>--release_created`, ...) are in `json`:
+#
+#     publish:
+#       needs: release-please
+#       if: needs.release-please.outputs.releases_created == 'true'
+#       # or: fromJSON(needs.release-please.outputs.json)['ts--release_created']
+
+on:
+  workflow_call:
+    inputs:
+      config-file:
+        description: Path to release-please-config.json
+        type: string
+        default: .github/release-please-config.json
+      manifest-file:
+        description: Path to .release-please-manifest.json
+        type: string
+        default: .github/.release-please-manifest.json
+      target-branch:
+        description: |
+          Branch release PRs are opened against. Empty (default) = the
+          branch that triggered the caller (`github.ref_name`).
+        type: string
+        default: ""
+    secrets:
+      RELEASE_BOT_APP_ID:
+        required: true
+        description: GitHub App ID of the hop-top release-bot (see references/secrets.md)
+      RELEASE_BOT_PRIVATE_KEY:
+        required: true
+        description: Private key paired with RELEASE_BOT_APP_ID
+    outputs:
+      releases_created:
+        description: "'true' when any release was created by this run"
+        value: ${{ jobs.release-please.outputs.releases_created }}
+      paths_released:
+        description: JSON array of the package paths released by this run
+        value: ${{ jobs.release-please.outputs.paths_released }}
+      prs_created:
+        description: "'true' when any release PR was created or updated"
+        value: ${{ jobs.release-please.outputs.prs_created }}
+      pr:
+        description: JSON of the (first) release PR
+        value: ${{ jobs.release-please.outputs.pr }}
+      prs:
+        description: JSON array of the release PRs
+        value: ${{ jobs.release-please.outputs.prs }}
+      release_created:
+        description: "'true' when the root package (`.`) was released"
+        value: ${{ jobs.release-please.outputs.release_created }}
+      tag_name:
+        description: Tag of the root package's release
+        value: ${{ jobs.release-please.outputs.tag_name }}
+      version:
+        description: Version of the root package's release
+        value: ${{ jobs.release-please.outputs.version }}
+      major:
+        description: Major version of the root package's release
+        value: ${{ jobs.release-please.outputs.major }}
+      minor:
+        description: Minor version of the root package's release
+        value: ${{ jobs.release-please.outputs.minor }}
+      patch:
+        description: Patch version of the root package's release
+        value: ${{ jobs.release-please.outputs.patch }}
+      sha:
+        description: Commit the root package's release was tagged at
+        value: ${{ jobs.release-please.outputs.sha }}
+      upload_url:
+        description: Asset upload URL of the root package's release
+        value: ${{ jobs.release-please.outputs.upload_url }}
+      html_url:
+        description: Web URL of the root package's release
+        value: ${{ jobs.release-please.outputs.html_url }}
+      json:
+        description: |
+          Every release-please-action output as a JSON object, including
+          the per-path ones (`<path>--release_created`, `<path>--tag_name`,
+          ...). Read with `fromJSON(...)['<path>--<output>']`.
+        value: ${{ jobs.release-please.outputs.json }}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: release-please-on-push-${{ github.ref }}
+      cancel-in-progress: true
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      paths_released: ${{ steps.release.outputs.paths_released }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+      pr: ${{ steps.release.outputs.pr }}
+      prs: ${{ steps.release.outputs.prs }}
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+      minor: ${{ steps.release.outputs.minor }}
+      patch: ${{ steps.release.outputs.patch }}
+      sha: ${{ steps.release.outputs.sha }}
+      upload_url: ${{ steps.release.outputs.upload_url }}
+      html_url: ${{ steps.release.outputs.html_url }}
+      json: ${{ toJSON(steps.release.outputs) }}
+    steps:
+      # Only the two files the config check reads.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            ${{ inputs.config-file }}
+            ${{ inputs.manifest-file }}
+          sparse-checkout-cone-mode: false
+
+      - name: Check release-please config
+        id: config
+        env:
+          CONFIG_FILE: ${{ inputs.config-file }}
+          MANIFEST_FILE: ${{ inputs.manifest-file }}
+          TARGET_BRANCH: ${{ inputs.target-branch }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in "$CONFIG_FILE" "$MANIFEST_FILE"; do
+            if [[ ! -f "$f" ]]; then
+              echo "::error file=$f::$f not found — release-please needs both the config and the manifest (pass config-file / manifest-file if they live elsewhere)"
+              fail=1
+            elif ! jq -e 'type == "object"' "$f" >/dev/null 2>&1; then
+              echo "::error file=$f::$f is not a JSON object"
+              fail=1
+            fi
+          done
+          if [[ $fail -eq 0 ]] && ! jq -e '(.packages // {}) | length > 0' "$CONFIG_FILE" >/dev/null; then
+            echo "::error file=$CONFIG_FILE::$CONFIG_FILE declares no packages"
+            fail=1
+          fi
+          [[ $fail -eq 0 ]] || exit 1
+
+          branch="${TARGET_BRANCH:-$GITHUB_REF_NAME}"
+          echo "target-branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "release-please: config=$CONFIG_FILE manifest=$MANIFEST_FILE target-branch=$branch"
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: ${{ inputs.config-file }}
+          manifest-file: ${{ inputs.manifest-file }}
+          target-branch: ${{ steps.config.outputs.target-branch }}
+          token: ${{ steps.app-token.outputs.token }}

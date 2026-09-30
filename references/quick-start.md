@@ -31,6 +31,9 @@ Two workflow files. Drop them into `.github/workflows/`.
 
 ### 1. Add `release-please.yml`
 
+A caller of the shared `release-please-on-push.yml` reusable workflow
+(`kit init` renders this file):
+
 ```yaml
 name: release-please
 
@@ -40,31 +43,50 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
-    steps:
-      # Mint a short-lived installation token from the hop-top
-      # release-bot GitHub App so the release PRs are opened by
-      # `release-bot[bot]` rather than the human owner — sidesteps
-      # the CODEOWNERS self-approval block on
-      # `.release-please-manifest.json` and avoids the long-lived-PAT
-      # delivery quirks that have bitten fresh repos.
-      - uses: actions/create-github-app-token@v1
-        id: app-token
-        with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-
-      - uses: googleapis/release-please-action@v4
-        with:
-          config-file: .github/release-please-config.json
-          manifest-file: .github/.release-please-manifest.json
-          token: ${{ steps.app-token.outputs.token }}
+    uses: hop-top/.github/.github/workflows/release-please-on-push.yml@v0
+    secrets:
+      RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
 ```
+
+The reusable workflow:
+
+- mints a short-lived token from the hop-top release-bot GitHub App,
+  so release PRs are opened by `release-bot[bot]` rather than the
+  human owner — they trigger downstream workflows, and sidestep the
+  CODEOWNERS self-approval block on `.release-please-manifest.json`;
+- runs one release-please job per branch at a time, newest push wins.
+  A run that started before a release PR merged and finished after it
+  would otherwise re-open a release PR for the version just tagged;
+- fails with the path named when the config or manifest is missing.
+
+Inputs, all optional:
+
+| Input | Default | Use when |
+|---|---|---|
+| `config-file` | `.github/release-please-config.json` | the config lives elsewhere |
+| `manifest-file` | `.github/.release-please-manifest.json` | the manifest lives elsewhere |
+| `target-branch` | the branch that triggered the run | release PRs should target a fixed branch |
+
+Outputs keep `googleapis/release-please-action`'s names
+(`releases_created`, `release_created`, `tag_name`, `version`, `prs_created`,
+`paths_released`, ...), plus `json` — every output of the action,
+including the per-package `<path>--release_created` / `<path>--tag_name`
+ones. Chain a publish job in the caller:
+
+```yaml
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    # per package: fromJSON(needs.release-please.outputs.json)['ts--release_created'] == 'true'
+```
+
+Releasing from several integration branches (e.g. `main` and `next`)?
+List them under `push.branches`; each run targets its own branch.
 
 ### 2. Add `publish.yml`
 

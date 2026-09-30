@@ -17,6 +17,9 @@ run *after* release-please cuts a tag.
   `<root>/vX.Y` paths (`spec-commit-rules`, `spec-status-line`,
   `version-check`; see
   [`references/how-to/spec-versioning.md`](references/how-to/spec-versioning.md))
+- The shared release-please runner (`release-please-on-push`): one
+  guarded, App-token job every repo calls instead of hand-rolling its
+  own — it runs release-please, it does not replace it
 - Org-level community files (CODE_OF_CONDUCT, SECURITY, CONTRIBUTING,
   issue forms, PR template)
 - Profile rendered at <https://github.com/hop-top>
@@ -96,6 +99,7 @@ See [`docs/architecture.md`](docs/architecture.md) for full diagrams
     spec-commit-rules.yml    reusable: per-spec-version commit isolation (PRs)
     spec-status-line.yml     reusable: channel-derived status lines (release PRs)
     version-check.yml        reusable: release-version literal + spec-path guard
+    release-please-on-push.yml    reusable: release-please run (App token, concurrency guard)
     release-please-preflight.yml  reusable: config-shape checks at PR time
     ci.yml                   self-CI: actionlint + script tests
     release-please.yml       self-release: opens release PRs
