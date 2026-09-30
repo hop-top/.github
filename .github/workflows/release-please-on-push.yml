@@ -25,7 +25,9 @@ name: release-please-on-push (reusable)
 #     self-approval block on the manifest). GITHUB_TOKEN stays
 #     read-only.
 #   - Config check: a missing / malformed config or manifest fails with
-#     the path named instead of release-please's generic error.
+#     the path named instead of release-please's generic error. A repo
+#     with NEITHER file (wired, not yet adopted — e.g. fresh from
+#     `kit init`) gets a warning and a skipped run instead of a red one.
 #   - target-branch defaults to the branch that triggered the run, so a
 #     caller pushing on several integration branches (main + next)
 #     releases each against itself.
@@ -171,6 +173,11 @@ jobs:
           TARGET_BRANCH: ${{ inputs.target-branch }}
         run: |
           set -euo pipefail
+          if [[ ! -e "$CONFIG_FILE" && ! -e "$MANIFEST_FILE" ]]; then
+            echo "::warning file=$CONFIG_FILE::no release-please config ($CONFIG_FILE) or manifest ($MANIFEST_FILE) — skipping release-please until both exist"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           fail=0
           for f in "$CONFIG_FILE" "$MANIFEST_FILE"; do
             if [[ ! -f "$f" ]]; then
@@ -188,16 +195,21 @@ jobs:
           [[ $fail -eq 0 ]] || exit 1
 
           branch="${TARGET_BRANCH:-$GITHUB_REF_NAME}"
-          echo "target-branch=$branch" >> "$GITHUB_OUTPUT"
+          {
+            echo "skip=false"
+            echo "target-branch=$branch"
+          } >> "$GITHUB_OUTPUT"
           echo "release-please: config=$CONFIG_FILE manifest=$MANIFEST_FILE target-branch=$branch"
 
       - uses: actions/create-github-app-token@v3
+        if: steps.config.outputs.skip != 'true'
         id: app-token
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
 
       - uses: googleapis/release-please-action@v5
+        if: steps.config.outputs.skip != 'true'
         id: release
         with:
           config-file: ${{ inputs.config-file }}
