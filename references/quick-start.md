@@ -62,7 +62,9 @@ The reusable workflow:
 - runs one release-please job per branch at a time, newest push wins.
   A run that started before a release PR merged and finished after it
   would otherwise re-open a release PR for the version just tagged;
-- fails with the path named when the config or manifest is missing.
+- fails with the path named when the config or manifest is missing or
+  malformed; with neither file present it warns and skips, so a repo
+  can carry the caller before it adopts release-please.
 
 Inputs, all optional:
 

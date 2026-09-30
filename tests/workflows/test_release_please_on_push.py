@@ -88,6 +88,21 @@ class ConfigCheckStepTests(unittest.TestCase):
                                      manifest=".release-please-manifest.json")
         self.assertEqual(code, 0, out)
 
+    def test_no_config_and_no_manifest_skips_with_a_warning(self) -> None:
+        # A repo wired before it adopts release-please (e.g. fresh from
+        # `kit init`) stays green until it adds the two files.
+        code, out, outputs = self.run_step()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(outputs.get("skip"), "true", out)
+        self.assertIn(f"::warning file={CONFIG}::", out)
+        self.assertNotIn("target-branch", outputs)
+
+    def test_valid_config_does_not_skip(self) -> None:
+        self.valid()
+        code, out, outputs = self.run_step()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(outputs.get("skip"), "false", out)
+
     def test_missing_config_fails_naming_the_path(self) -> None:
         self.write(MANIFEST, "{}")
         code, out, outputs = self.run_step()
@@ -180,6 +195,14 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("config-file: ${{ inputs.config-file }}", rp)
         self.assertIn("manifest-file: ${{ inputs.manifest-file }}", rp)
         self.assertIn("target-branch: ${{ steps.config.outputs.target-branch }}", rp)
+        # Nothing past the config check runs when it reports skip.
+        after = steps[steps.index("id: config"):]
+        for use in ("uses: actions/create-github-app-token@",
+                    "uses: googleapis/release-please-action@v5"):
+            tail = after[after.index(use):]
+            nxt = tail.find("\n      - ", 1)
+            self.assertIn("if: steps.config.outputs.skip != 'true'",
+                          tail if nxt < 0 else tail[:nxt], use)
 
     def test_github_token_stays_read_only(self) -> None:
         # release-please talks to the API with the App token only.
