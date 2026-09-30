@@ -208,5 +208,53 @@ class PreflightExtraFilesTests(unittest.TestCase):
                                "(release-type python will normalize PEP 440 natively)")
 
 
+    # --- check 7: release-please workflow token -----------------------------
+
+    CALLER = textwrap.dedent("""\
+        name: release-please
+        on:
+          push:
+            branches: [main]
+          workflow_dispatch: {}
+        permissions:
+          contents: read
+        jobs:
+          release-please:
+            uses: hop-top/.github/.github/workflows/release-please-on-push.yml@v0
+            secrets:
+              RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+              RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+        """)
+
+    def test_caller_of_the_reusable_workflow_passes_the_token_check(self) -> None:
+        self.configure({".": {"component": "x"}})
+        self.write(".github/workflows/release-please.yml", self.CALLER)
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    release-please.yml calls the release-please-on-push "
+                               "reusable workflow (release-bot App token, concurrency guard)")
+        self.assertLine(lines, "[OK]    release-please.yml declares workflow_dispatch "
+                               "(manual retrigger enabled)")
+        self.assertNoLine(lines, "[WARN]  release-please.yml may be using GITHUB_TOKEN")
+
+    def test_hand_rolled_job_on_github_token_still_warns(self) -> None:
+        self.configure({".": {"component": "x"}})
+        self.write(".github/workflows/release-please.yml", textwrap.dedent("""\
+            name: release-please
+            on:
+              push:
+                branches: [main]
+            jobs:
+              release-please:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: googleapis/release-please-action@v4
+            """))
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[WARN]  release-please.yml may be using GITHUB_TOKEN "
+                               "— PRs won't trigger downstream workflows")
+
+
 if __name__ == "__main__":
     unittest.main()

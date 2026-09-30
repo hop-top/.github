@@ -493,7 +493,7 @@ jobs:
 
           if [[ ! -f "$RP_PATH" ]]; then
             fail "release-please workflow not found at $RP_PATH"
-            fixhint "create $RP_PATH using googleapis/release-please-action@v4 (see SKILL.md Quick-start)"
+            fixhint "create $RP_PATH calling hop-top/.github/.github/workflows/release-please-on-push.yml@v0 (see references/quick-start.md)"
           else
             ok "release-please workflow found ($RP_PATH)"
           fi
@@ -834,14 +834,16 @@ jobs:
             echo "### release-please workflow"
           } >> "$GITHUB_STEP_SUMMARY"
           if [[ -f "$RP_PATH" ]]; then
-            if grep -q "actions/create-github-app-token" "$RP_PATH"; then
+            if grep -Eq "uses:[[:space:]]*hop-top/\.github/\.github/workflows/release-please-on-push\.yml@" "$RP_PATH"; then
+              ok "release-please.yml calls the release-please-on-push reusable workflow (release-bot App token, concurrency guard)"
+            elif grep -q "actions/create-github-app-token" "$RP_PATH"; then
               ok "release-please.yml mints App token via create-github-app-token"
             elif grep -q "GH_RELEASE_PLEASE_PAT" "$RP_PATH"; then
               fail "release-please.yml uses deprecated GH_RELEASE_PLEASE_PAT — PAT delivery is unreliable"
               fixhint "switch to release-bot App token (RELEASE_BOT_APP_ID + RELEASE_BOT_PRIVATE_KEY)"
             else
               warn "release-please.yml may be using GITHUB_TOKEN — PRs won't trigger downstream workflows"
-              fixhint "use actions/create-github-app-token@v1 with RELEASE_BOT_APP_ID/RELEASE_BOT_PRIVATE_KEY"
+              fixhint "call hop-top/.github/.github/workflows/release-please-on-push.yml@v0, or mint a release-bot App token (RELEASE_BOT_APP_ID/RELEASE_BOT_PRIVATE_KEY) via actions/create-github-app-token"
             fi
 
             if grep -q "workflow_dispatch" "$RP_PATH"; then
