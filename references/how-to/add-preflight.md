@@ -63,7 +63,7 @@ Auto-infers from your config — no inputs required:
 
 - All four required files exist (config, manifest, both workflows). `publish.yml` may be absent when the config has a single package, or when every package resolves to `release-type: go` (a [Go-only repo](single-language-repo.md#go-only-what-you-still-need), multi-module included); the `publish.yml` checks below are then skipped
 - `release-please-config.json` parses + has `packages`
-- Every component is single-segment (the tag-shape glob trap)
+- Every component is single-segment (the tag-shape glob trap); a Go-only repo may use a nested directory path, since it has no `publish.yml` glob and nested Go modules need `<dir/path>/vX.Y.Z` tags
 - Prerelease packages have the [four-piece combo](prerelease-channel.md)
 - Manifest seed shape matches prerelease declaration
 - [SemVer ∩ PEP 440 intersection](../concepts/version-strings.md): Python packages don't have an `extra-files` override on `pyproject.toml` (the trap that bypasses PEP 440 normalization), and `pyproject.toml`'s current version is PEP 440-shaped (not SemVer-shaped)

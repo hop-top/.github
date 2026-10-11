@@ -115,6 +115,13 @@ names with `/` in them are the trap.
 The `path` (manifest key) can contain `/` — only the `component`
 must be a single segment.
 
+Exception: a Go-only repo (no `publish.yml`, every package
+`release-type: go`) has no glob to match, and a nested Go module
+needs its full directory path as tag prefix
+(`adapters/twilio/v0.1.0` is `<module>/adapters/twilio@v0.1.0`).
+There the component is the directory path, `/` included. See
+[single-language repo § Go-only](references/how-to/single-language-repo.md#go-only-what-you-still-need).
+
 ## Three-way name alignment
 
 For each shipping component, three names must match exactly:

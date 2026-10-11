@@ -73,7 +73,8 @@ class PreflightFixture:
         self.write(CONFIG, json.dumps({"packages": packages}))
         self.write(MANIFEST, json.dumps({p: "1.0.0" for p in packages}))
 
-    def run_step(self, single_lang: str = "true") -> tuple[int, list[str]]:
+    def run_step(self, single_lang: str = "true",
+                 go_only: str = "false") -> tuple[int, list[str]]:
         summary = self.tmp / "summary.md"
         summary.write_text("", encoding="utf-8")
         env = {
@@ -86,6 +87,7 @@ class PreflightFixture:
             "RP_PATH": ".github/workflows/release-please.yml",
             "PUBLISH_JSON": "",
             "SINGLE_LANG": single_lang,
+            "GO_ONLY": go_only,
             "GH_TOKEN": "",
             "REPO": "example/example",
             "GITHUB_STEP_SUMMARY": str(summary),
@@ -286,7 +288,7 @@ class PreflightPublishWorkflowTests(PreflightFixture, unittest.TestCase):
         self.write(CONFIG, json.dumps(config))
         self.write(MANIFEST, json.dumps({p: "0.1.0-alpha.0" for p in config["packages"]}))
 
-    def detect_single_lang(self) -> str:
+    def detect_outputs(self) -> dict[str, str]:
         output = self.tmp / "detect-output"
         output.write_text("", encoding="utf-8")
         env = {
@@ -299,14 +301,17 @@ class PreflightPublishWorkflowTests(PreflightFixture, unittest.TestCase):
         r = subprocess.run(["bash", str(self.detect)], cwd=self.repo, env=env,
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
-        values = dict(line.split("=", 1) for line in
-                      output.read_text(encoding="utf-8").splitlines() if "=" in line)
-        return values["single_lang"]
+        return dict(line.split("=", 1) for line in
+                    output.read_text(encoding="utf-8").splitlines() if "=" in line)
+
+    def detect_single_lang(self) -> str:
+        return self.detect_outputs()["single_lang"]
 
     def run_preflight(self) -> tuple[str, int, list[str]]:
-        single = self.detect_single_lang()
-        code, lines = self.run_step(single_lang=single)
-        return single, code, lines
+        out = self.detect_outputs()
+        code, lines = self.run_step(single_lang=out["single_lang"],
+                                    go_only=out["go_only"])
+        return out["single_lang"], code, lines
 
     def go_module_repo(self) -> dict:
         """Root module on bare v* tags plus a submodule on postgres/v* tags."""
@@ -375,6 +380,50 @@ class PreflightPublishWorkflowTests(PreflightFixture, unittest.TestCase):
         self.configure_raw(self.go_module_repo())
         self.write(".github/workflows/publish.yml", "name: publish\n")
         self.assertEqual(self.detect_single_lang(), "false")
+
+
+    # --- check 3: nested (slash) component names -----------------------------
+
+    NESTED_FAIL = ("[BREAK] component 'stores/postgres' contains '/' — tag '*/v*' "
+                   "glob does NOT match nested paths")
+    NESTED_GO_OK = ("[OK]    component 'stores/postgres' is nested — Go-only repo, "
+                    "tag 'stores/postgres/v<version>' is the module-path tag Go "
+                    "expects (no publish.yml glob)")
+
+    def nested_go_module_repo(self) -> dict:
+        """Root module on bare v* tags plus a submodule two directories deep."""
+        config = self.go_module_repo()
+        sub = config["packages"].pop("postgres")
+        sub["component"] = "stores/postgres"
+        config["packages"]["stores/postgres"] = sub
+        config["packages"]["."]["exclude-paths"] = ["stores/postgres"]
+        return config
+
+    def test_go_only_repo_accepts_nested_component(self) -> None:
+        self.configure_raw(self.nested_go_module_repo())
+        single, code, lines = self.run_preflight()
+        self.assertEqual(single, "true")
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, self.NESTED_GO_OK)
+        self.assertNoLine(lines, "[BREAK]")
+
+    def test_nested_component_with_publish_workflow_fails(self) -> None:
+        # publish.yml present: its '*/v*' trigger would miss the nested tag.
+        self.configure_raw(self.nested_go_module_repo())
+        self.write(".github/workflows/publish.yml", "name: publish\n")
+        _, code, lines = self.run_preflight()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, self.NESTED_FAIL)
+
+    def test_non_go_nested_component_fails(self) -> None:
+        # A single package passes the publish.yml-absent check, but only a
+        # Go-only repo may use a nested component.
+        self.configure_raw({"packages": {"stores/postgres": {
+            "release-type": "node", "component": "stores/postgres"}}})
+        single, code, lines = self.run_preflight()
+        self.assertEqual(single, "true")
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, self.NESTED_FAIL)
 
 
 if __name__ == "__main__":

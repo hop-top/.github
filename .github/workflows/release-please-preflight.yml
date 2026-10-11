@@ -378,6 +378,9 @@ jobs:
       #     top-level default) — a multi-module Go repo publishes through
       #     proxy.golang.org pulling tags, so it has no publish step at all.
       # Any other multi-package config with no publish.yml is still a misconfig.
+      # `go_only` is the narrower second case (no publish.yml, every package
+      # go): nothing matches tags against publish.yml's '*/v*' glob, and a
+      # nested Go module needs its full directory path as tag prefix.
       - name: Detect single-language adopter
         id: detect
         env:
@@ -386,6 +389,7 @@ jobs:
         run: |
           set -euo pipefail
           single=false
+          go_only=false
           if [[ -f "$CONFIG_PATH" && ! -f "$PUBLISH_PATH" ]]; then
             count=$(jq -r '.packages // {} | length' "$CONFIG_PATH" 2>/dev/null || echo 0)
             all_go=$(jq -r '(.["release-type"] // "") as $top
@@ -395,8 +399,12 @@ jobs:
             if [[ "${count:-0}" == "1" || "$all_go" == "true" ]]; then
               single=true
             fi
+            if [[ "$all_go" == "true" ]]; then
+              go_only=true
+            fi
           fi
           echo "single_lang=$single" >> "$GITHUB_OUTPUT"
+          echo "go_only=$go_only" >> "$GITHUB_OUTPUT"
 
       - name: Run preflight checks
         id: checks
@@ -408,6 +416,7 @@ jobs:
           RP_PATH: ${{ inputs.release-please-workflow-path }}
           PUBLISH_JSON: ${{ steps.parse-publish.outputs.publish_json }}
           SINGLE_LANG: ${{ steps.detect.outputs.single_lang }}
+          GO_ONLY: ${{ steps.detect.outputs.go_only }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
@@ -535,6 +544,9 @@ jobs:
           fi
 
           # ---------- Check 3: single-segment component names ----------
+          # publish.yml's '*/v*' trigger misses nested tags, so a '/' in a
+          # component fails -- except in a Go-only repo (GO_ONLY): there is no
+          # publish.yml, and a nested module's tag must be '<dir/path>/vX'.
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             for path in $PACKAGES; do
               COMPONENT=$(jq -r --arg p "$path" '.packages[$p].component // empty' "$CONFIG_PATH")
@@ -543,7 +555,9 @@ jobs:
                 fixhint "set .packages.\"$path\".component to a single-segment name in $CONFIG_PATH"
                 continue
               fi
-              if [[ "$COMPONENT" == */* ]]; then
+              if [[ "$COMPONENT" == */* && "${GO_ONLY:-false}" == "true" ]]; then
+                ok "component '$COMPONENT' is nested — Go-only repo, tag '$COMPONENT/v<version>' is the module-path tag Go expects (no publish.yml glob)"
+              elif [[ "$COMPONENT" == */* ]]; then
                 fail "component '$COMPONENT' contains '/' — tag '*/v*' glob does NOT match nested paths"
                 fixhint "rename to single-segment in $CONFIG_PATH (e.g. ${COMPONENT//\//-})"
               else
