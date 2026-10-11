@@ -88,7 +88,7 @@ be explicit about the remaining pieces:
 
 | Piece | Needed? | Notes |
 |---|---|---|
-| `publish.yml` | No | proxy.golang.org pulls tags from the source repo |
+| `publish.yml` | No | proxy.golang.org pulls tags from the source repo — also for a multi-module repo, as long as every release-please package is `release-type: go` |
 | Mirror repo | No | source already holds the bare-name slot |
 | release-please | **Yes** | nothing cuts tags otherwise, and `go install @latest` needs a version |
 | Vanity import registration | No | `hop.top/<name>` resolves by convention the moment the repo exists |
@@ -100,6 +100,14 @@ Tag shape for a Go-only root-artifact repo is plain `vX.Y.Z` —
 `<component>/v<version>` rule in the top-level SKILL does not
 apply, because there is no publish router to key off the prefix
 and goreleaser / `go install` both want a bare module-root tag.
+
+A multi-module Go repo keeps the root module on plain `vX.Y.Z` and
+gives each submodule its own package with the module-path tag Go
+expects (`<dir>/vX.Y.Z`, so the component is the dir name):
+`include-component-in-tag: true`, `tag-separator: "/"`, and the
+submodule dirs in the root package's `exclude-paths`. The preflight accepts this without `publish.yml`
+because every package is `release-type: go`; add a package of any
+other release type and `publish.yml` is required again.
 
 Consequence for casks: with a plain tag there is no synthesized
 bare tag, so `{{ .Env.RELEASE_TAG }}` is unnecessary — omit

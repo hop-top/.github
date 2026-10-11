@@ -279,7 +279,7 @@ Both secrets are required; the other two workflows take none.
 - **The status-line push re-triggers `synchronize`.** The second run finds nothing to patch and exits clean; do not add a guard against it.
 - **`allow` globs cross `/`.** `docs/*` skips everything under `docs/`, not just its direct children.
 - **The channel-shape rule flags third-party pins.** A `1.2.0-rc.1` of some dependency in a config file is a `literal` finding; allow-list that file with the reason in the caller rather than annotating it.
-- **A spec-only repo has no `publish.yml`.** The preflight treats a one-package config with no publish workflow as a single-language adopter and skips the publish checks; a spec repo with more than one package needs `publish.yml` or the preflight's Check 1 fails.
+- **A spec-only repo has no `publish.yml`.** The preflight treats a one-package config with no publish workflow as a single-language adopter and skips the publish checks; a spec repo with more than one package needs `publish.yml` or the preflight's Check 1 fails (only an all-`go` config is exempt, and spec packages are `simple`).
 
 ## Next steps
 

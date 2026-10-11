@@ -1,11 +1,13 @@
-"""Tests for the `Run preflight checks` step of release-please-preflight.yml.
+"""Tests for the `Detect single-language adopter` and `Run preflight
+checks` steps of release-please-preflight.yml.
 
-The step's `run:` block is lifted out of the workflow file verbatim and
+Each step's `run:` block is lifted out of the workflow file verbatim and
 run with bash inside a small fixture repository: a config, a manifest,
-a release-please workflow stub and whatever files a test needs. The
-publish checks are skipped (`SINGLE_LANG=true`) and `gh` / `curl` are
-shimmed to fail, so nothing reaches the network. Assertions read the
-step summary lines (`[BREAK]`, `[WARN]`, `[OK]`) and the exit code.
+a release-please workflow stub and whatever files a test needs. Unless a
+test runs the detect step, the publish checks are skipped
+(`SINGLE_LANG=true`). `gh` / `curl` are shimmed to fail, so nothing
+reaches the network. Assertions read the step summary lines (`[BREAK]`,
+`[WARN]`, `[OK]`), the step outputs and the exit code.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from pathlib import Path
 WORKFLOW = (Path(__file__).resolve().parents[2]
             / ".github" / "workflows" / "release-please-preflight.yml")
 STEP = "Run preflight checks"
+DETECT_STEP = "Detect single-language adopter"
 CONFIG = ".github/release-please-config.json"
 MANIFEST = ".github/.release-please-manifest.json"
 
@@ -42,7 +45,7 @@ def step_script(workflow: Path, step: str) -> str:
     return textwrap.dedent("\n".join(body)) + "\n"
 
 
-class PreflightExtraFilesTests(unittest.TestCase):
+class PreflightFixture:
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="preflight-"))
         self.repo = self.tmp / "repo"
@@ -70,7 +73,7 @@ class PreflightExtraFilesTests(unittest.TestCase):
         self.write(CONFIG, json.dumps({"packages": packages}))
         self.write(MANIFEST, json.dumps({p: "1.0.0" for p in packages}))
 
-    def run_step(self) -> tuple[int, list[str]]:
+    def run_step(self, single_lang: str = "true") -> tuple[int, list[str]]:
         summary = self.tmp / "summary.md"
         summary.write_text("", encoding="utf-8")
         env = {
@@ -82,7 +85,7 @@ class PreflightExtraFilesTests(unittest.TestCase):
             "PUBLISH_PATH": ".github/workflows/publish.yml",
             "RP_PATH": ".github/workflows/release-please.yml",
             "PUBLISH_JSON": "",
-            "SINGLE_LANG": "true",
+            "SINGLE_LANG": single_lang,
             "GH_TOKEN": "",
             "REPO": "example/example",
             "GITHUB_STEP_SUMMARY": str(summary),
@@ -98,6 +101,9 @@ class PreflightExtraFilesTests(unittest.TestCase):
     def assertNoLine(self, lines: list[str], prefix: str) -> None:
         hits = [x for x in lines if x.startswith(prefix)]
         self.assertEqual(hits, [], "\n".join(lines))
+
+
+class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
 
     # --- check 5d: extra-files targets ---------------------------------------
 
@@ -254,6 +260,121 @@ class PreflightExtraFilesTests(unittest.TestCase):
         self.assertEqual(code, 0, "\n".join(lines))
         self.assertLine(lines, "[WARN]  release-please.yml may be using GITHUB_TOKEN "
                                "— PRs won't trigger downstream workflows")
+
+
+class PreflightPublishWorkflowTests(PreflightFixture, unittest.TestCase):
+    """Whether a missing publish.yml is a misconfiguration.
+
+    The detect step decides; its `single_lang` output feeds the checks
+    step exactly as the workflow wires it.
+    """
+
+    PUBLISH_MISSING = "[BREAK] publish workflow not found at .github/workflows/publish.yml"
+    PUBLISH_ABSENT_OK = ("[INFO]  publish workflow absent (single-language adopter — "
+                         "proxy.golang.org / direct registry pull)")
+
+    PRERELEASE = {"initial-version": "0.1.0-alpha.0", "prerelease": True,
+                  "prerelease-type": "alpha.0", "versioning": "prerelease",
+                  "bump-minor-pre-major": True}
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.detect = self.tmp / "detect.sh"
+        self.detect.write_text(step_script(WORKFLOW, DETECT_STEP), encoding="utf-8")
+
+    def configure_raw(self, config: dict) -> None:
+        self.write(CONFIG, json.dumps(config))
+        self.write(MANIFEST, json.dumps({p: "0.1.0-alpha.0" for p in config["packages"]}))
+
+    def detect_single_lang(self) -> str:
+        output = self.tmp / "detect-output"
+        output.write_text("", encoding="utf-8")
+        env = {
+            "PATH": self.path,
+            "HOME": str(self.tmp),
+            "CONFIG_PATH": CONFIG,
+            "PUBLISH_PATH": ".github/workflows/publish.yml",
+            "GITHUB_OUTPUT": str(output),
+        }
+        r = subprocess.run(["bash", str(self.detect)], cwd=self.repo, env=env,
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        values = dict(line.split("=", 1) for line in
+                      output.read_text(encoding="utf-8").splitlines() if "=" in line)
+        return values["single_lang"]
+
+    def run_preflight(self) -> tuple[str, int, list[str]]:
+        single = self.detect_single_lang()
+        code, lines = self.run_step(single_lang=single)
+        return single, code, lines
+
+    def go_module_repo(self) -> dict:
+        """Root module on bare v* tags plus a submodule on postgres/v* tags."""
+        return {
+            "include-component-in-tag": False,
+            "packages": {
+                ".": {"release-type": "go", "component": "app",
+                      "exclude-paths": ["postgres"], **self.PRERELEASE},
+                "postgres": {"release-type": "go", "component": "postgres",
+                             "include-component-in-tag": True, "tag-separator": "/",
+                             "include-v-in-tag": True, **self.PRERELEASE},
+            },
+        }
+
+    def test_multi_module_go_repo_without_publish_workflow_passes(self) -> None:
+        self.configure_raw(self.go_module_repo())
+        single, code, lines = self.run_preflight()
+        self.assertEqual(single, "true")
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, self.PUBLISH_ABSENT_OK)
+        self.assertNoLine(lines, "[BREAK]")
+
+    def test_top_level_go_release_type_covers_every_package(self) -> None:
+        self.configure_raw({"release-type": "go", "packages": {
+            ".": {"component": "app", "exclude-paths": ["postgres"]},
+            "postgres": {"component": "postgres"}}})
+        single, code, lines = self.run_preflight()
+        self.assertEqual(single, "true")
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, self.PUBLISH_ABSENT_OK)
+
+    def test_polyglot_repo_without_publish_workflow_fails(self) -> None:
+        config = self.go_module_repo()
+        config["packages"]["ts"] = {"release-type": "node", "component": "app-ts"}
+        self.configure_raw(config)
+        single, code, lines = self.run_preflight()
+        self.assertEqual(single, "false")
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, self.PUBLISH_MISSING)
+
+    def test_package_overriding_top_level_go_release_type_fails(self) -> None:
+        self.configure_raw({"release-type": "go", "packages": {
+            ".": {"component": "app"},
+            "py": {"component": "app-py", "release-type": "python"}}})
+        single, code, lines = self.run_preflight()
+        self.assertEqual(single, "false")
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, self.PUBLISH_MISSING)
+
+    def test_multi_package_without_release_type_fails(self) -> None:
+        self.configure_raw({"packages": {
+            "a": {"component": "a"}, "b": {"component": "b"}}})
+        single, code, lines = self.run_preflight()
+        self.assertEqual(single, "false")
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, self.PUBLISH_MISSING)
+
+    def test_single_package_without_publish_workflow_passes(self) -> None:
+        self.configure_raw({"packages": {".": {"release-type": "go", "component": "app"}}})
+        single, code, lines = self.run_preflight()
+        self.assertEqual(single, "true")
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, self.PUBLISH_ABSENT_OK)
+
+    def test_go_repo_with_publish_workflow_runs_publish_checks(self) -> None:
+        self.configure_raw(self.go_module_repo())
+        self.write(".github/workflows/publish.yml", "name: publish\n")
+        self.assertEqual(self.detect_single_lang(), "false")
 
 
 if __name__ == "__main__":
