@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.1](https://github.com/hop-top/.github/compare/v0.14.0...v0.14.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **preflight:** accept multi-module Go repos without `publish.yml` ([25770b6](https://github.com/hop-top/.github/commit/25770b641ea2983395e9f6586b1543f552fa29d5))
+* **preflight:** allow nested components for Go-only repos ([a2d10d8](https://github.com/hop-top/.github/commit/a2d10d8615a0a719845c994c3656cadce3974962))
+
 ## [0.14.0](https://github.com/hop-top/.github/compare/v0.13.1...v0.14.0) (2026-09-30)
 
 
