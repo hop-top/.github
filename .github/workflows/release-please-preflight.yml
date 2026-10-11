@@ -371,10 +371,13 @@ jobs:
           echo "publish_json=$RUNNER_TEMP/publish.json" >> "$GITHUB_OUTPUT"
 
       # Detect single-language adopters (Go-only / direct-pull registries) so we can
-      # demote publish.yml-dependent checks. Both signals must hold:
-      #   - release-please-config.json has exactly one entry under .packages
-      #   - publish.yml is absent on disk
-      # A multi-package config WITH no publish.yml is still a misconfig.
+      # demote publish.yml-dependent checks. publish.yml must be absent on disk, and
+      # release-please-config.json must either:
+      #   - have exactly one entry under .packages, or
+      #   - resolve every package to release-type go (the package's own or the
+      #     top-level default) — a multi-module Go repo publishes through
+      #     proxy.golang.org pulling tags, so it has no publish step at all.
+      # Any other multi-package config with no publish.yml is still a misconfig.
       - name: Detect single-language adopter
         id: detect
         env:
@@ -385,7 +388,11 @@ jobs:
           single=false
           if [[ -f "$CONFIG_PATH" && ! -f "$PUBLISH_PATH" ]]; then
             count=$(jq -r '.packages // {} | length' "$CONFIG_PATH" 2>/dev/null || echo 0)
-            if [[ "${count:-0}" == "1" ]]; then
+            all_go=$(jq -r '(.["release-type"] // "") as $top
+              | (.packages // {}) as $p
+              | ($p | length) > 0 and ($p | all(.[]; (.["release-type"] // $top) == "go"))' \
+              "$CONFIG_PATH" 2>/dev/null || echo false)
+            if [[ "${count:-0}" == "1" || "$all_go" == "true" ]]; then
               single=true
             fi
           fi
