@@ -103,11 +103,18 @@ and goreleaser / `go install` both want a bare module-root tag.
 
 A multi-module Go repo keeps the root module on plain `vX.Y.Z` and
 gives each submodule its own package with the module-path tag Go
-expects (`<dir>/vX.Y.Z`, so the component is the dir name):
+expects (`<dir>/vX.Y.Z`, so the component is the dir path):
 `include-component-in-tag: true`, `tag-separator: "/"`, and the
 submodule dirs in the root package's `exclude-paths`. The preflight accepts this without `publish.yml`
 because every package is `release-type: go`; add a package of any
 other release type and `publish.yml` is required again.
+
+A submodule nested more than one directory deep keeps the full path
+as its component: `stores/postgres` tags `stores/postgres/vX.Y.Z`.
+The preflight's single-segment component check exists for
+`publish.yml`'s `*/v*` glob, so it passes nested components in a
+Go-only repo and still fails them once `publish.yml` exists or a
+package has another release type.
 
 Consequence for casks: with a plain tag there is no synthesized
 bare tag, so `{{ .Env.RELEASE_TAG }}` is unnecessary — omit
