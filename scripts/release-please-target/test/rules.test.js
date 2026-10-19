@@ -46,6 +46,14 @@ test('rule 1: from a stable manifest, or a target already released stable', () =
   assert.equal(v(pre('1.2.0', B, '1.2.0')), '2.0.0-alpha.0');
   assert.equal(v(pre('0.6.0-rc.2', X, '0.6.0')), '0.6.1-alpha.0');
   assert.equal(v(pre('0.6.0-rc.2', F, '0.6.0')), '0.7.0-alpha.0');
+  // next previews 0.6.1 while main hotfixes 0.6.1: the line moves past it
+  assert.equal(v(pre('0.6.1-alpha.4', X, '0.6.1')), '0.6.2-alpha.0');
+  assert.equal(pre('0.6.1-alpha.4', X, '0.6.1').code, 'line');
+  assert.equal(v(pre('0.6.1-alpha.4', F, '0.6.1')), '0.7.0-alpha.0');
+  assert.equal(v(pre('0.6.1-beta.1', X, '0.6.1', promo('0.6.1', 'beta'))), '0.6.2-alpha.0');
+  assert.equal(v(pre('0.6.1-rc.2', X, '0.6.1', promo('0.6.1', 'rc'))), '0.6.2-alpha.0');
+  // ... or to the line an open-line record names, with no other change
+  assert.equal(v(pre('0.6.1-rc.2', X, '0.6.1', undefined, '0.6.2')), '0.6.2-alpha.0');
 });
 
 test('rule 1: a promotion moves its line to <channel>.0, then counts on it', () => {
@@ -134,12 +142,44 @@ test('rule 2: stable branch promotes an rc to its target', () => {
   assert.equal(v(st('0.6.0-rc.2', B, '0.5.0')), '0.6.0');
   assert.equal(v(st('0.6.0-rc.0', X, undefined)), '0.6.0');
   assert.equal(v(st('2.0.0-rc.1', B, '1.9.0')), '2.0.0');
-  assert.equal(v(st('0.6.0-rc.2', X, '0.6.0')), '0.6.1');
-  assert.equal(st('0.6.0-rc.2', X, '0.6.0').code, 'bump');
+});
+
+test('rule 2: a stable package takes fixes only (patch)', () => {
   assert.equal(v(st('0.6.0', X, '0.6.0')), '0.6.1');
-  assert.equal(v(st('0.6.0', F, '0.6.0')), '0.7.0');
-  assert.equal(v(st('1.6.0', B, '1.6.0')), '2.0.0');
-  assert.equal(v(st('1.2.0', F, '1.2.0')), '1.3.0');
+  assert.equal(st('0.6.0', X, '0.6.0').code, 'bump');
+  assert.equal(v(st('1.2.0', X, '1.2.0')), '1.2.1');
+  assert.equal(v(st('1.2.3', X, undefined)), '1.2.4');
+  // from the later of the manifest and the last stable tag
+  assert.equal(v(st('0.6.0', X, '0.6.1')), '0.6.2');
+});
+
+test('rule 2: a feat or breaking change on a stable package blocks it: land it on the prerelease branch', () => {
+  for (const [current, summary, change, would] of [
+    ['0.6.0', F, 'feat', '0.7.0'],
+    ['0.6.0', B, 'breaking change', '0.7.0'],
+    ['1.2.0', F, 'feat', '1.3.0'],
+    ['1.2.0', B, 'breaking change', '2.0.0'],
+  ]) {
+    const d = st(current, summary, current);
+    assert.equal(d.version, undefined, `${current} ${change}`);
+    assert.equal(d.code, 'unpreviewed');
+    assert.deepEqual(d.skipped, []);
+    assert.deepEqual(d.blocked, [`${change} since stable ${current} would ship ${would} unpreviewed: a stable package takes fixes only here (land it on the prerelease branch, where it opens a new line)`]);
+  }
+  // messages name the prerelease branch when the caller knows it
+  const named = next({kind: 'stable', current: '0.6.0', summary: F, lastStable: '0.6.0', prereleaseBranch: 'next'});
+  assert.match(named.blocked[0], /\(land it on next, where it opens a new line\)$/);
+});
+
+test('rule 2: an rc of a target already released blocks: re-line on the prerelease branch', () => {
+  // next at 0.6.1-rc.2, main hotfixed 0.6.1, then the promotion merges
+  for (const [current, summary, lastStable] of [['0.6.1-rc.2', X, '0.6.1'], ['0.6.1-rc.2', F, '0.6.1'], ['0.6.0-rc.2', X, '0.6.1'], ['0.6.0-rc.2', X, '0.6.0']]) {
+    const d = st(current, summary, lastStable);
+    assert.equal(d.version, undefined, current);
+    assert.equal(d.code, 'rc-released');
+    assert.deepEqual(d.skipped, []);
+    assert.match(d.blocked[0], new RegExp(`^${current.replace(/\./g, '\\.')} previews ${current.split('-')[0].replace(/\./g, '\\.')}, already released \\(last stable ${lastStable.replace(/\./g, '\\.')}\\): re-line on the prerelease branch`));
+  }
 });
 
 test('rule 2: a change that requires more than the rc previewed blocks it', () => {
@@ -378,6 +418,14 @@ test('rule 4: a stable-branch major links, only when every member is at an rc of
     assert.equal(h.versions, undefined, String(cur));
     assert.match(h.blocked[0], new RegExp(`kit: linked at 1\\.0\\.0 by kit@1\\.0\\.0, but kit-py is at ${shown.replace(/\./g, '\\.')}: a linked release is cut only when every member is at an rc of 1\\.0\\.0`));
   }
+  // the way to an rc, per member: from alpha via beta, from beta one step, off the line to it first
+  const how = members => group([{component: 'kit', current: '1.0.0-rc.1', lastStable: '0.9.0', proposed: '1.0.0'}, ...members], 'stable').blocked[0];
+  assert.match(how([{component: 'kit-py', current: '1.0.0-alpha.3'}]), /\(promote kit-py via beta to rc on the prerelease branch first\)$/);
+  assert.match(how([{component: 'kit-py', current: '1.0.0-beta.1'}]), /\(promote kit-py to rc on the prerelease branch first\)$/);
+  assert.match(how([{component: 'kit-php', current: '1.0.0-alpha.0'}, {component: 'kit-rs', current: '1.0.0-alpha.2'}, {component: 'kit-py', current: '1.0.0-beta.1'}, {component: 'kit-ts', current: '0.9.0'}]),
+    /\(promote kit-php, kit-rs via beta to rc and kit-py to rc and kit-ts to an rc of 1\.0\.0 on the prerelease branch first\)$/);
+  assert.match(resolveGroup({kind: 'stable', groupName: 'kit', prereleaseBranch: 'next', members: [{component: 'kit', current: '1.0.0-rc.1', lastStable: '0.9.0', proposed: '1.0.0'}, {component: 'kit-py', current: '1.0.0-alpha.3'}]}).blocked[0],
+    /\(promote kit-py via beta to rc on next first\)$/);
   const b = group([
     {component: 'kit', current: '2.0.0-rc.3', lastStable: '1.9.0', proposed: '2.0.0'},
     {component: 'kit-ts', current: '2.0.0', lastStable: '2.0.0'},

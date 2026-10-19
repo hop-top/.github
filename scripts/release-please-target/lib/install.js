@@ -14,7 +14,7 @@
 //                                        major, or a new minor line before 1.0 on the
 //                                        prerelease branch; each member keeps its channel;
 //                                        on a stable branch every member must be at an rc
-//                                        (rules.resolveGroup)
+//                                        of a linked major (rules.resolveGroup)
 const rules = require('./rules');
 const {load} = require('./internals');
 const {reportFor} = require('./report');
@@ -69,6 +69,7 @@ function install(rpRoot) {
         promotion: ctx.records && ctx.records.promotion,
         openLine: ctx.records && ctx.records.openLine,
         branch: ctx.branch,
+        prereleaseBranch: ctx.prereleaseBranch,
       });
     }
     decide(version, commits) {
@@ -196,6 +197,8 @@ function install(rpRoot) {
     }
     async preconfigure(strategiesByPath) {
       const kind = branchKind(this.targetBranch, this.options);
+      // The prerelease branch, as block messages name it ("land it on next").
+      const prereleaseBranch = list(this.options.prereleaseBranches, DEFAULT_ROLES.prereleaseBranches).join(' or ') || undefined;
       const stables = await stablesByComponent(this.github);
       const report = reportFor(this.github);
       const config = report.config;
@@ -216,7 +219,7 @@ function install(rpRoot) {
         const last = stables.get(component);
         const raw = (config && config.json.packages && config.json.packages[p]) || {};
         vs.ctx = {
-          kind: k, branch: this.targetBranch, component, name, path: p, lastStable: last && last.toString(), logger: this.logger, report,
+          kind: k, branch: this.targetBranch, prereleaseBranch, component, name, path: p, lastStable: last && last.toString(), logger: this.logger, report,
           configFile: config && config.file, records: {promotion: raw['x-channel'], openLine: raw['x-open-line']},
         };
         wrap(strategy, vs, this.logger);
@@ -278,7 +281,7 @@ function install(rpRoot) {
         }
         rows.push({component: m.component, current: latest && latest.tag.version.toString(), lastStable: m.ctx.lastStable, proposed, promotion: m.ctx.records.promotion});
       }
-      const g = rules.resolveGroup({kind, groupName: this.groupName, members: rows});
+      const g = rules.resolveGroup({kind, groupName: this.groupName, members: rows, prereleaseBranch: members[0].ctx.prereleaseBranch});
       this.logger.info(`conditional-linked-versions: ${g.reason}`);
       if (!g.linked) return strategiesByPath;
 
