@@ -265,9 +265,21 @@ test('rule 4: which proposals open a linked line', () => {
   assert.ok(!L('0.6.0', '0.6.1-alpha.0'));
   assert.ok(L('1.9.0', '2.0.0', 'stable', '1.9.0'));
   assert.ok(L('2.0.0-rc.2', '2.0.0', 'stable', '1.9.0'));
-  assert.ok(!L('0.6.0-rc.2', '0.6.0', 'stable', '0.5.0'));
-  assert.ok(!L('0.6.0', '0.7.0', 'stable', '0.6.0'));
+  // on a stable branch a pre-1.0 minor cut links too: above the last
+  // stable, or with none
+  assert.ok(L('0.6.0-rc.2', '0.6.0', 'stable', '0.5.0'));
+  assert.ok(L('0.6.0-rc.2', '0.6.0', 'stable', '0.4.3'));
+  assert.ok(L('0.5.0-rc.1', '0.5.0', 'stable'));
+  assert.ok(L('0.6.0', '0.7.0', 'stable', '0.6.0'));
+  // a pre-1.0 patch never links, nor a minor from 1.0
+  assert.ok(!L('0.5.0', '0.5.1', 'stable', '0.5.0'));
+  assert.ok(!L('0.5.1-rc.0', '0.5.1', 'stable', '0.5.0'));
+  assert.ok(!L('0.5.1-rc.0', '0.5.1', 'stable'));
+  assert.ok(!L('1.2.0-rc.1', '1.2.0', 'stable', '1.1.0'));
+  assert.ok(!L('1.2.0-rc.1', '1.2.0', 'stable', '1.1.4'));
+  assert.ok(!L('1.1.4', '1.1.5', 'stable', '1.1.4'));
   assert.ok(!L('0.5.3', '0.5.4', 'maintenance'));
+  assert.ok(!L('0.5.0-rc.1', '0.6.0', 'maintenance'));
 });
 
 const group = (members, kind = 'prerelease') => resolveGroup({kind, groupName: 'kit', members});
@@ -447,7 +459,58 @@ test('rule 4: a stable-branch major links, only when every member is at an rc of
   ], 'stable');
   assert.equal(b.versions, undefined);
   assert.match(b.blocked[0], /kit-ts is already at 2\.0\.0/);
-  assert.equal(group([{component: 'kit', current: '0.6.0-rc.2', lastStable: '0.5.0', proposed: '0.6.0'}], 'stable').linked, false);
+});
+
+test('rule 4: a stable-branch pre-1.0 minor links like a major: every member at an rc of it', () => {
+  const stable = members => resolveGroup({kind: 'stable', groupName: 'kit', prereleaseBranch: 'next', members});
+  // no previous stable: all five at an rc of 0.5.0 are cut together
+  const g = stable([
+    {component: 'kit', current: '0.5.0-rc.1', proposed: '0.5.0'},
+    {component: 'kit-php', current: '0.5.0-rc.0', proposed: '0.5.0'},
+    {component: 'kit-py', current: '0.5.0-rc.3', proposed: '0.5.0'},
+    {component: 'kit-rs', current: '0.5.0-rc.0', proposed: '0.5.0'},
+    {component: 'kit-ts', current: '0.5.0-rc.2', proposed: '0.5.0'},
+  ]);
+  assert.equal(g.linked, true);
+  assert.deepEqual(g.blocked, []);
+  assert.deepEqual(g.versions, {kit: '0.5.0', 'kit-php': '0.5.0', 'kit-py': '0.5.0', 'kit-rs': '0.5.0', 'kit-ts': '0.5.0'});
+  // above the last stable: the same
+  assert.deepEqual(stable([
+    {component: 'kit', current: '0.6.0-rc.2', lastStable: '0.5.0', proposed: '0.6.0'},
+    {component: 'kit-py', current: '0.6.0-rc.0', lastStable: '0.4.1', proposed: '0.6.0'},
+  ]).versions, {kit: '0.6.0', 'kit-py': '0.6.0'});
+  // one member not at an rc (an experimental SDK on alpha, here) holds every member
+  const h = stable([
+    {component: 'kit', current: '0.5.0-rc.1', proposed: '0.5.0'},
+    {component: 'kit-php', current: '0.5.0-rc.0', proposed: '0.5.0'},
+    {component: 'kit-py', current: '0.5.0-alpha.3'},
+    {component: 'kit-rs', current: '0.5.0-rc.0', proposed: '0.5.0'},
+    {component: 'kit-ts', current: '0.5.0-rc.0', proposed: '0.5.0'},
+  ]);
+  assert.equal(h.linked, true);
+  assert.equal(h.versions, undefined);
+  assert.match(h.blocked[0], /^kit: linked at 0\.5\.0 by kit@0\.5\.0, .*but kit-py is at 0\.5\.0-alpha\.3: a linked release is cut only when every member is at an rc of 0\.5\.0 \(promote kit-py via beta to rc on next first\)$/);
+  // a member on another line, or stable below the target, goes to an rc of it first
+  assert.match(stable([
+    {component: 'kit', current: '0.6.0-rc.1', lastStable: '0.5.0', proposed: '0.6.0'},
+    {component: 'kit-py', current: '0.5.1-rc.0', lastStable: '0.5.0', proposed: '0.5.1'},
+    {component: 'kit-ts', current: '0.5.0', lastStable: '0.5.0'},
+  ]).blocked[0], /\(promote kit-py, kit-ts to an rc of 0\.6\.0 on next first\)$/);
+  // a pre-1.0 patch (a hotfix on main) stays per member
+  const p = stable([
+    {component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.5.1'},
+    {component: 'kit-py', current: '0.5.0', lastStable: '0.5.0'},
+  ]);
+  assert.equal(p.linked, false);
+  assert.match(p.reason, /independent/);
+  assert.equal(stable([{component: 'kit', current: '0.5.1-rc.0', lastStable: '0.5.0', proposed: '0.5.1'}, {component: 'kit-py', current: '0.5.0-alpha.3'}]).linked, false);
+  // so does a minor from 1.0
+  const m = stable([
+    {component: 'kit', current: '1.2.0-rc.1', lastStable: '1.1.0', proposed: '1.2.0'},
+    {component: 'kit-py', current: '1.2.0-alpha.1', lastStable: '1.1.2'},
+  ]);
+  assert.equal(m.linked, false);
+  assert.match(m.reason, /independent/);
 });
 
 test('rule 4: different targets and last stables: the highest live line wins', () => {

@@ -162,9 +162,9 @@ const SCENARIOS = [
     return {r: promoted({qmochi: '0.6.0-rc.2'}).commit('fix(qmochi): z', ['qmochi']), branch: 'main'};
   }, expect: [T('qmochi', '0.6.0')], stock: [T('qmochi', '0.6.0-rc.3')]},
 
-  {id: 'e3', label: 'main after the kit family is promoted at 0.6.0-rc.2 (minor: independent)', build() {
+  {id: 'e3', label: 'main after the kit family is promoted at 0.6.0-rc.2 (pre-1.0 minor: linked)', build() {
     return {r: promoted(Object.fromEntries(FAMILY.map(c => [c, '0.6.0-rc.2']))), branch: 'main'};
-  }, expect: FAMILY.map(c => T(c, '0.6.0')), stock: FAMILY.map(c => T(c, '0.6.0-rc.3'))},
+  }, expect: [GROUP_MAIN], versions: all('0.6.0'), stock: FAMILY.map(c => T(c, '0.6.0-rc.3'))},
 
   {id: 'e4', label: 'main after the kit family is promoted at 1.0.0-rc.1 (new major: linked)', build() {
     const r = repo();
@@ -180,10 +180,32 @@ const SCENARIOS = [
     return {r: promoted({qmochi: '0.6.0-beta.1'}).commit('fix(qmochi): z', ['qmochi']), branch: 'main'};
   }, expect: [], skipped: {qmochi: /0\.6\.0-beta\.1 is not an rc: skipped/}, stock: [T('qmochi', '0.6.0-beta.2')]},
 
-  {id: 'e6', label: 'main after next merged: kit, kit-py, kit-ts at 0.6.0-rc.2, the experimental SDKs still alpha: three cut, two skipped', build() {
+  {id: 'e6', label: 'main after next merged: kit, kit-py, kit-ts at 0.6.0-rc.2, the experimental SDKs still alpha: the linked pre-1.0 minor blocks, no member is cut', build() {
     return {r: promoted({kit: '0.6.0-rc.2', 'kit-py': '0.6.0-rc.2', 'kit-ts': '0.6.0-rc.2', 'kit-php': '0.6.0-alpha.3', 'kit-rs': '0.6.0-alpha.1'}), branch: 'main'};
-  }, expect: ['kit', 'kit-py', 'kit-ts'].map(c => T(c, '0.6.0')),
-  skipped: {'kit-php': /0\.6\.0-alpha\.3 is not an rc: skipped/, 'kit-rs': /0\.6\.0-alpha\.1 is not an rc: skipped/},
+  }, expect: [],
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /kit: linked at 0\.6\.0 by .*but kit-php is at 0\.6\.0-alpha\.3, kit-rs is at 0\.6\.0-alpha\.1: a linked release is cut only when every member is at an rc of 0\.6\.0 \(promote kit-php, kit-rs via beta to rc on next first\)$/])),
+  stock: []},
+
+  {id: 'p1', label: 'main, no stable yet: kit at 0.5.0-rc.1, kit-py still at 0.5.0-alpha.3: the linked pre-1.0 minor blocks every member', build() {
+    return {r: promoted({...Object.fromEntries(FAMILY.map(c => [c, '0.5.0-rc.0'])), kit: '0.5.0-rc.1', 'kit-py': '0.5.0-alpha.3'}, {qmochi: '0.5.0'}), branch: 'main'};
+  }, expect: [], blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: linked at 0\.5\.0 by kit@0\.5\.0, .*but kit-py is at 0\.5\.0-alpha\.3: a linked release is cut only when every member is at an rc of 0\.5\.0 \(promote kit-py via beta to rc on next first\)$/])),
+  stock: []},
+
+  {id: 'p2', label: 'main, no stable yet: all five at 0.5.0-rc.N: one group PR at 0.5.0, merging it tags all five', build() {
+    const rcs = {kit: '0.5.0-rc.1', 'kit-php': '0.5.0-rc.0', 'kit-py': '0.5.0-rc.3', 'kit-rs': '0.5.0-rc.0', 'kit-ts': '0.5.0-rc.2'};
+    return {r: promoted(rcs, {qmochi: '0.5.0'}), branch: 'main', land: true};
+  }, expect: [GROUP_MAIN], versions: all('0.5.0'), landed: FAMILY.map(c => `${c}/v0.5.0`), stock: []},
+
+  {id: 'p3', label: 'main, the kit family stable at 0.5.0, a fix on kit only: kit 0.5.1 alone (a pre-1.0 patch does not link)', build() {
+    const r = repo().commit('chore: initial').release({...Object.fromEntries(FAMILY.map(c => [c, '0.5.0'])), qmochi: '0.5.0'});
+    return {r: r.commit('fix(cli): hotfix', ['kit']), branch: 'main'};
+  }, expect: [T('kit', '0.5.1')], stock: [T('kit', '0.5.1-alpha.0')]},
+
+  {id: 'p4', label: 'main, the kit family promoted from 1.1.x: kit, kit-py, kit-ts at 1.2.0-rc.N cut per member, the experimental SDKs skipped (a minor from 1.0 does not link)', build() {
+    const st = {...Object.fromEntries(FAMILY.map(c => [c, '1.1.0'])), 'kit-py': '1.1.2', qmochi: '0.5.0'};
+    return {r: promoted({kit: '1.2.0-rc.1', 'kit-py': '1.2.0-rc.0', 'kit-ts': '1.2.0-rc.2', 'kit-php': '1.2.0-alpha.3', 'kit-rs': '1.2.0-beta.1'}, st), branch: 'main'};
+  }, expect: ['kit', 'kit-py', 'kit-ts'].map(c => T(c, '1.2.0')),
+  skipped: {'kit-php': /1\.2\.0-alpha\.3 is not an rc: skipped/, 'kit-rs': /1\.2\.0-beta\.1 is not an rc: skipped/},
   stock: []},
 
   {id: 'e7', label: 'main, stable 1.0.0: kit at 1.0.0-rc.1, kit-py still at 1.0.0-alpha.3: the linked major blocks, no member is cut', build() {
