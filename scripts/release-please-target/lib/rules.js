@@ -11,14 +11,18 @@
 //
 // The engine never picks a channel. Every line starts and stays on alpha;
 // a package moves to beta or rc only through a promotion record,
-// {line: 'x.y.z', channel: 'beta' | 'rc'} (config key `x-channel`), which
-// applies while the package's target is that line and expires with it.
-// An open-line record, 'x.y.z' (`x-open-line`), opens that line on the
-// next release when no change requires more; it is spent once reached.
+// {line: 'x.y.z', channel: 'beta' | 'rc'} (config key `x-channel`), one
+// channel at a time, which applies while the package is on that line and
+// expires with it. An open-line record, 'x.y.z' (`x-open-line`), opens
+// that line when no change requires more; it is spent once reached. Both
+// are read on the prerelease branch only, where the plugin cuts their
+// release with no other change.
 //
-// Every decision is {version, code, reason, warnings, blocked}. `blocked`
-// lists why no version may be proposed; when it is non-empty `version` is
-// undefined and the caller must not release the package.
+// Every decision is {version, code, reason, warnings, blocked, skipped}.
+// `blocked` lists why no version may be proposed (the run fails);
+// `skipped` why this branch releases nothing for the package (a notice,
+// the run stays green). When either is non-empty `version` is undefined
+// and the caller must not release the package.
 
 const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
 
@@ -123,9 +127,14 @@ function summarize(commits) {
 }
 
 function decision(version, code, reason, extra = {}) {
-  return {version: version && fmt(version), code, reason, warnings: extra.warnings || [], blocked: extra.blocked || []};
+  return {version: version && fmt(version), code, reason, warnings: extra.warnings || [], blocked: extra.blocked || [], skipped: extra.skipped || []};
 }
 const blocked = (code, reason) => decision(undefined, code, reason, {blocked: [reason]});
+const skipped = (code, reason) => decision(undefined, code, reason, {skipped: [reason]});
+
+// A promotion moves one channel at a time.
+const skipsChannel = (promoted, own) => !!promoted && rank(promoted) > rank(own) + 1;
+const SKIP_HINT = 'channels move alpha -> beta -> rc';
 
 // Rule 1: prerelease branch.
 function nextPrerelease(C, S, summary, promotion) {
@@ -143,6 +152,9 @@ function nextPrerelease(C, S, summary, promotion) {
     return decision(atChannel(req, FIRST), 'line', `required ${fmt(req)} > target ${fmt(T)}: new line`);
   }
   const promoted = promotedOn(promotion, T);
+  if (skipsChannel(promoted, channelOf(C.pre))) {
+    return blocked('channel-skip', `x-channel ${promoted} for ${fmt(T)} skips a channel from ${fmt(C)}: ${SKIP_HINT}`);
+  }
   if (rank(promoted) > rank(channelOf(C.pre))) {
     return decision(atChannel(T, promoted), 'channel', `promoted to ${promoted} on ${fmt(T)}`);
   }
@@ -162,23 +174,31 @@ function withOpenLine(d, C, line) {
   return decision(atChannel(line, FIRST), 'open-line', `x-open-line: open ${fmt(line)} line`);
 }
 
-// Rule 2: stable branch.
+// Rule 2: stable branch. Only an rc is cut, at the target it previewed;
+// an alpha or beta (an experimental package still on the prerelease
+// track) is skipped.
 function nextStable(C, S, summary) {
   if (!C.pre) return decision(bumpStable(maxV(core(C), S), summary), 'bump', `stable bump from ${fmt(maxV(core(C), S))}`);
   const T = core(C);
+  if (channelOf(C.pre) !== 'rc') {
+    return skipped('not-rc', `${fmt(C)} is not an rc: skipped (a stable branch cuts only an rc; promote the line to rc on the prerelease branch to release it here)`);
+  }
   if (S && cmpCore(T, S) <= 0) {
     return decision(bumpStable(S, summary), 'bump', `target ${fmt(T)} already released (last stable ${fmt(S)})`);
   }
-  if (channelOf(C.pre) !== 'rc') {
-    return blocked('not-promoted', `${fmt(C)} is not an rc: a stable branch promotes only an rc (promote the line to rc on the prerelease branch first)`);
-  }
   const req = bumpStable(S || deriveBase(T), summary);
-  if (cmpCore(req, T) > 0) return decision(req, 'promote', `required ${fmt(req)} > promoted target ${fmt(T)}`);
+  if (cmpCore(req, T) > 0) {
+    return blocked('over-rc', `changes since ${fmt(C)} require ${fmt(req)} (from ${S ? `stable ${fmt(S)}` : 'no stable'}), more than the ${fmt(T)} it previews: stable must equal what the rc previewed (land the change on the prerelease branch, where it opens a new line)`);
+  }
   return decision(T, 'promote', `promote ${fmt(C)} -> ${fmt(T)}`);
 }
 
-// Rule 3: maintenance branch (release/x.y): patch only.
+// Rule 3: maintenance branch (release/x.y): stable patches only. A
+// prerelease there is skipped, never turned into its stable.
 function nextMaintenance(C, summary, branch) {
+  if (C.pre) {
+    return skipped('not-stable', `${fmt(C)} is a prerelease: skipped (maintenance branch ${branch} releases stable patches only)`);
+  }
   if (summary.breaking || summary.feat) {
     return blocked('not-patch', `${summary.breaking ? 'breaking change' : 'feat'} on maintenance branch ${branch}: patch only`);
   }
@@ -188,10 +208,6 @@ function nextMaintenance(C, summary, branch) {
   const warnings = [];
   const m = String(branch || '').match(/(\d+)\.(\d+|x)$/);
   if (m && (+m[1] !== C.major || (m[2] !== 'x' && +m[2] !== C.minor))) warnings.push(`${fmt(C)} is not on the ${m[1]}.${m[2]} line of ${branch}`);
-  if (C.pre) {
-    warnings.push(`maintenance branch ${branch} carries prerelease ${fmt(C)}`);
-    return decision(core(C), 'bump', `maintenance: ${fmt(C)} -> its stable`, {warnings});
-  }
   return decision({...core(C), patch: C.patch + 1}, 'bump', 'maintenance: patch', {warnings});
 }
 
@@ -216,7 +232,9 @@ function next(input) {
 
 // Rule 4: does `proposed` open a line the family links on? A new major
 // always (on a stable branch: against the last stable); a new minor line
-// only in the prerelease phase. Never on a maintenance branch.
+// only before 1.0 (major 0), on the prerelease branch. From 1.0 minors
+// are independent; on a stable branch only a major links (each member is
+// cut from its own rc otherwise). Never on a maintenance branch.
 function startsLinkedLine({kind, current, proposed, lastStable}) {
   if (kind === 'maintenance') return false;
   const C = parse(current), V = parse(proposed), S = opt(lastStable);
@@ -225,7 +243,7 @@ function startsLinkedLine({kind, current, proposed, lastStable}) {
     return V.major > ref.major;
   }
   if (V.major > C.major) return true;
-  return !!V.pre && V.major === C.major && V.minor > C.minor;
+  return V.major === 0 && C.major === 0 && V.minor > C.minor;
 }
 
 /**
@@ -236,13 +254,18 @@ function startsLinkedLine({kind, current, proposed, lastStable}) {
  * Linked only when a member's proposal opens a linked line. Every member
  * then moves to the group's target, the highest among the members (their
  * proposals, and any member already previewing a later unreleased target).
- * On a stable branch every member gets that stable version. On a
- * prerelease branch each member keeps its own channel (its channel on the
- * target line, or its promotion recorded for that line; alpha otherwise),
- * and the members of one channel share one counter: the highest of that
- * channel's members already on the line + 1, or .0. Nobody moves
- * backwards or changes channel. A member that already released the target
- * (or later) as stable blocks the group: no member gets a version.
+ * On a stable branch every member gets that stable version, and every
+ * member must be at an rc of it: one member still on alpha or beta (or
+ * on no rc of the target) blocks the group, it never ships stable from
+ * anything but an rc. On a prerelease branch each member keeps its own
+ * channel: a member already on the target line keeps its channel there,
+ * or takes its promotion recorded for that line (one step); any other
+ * member starts the line on alpha. The members of one channel share one
+ * counter: the highest of that channel's members already on the line + 1,
+ * or .0 (a promoted member's last alpha still counts for the alpha
+ * members). Nobody moves backwards or changes channel. A member that
+ * already released the target (or later) as stable blocks the group: no
+ * member gets a version.
  */
 function resolveGroup({kind, groupName = 'group', members}) {
   const M = members.map(m => ({
@@ -259,6 +282,11 @@ function resolveGroup({kind, groupName = 'group', members}) {
   if (kind === 'stable') {
     const at = M.find(m => (m.current && cmp(m.current, L) >= 0) || (m.lastStable && cmp(m.lastStable, L) >= 0));
     if (at) return fail(`${at.component} is already at ${fmt(maxV(at.current, at.lastStable))} >= ${fmt(L)} (linked by ${by})`);
+    const notRc = M.filter(m => !(m.current && channelOf(m.current.pre) === 'rc' && cmpCore(core(m.current), L) === 0));
+    if (notRc.length) {
+      const where = notRc.map(m => `${m.component} is at ${m.current ? fmt(m.current) : 'no release'}`).join(', ');
+      return fail(`linked at ${fmt(L)} by ${by}, but ${where}: a linked release is cut only when every member is at an rc of ${fmt(L)} (promote ${notRc.map(m => m.component).join(', ')} to rc on the prerelease branch first)`);
+    }
     return {linked: true, versions: all(L), reason: `${groupName}: linked at ${fmt(L)} by ${by}`, blocked: []};
   }
 
@@ -273,7 +301,10 @@ function resolveGroup({kind, groupName = 'group', members}) {
   if (done) return fail(`${done.component} already released ${fmt(maxV(done.lastStable, done.current && !done.current.pre ? done.current : undefined))} as stable, at or past group target ${fmt(T)}`);
 
   const onT = v => !!(v && v.pre && cmpCore(core(v), T) === 0);
-  const channelFor = m => higher(onT(m.current) ? channelOf(m.current.pre) : FIRST, promotedOn(m.promotion, T));
+  // A promotion counts only for a member already on its line.
+  const channelFor = m => (onT(m.current) ? higher(channelOf(m.current.pre), promotedOn(m.promotion, T)) : FIRST);
+  const skip = M.find(m => onT(m.current) && skipsChannel(promotedOn(m.promotion, T), channelOf(m.current.pre)));
+  if (skip) return fail(`${skip.component} x-channel ${promotedOn(skip.promotion, T)} for ${fmt(T)} skips a channel from ${fmt(skip.current)}: ${SKIP_HINT}`);
   const top = {}; // channel -> highest member version on the line
   for (const m of M) if (onT(m.current)) top[channelOf(m.current.pre)] = maxV(top[channelOf(m.current.pre)], m.current);
   const versions = {};
@@ -287,7 +318,31 @@ function resolveGroup({kind, groupName = 'group', members}) {
   return {linked: true, versions, reason: `${groupName}: linked on ${fmt(T)} at ${distinct} by ${by}`, blocked: []};
 }
 
+/**
+ * recordProblems({current, promotion, openLine}) -> [string]
+ * The records of a package against its manifest version, on the
+ * prerelease branch (the runner refuses them, as the preflight does): a
+ * promotion names the current line and its current or next channel; an
+ * open line is not reached yet. Elsewhere the records are inert. Shapes
+ * are promotionOf's / openLineOf's (they throw).
+ */
+function recordProblems({current, promotion, openLine}) {
+  const out = [];
+  const C = opt(current);
+  const P = promotionOf(promotion);
+  if (P) {
+    const own = C && channelOf(C.pre);
+    if (!C || !C.pre) out.push(`x-channel is for line ${fmt(P.line)}, but the manifest has stable '${C ? fmt(C) : 'none'}': no open line to promote`);
+    else if (cmpCore(P.line, C) !== 0) out.push(`x-channel is for line ${fmt(P.line)}, but its current target is ${fmt(core(C))} (manifest ${fmt(C)})`);
+    else if (rank(P.channel) < rank(own)) out.push(`x-channel ${P.channel} is behind its current ${fmt(C)}: channels never move backwards`);
+    else if (skipsChannel(P.channel, own)) out.push(`x-channel ${P.channel} skips a channel from ${fmt(C)}: ${SKIP_HINT}`);
+  }
+  const O = openLineOf(openLine);
+  if (O && C && cmpCore(C, O) >= 0) out.push(`x-open-line ${fmt(O)} is already reached (manifest ${fmt(C)})`);
+  return out;
+}
+
 module.exports = {
   CHANNELS, parse, fmt, core, cmp, cmpCore, bumpStable, deriveBase, summarize, promotionOf, openLineOf,
-  next, startsLinkedLine, resolveGroup,
+  next, startsLinkedLine, resolveGroup, recordProblems,
 };

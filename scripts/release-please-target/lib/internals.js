@@ -31,6 +31,9 @@ const DEEP = [
 //   Manifest#buildPullRequests                   plugin.preconfigure(strategies, commitsPerPath,
 //                                                releasesByPath) in config order, before any
 //                                                strategy builds its pull request
+//   Manifest#getStrategiesByPath                 (private) path -> strategy, memoized: the
+//                                                instances buildPullRequests hands the plugins
+//                                                (runner: which packages are target, rule 6)
 //   Manifest#createPullRequests                  calls this.buildPullRequests()
 //   Manifest#createReleases                      calls this.buildReleases(); candidate.prerelease
 //   Manifest#findOpenReleasePullRequests         open release PRs (config labels) on the branch

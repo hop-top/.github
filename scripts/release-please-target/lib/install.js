@@ -5,11 +5,16 @@
 //                                        its component, last stable and records
 //                                        (x-channel, x-open-line, from the raw config the
 //                                        runner attaches); enforces the promotion /
-//                                        maintenance / Release-As rules; release PRs drop
-//                                        the records their versions make stale
+//                                        maintenance / Release-As rules; cuts a promotion
+//                                        (rc on a stable branch; x-channel, x-open-line on
+//                                        the prerelease branch) with no new commit; release
+//                                        PRs on the prerelease branch drop the records
+//                                        their versions make stale
 //   plugin "conditional-linked-versions" linked-versions that links only for a new
-//                                        major or a new prerelease minor line; each
-//                                        member keeps its channel (rules.resolveGroup)
+//                                        major, or a new minor line before 1.0 on the
+//                                        prerelease branch; each member keeps its channel;
+//                                        on a stable branch every member must be at an rc
+//                                        (rules.resolveGroup)
 const rules = require('./rules');
 const {load} = require('./internals');
 const {reportFor} = require('./report');
@@ -53,9 +58,10 @@ function install(rpRoot) {
       this.ctx = undefined; // set by target-context before any bump
       this.last = undefined; // last decision
     }
-    decide(version, commits) {
-      const ctx = this.ctx || {kind: this.options.prerelease ? 'prerelease' : 'stable', component: '?', branch: ''};
-      const d = rules.next({
+    // The decision for `version` and `commits`, without logging it.
+    evaluate(version, commits) {
+      const ctx = this.ctx || {kind: this.options.prerelease ? 'prerelease' : 'stable', component: '', name: '?', branch: ''};
+      return rules.next({
         kind: ctx.kind,
         current: version.toString(),
         summary: rules.summarize(commits),
@@ -64,14 +70,17 @@ function install(rpRoot) {
         openLine: ctx.records && ctx.records.openLine,
         branch: ctx.branch,
       });
-      this.last = d;
+    }
+    decide(version, commits) {
+      const ctx = this.ctx || {};
+      const d = this.evaluate(version, commits);
+      this.last = {...d, from: version.toString()};
       const log = ctx.logger;
       if (log) {
-        log.info(`target: ${ctx.component} ${version} -> ${d.version || '(none)'} (${d.reason})`);
-        for (const w of d.warnings) log.warn(`target: ${ctx.component}: ${w}`);
+        log.info(`target: ${ctx.name} ${version} -> ${d.version || '(none)'} (${d.reason})`);
+        for (const w of d.warnings) log.warn(`target: ${ctx.name}: ${w}`);
       }
-      if (ctx.report && d.version) ctx.report.decide(ctx.component, version.toString(), d.version, d.reason);
-      return d;
+      return this.last;
     }
     async bump(version, commits) {
       const d = this.decide(version, commits);
@@ -105,16 +114,19 @@ function install(rpRoot) {
       const kept = notes.filter(n => n.title !== 'RELEASE AS');
       if (kept.length === notes.length) return c;
       const as = notes.find(n => n.title === 'RELEASE AS');
-      logger.warn(`target: ${ctx.component}: ignoring "Release-As: ${as.text}" on ${short(c.sha)}: target versioning picks the version`);
+      logger.warn(`target: ${ctx.name}: ignoring "Release-As: ${as.text}" on ${short(c.sha)}: target versioning picks the version`);
       return {...c, notes: kept};
     });
   }
 
-  // A release PR drops the package's records that its version makes stale:
-  // `x-channel` once the version leaves the recorded line (a line move or
-  // a stable cut), `x-open-line` once the line is reached.
+  // A release PR on the prerelease branch drops the package's records that
+  // its version makes stale: `x-channel` once the version leaves the
+  // recorded line, `x-open-line` once the line is reached. Elsewhere the
+  // records are inert and left alone (a stable cut does not edit them:
+  // the prerelease branch's next release does, so the two branches do not
+  // churn the same keys).
   function withRecordCleanup(pr, ctx) {
-    if (!pr || !pr.version || !ctx.configFile) return pr;
+    if (!pr || !pr.version || !ctx.configFile || ctx.kind !== 'prerelease') return pr;
     const {promotion, openLine} = ctx.records;
     const v = pr.version;
     const target = rules.parse(`${v.major}.${v.minor}.${v.patch}`);
@@ -130,11 +142,29 @@ function install(rpRoot) {
     return pr;
   }
 
-  function block(ctx, reasons, logger) {
-    for (const r of reasons) {
-      ctx.report.block(ctx.component, r);
-      logger.error(`target: ${ctx.component}: no release on ${ctx.branch}: ${r}`);
+  // A decision that stops the package: blocked (the run fails) or skipped
+  // (a notice). True when it did.
+  function settle(ctx, d, logger) {
+    for (const r of d.blocked) {
+      ctx.report.block(ctx.component, r, ctx.name);
+      logger.error(`target: ${ctx.name}: no release on ${ctx.branch}: ${r}`);
     }
+    for (const r of d.skipped) {
+      ctx.report.skip(ctx.component, r, ctx.name);
+      logger.info(`target: ${ctx.name}: no release on ${ctx.branch}: ${r}`);
+    }
+    return d.blocked.length + d.skipped.length > 0;
+  }
+
+  // Decisions cut even when no user-facing commit landed since the latest
+  // release: rule 2's promotion of an rc on a stable branch, and rule 7's
+  // promotion (x-channel) or opened line (x-open-line) on the prerelease
+  // branch. Once that release is merged the decision is a counter again.
+  const FORCED = {stable: ['promote'], prerelease: ['channel', 'open-line'], maintenance: []};
+
+  function finish(pr, d, ctx) {
+    if (pr && pr.version && d) ctx.report.decide(ctx.component, d.from, pr.version.toString(), d.reason, ctx.name);
+    return withRecordCleanup(pr, ctx);
   }
 
   function wrap(strategy, vs, logger) {
@@ -146,23 +176,16 @@ function install(rpRoot) {
       const cs = stripReleaseAs(commits || [], ctx, logger);
       vs.last = undefined;
       const pr = await orig(cs, latestRelease, draft, labels, bumpOnly);
-      if (vs.last && vs.last.blocked.length) {
-        block(ctx, vs.last.blocked, logger);
-        return undefined;
-      }
-      if (pr || bumpOnly || ctx.kind !== 'stable') return withRecordCleanup(pr, ctx);
-      // Rule 2: a promoted rc is released on the stable branch even when no
-      // commit landed since it.
+      if (vs.last && settle(ctx, vs.last, logger)) return undefined;
+      if (pr || bumpOnly) return finish(pr, vs.last, ctx);
+      // No PR from the strategy: no commit, or none user-facing.
       const cur = latestRelease && latestRelease.tag && latestRelease.tag.version;
-      if (!cur || !cur.preRelease) return pr;
-      const d = vs.decide(cur, cs);
-      if (d.blocked.length) {
-        block(ctx, d.blocked, logger);
-        return undefined;
-      }
-      if (d.code !== 'promote') return pr;
-      logger.info(`target: ${ctx.component}: promotion PR ${cur} -> ${d.version} (no new commits)`);
-      return withRecordCleanup(await orig(cs, latestRelease, draft, labels, {newVersion: Version.parse(d.version)}), ctx);
+      if (!cur || (ctx.kind !== 'prerelease' && !cur.preRelease)) return pr;
+      const d = vs.last || {...vs.evaluate(cur, cs), from: cur.toString()};
+      if (settle(ctx, d, logger)) return undefined;
+      if (!FORCED[ctx.kind].includes(d.code)) return pr;
+      logger.info(`target: ${ctx.name}: ${d.code} release ${cur} -> ${d.version} (${d.reason}; no user-facing commit since ${cur})`);
+      return finish(await orig(cs, latestRelease, draft, labels, {newVersion: Version.parse(d.version)}), d, ctx);
     };
   }
 
@@ -181,16 +204,19 @@ function install(rpRoot) {
         const strategy = strategiesByPath[p];
         const vs = strategy.versioningStrategy;
         if (!vs || !vs[TARGET]) continue;
+        // `component` is release-please's ('' for none, as in PR bodies and
+        // branch names); `name` is what messages show.
         const component = (await strategy.getComponent()) || '';
+        const name = component || p;
         let k = kind;
         if (!k) {
           k = this.repositoryConfig[p].prerelease ? 'prerelease' : 'stable';
-          this.logger.warn(`target: branch ${this.targetBranch} has no role (stableBranches, prereleaseBranches, maintenanceBranchPattern): ${component || p} treated as ${k}`);
+          this.logger.warn(`target: branch ${this.targetBranch} has no role (stableBranches, prereleaseBranches, maintenanceBranchPattern): ${name} treated as ${k}`);
         }
         const last = stables.get(component);
         const raw = (config && config.json.packages && config.json.packages[p]) || {};
         vs.ctx = {
-          kind: k, branch: this.targetBranch, component: component || p, path: p, lastStable: last && last.toString(), logger: this.logger, report,
+          kind: k, branch: this.targetBranch, component, name, path: p, lastStable: last && last.toString(), logger: this.logger, report,
           configFile: config && config.file, records: {promotion: raw['x-channel'], openLine: raw['x-open-line']},
         };
         wrap(strategy, vs, this.logger);
@@ -264,7 +290,7 @@ function install(rpRoot) {
       const out = {...strategiesByPath};
       if (reasons.length) {
         for (const m of members) {
-          for (const r of reasons) report.block(m.component, r);
+          for (const r of reasons) report.block(m.component, r, m.ctx.name);
           out[m.p] = blockedStrategy(m.s);
         }
         for (const r of reasons) this.logger.error(`conditional-linked-versions: ${r}`);
@@ -282,10 +308,13 @@ function install(rpRoot) {
           releaseAs: version,
         });
         if (rebuilt.versioningStrategy && rebuilt.versioningStrategy[TARGET]) rebuilt.versioningStrategy.ctx = m.ctx;
+        // Every member is in the group PR, also one whose commits are not
+        // user-facing (a chore, a config change): its version is forced.
         const build = rebuilt.buildReleasePullRequest.bind(rebuilt);
-        rebuilt.buildReleasePullRequest = async (...a) => withRecordCleanup(await build(...a), m.ctx);
+        rebuilt.buildReleasePullRequest = async (cs, latest, draft, labels) =>
+          withRecordCleanup(await build(cs, latest, draft, labels, {newVersion: Version.parse(version)}), m.ctx);
         out[m.p] = rebuilt;
-        if (rows[i].current) report.decide(m.component, rows[i].current, version, g.reason);
+        if (rows[i].current) report.decide(m.component, rows[i].current, version, g.reason, m.ctx.name);
         const commits = commitsByPath[m.p] || (commitsByPath[m.p] = []);
         if (parseConventionalCommits(commits, this.logger).length === 0) {
           commits.push({sha: '', message: `chore(${m.component}): synchronize ${this.groupName} versions\n\nRelease-As: ${version}`});

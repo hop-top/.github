@@ -41,7 +41,8 @@ async function propose(r, branch, cfg) {
     prs.push({title: pr.title.toString(), branch: pr.headRefName, version: pr.version && pr.version.toString(), versions: versionsOf(pr), pr,
       config: await configAfter(github, pr)});
   }
-  return {prs, titles: prs.map(p => p.title), blocked: reportFor(github).list(), notes: [...notes]};
+  const report = reportFor(github);
+  return {prs, titles: prs.map(p => p.title), blocked: report.list(), skipped: report.notices(), notes: [...notes]};
 }
 
 async function land(r, branch, cfg, pr) {
