@@ -131,6 +131,44 @@ class ConfigCheckStepTests(unittest.TestCase):
         self.assertIn("declares no packages", out)
 
 
+class ToolingRevisionStepTests(unittest.TestCase):
+    """`Resolve the shared tooling revision` (versioning-extension path)."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="rp-on-push-tooling-"))
+        self.script = self.tmp / "step.sh"
+        self.script.write_text(step_script(WORKFLOW, "Resolve the shared tooling revision"),
+                               encoding="utf-8")
+        self.output = self.tmp / "output"
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_step(self, job: str) -> tuple[int, str, dict]:
+        self.output.write_text("", encoding="utf-8")
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.tmp), "JOB_CONTEXT": job,
+               "FALLBACK_REF": "v0", "GITHUB_OUTPUT": str(self.output)}
+        r = subprocess.run(["bash", str(self.script)], cwd=self.tmp, env=env,
+                           capture_output=True, text=True)
+        outputs = dict(line.split("=", 1)
+                       for line in self.output.read_text(encoding="utf-8").splitlines()
+                       if "=" in line)
+        return r.returncode, r.stdout + r.stderr, outputs
+
+    def test_running_workflow_sha_wins(self) -> None:
+        code, out, outputs = self.run_step(
+            '{"workflow_sha": "abc123", "workflow_repository": "hop-top/.github"}')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(outputs, {"repository": "hop-top/.github", "ref": "abc123"})
+        self.assertIn("Shared tooling: hop-top/.github@abc123", out)
+
+    def test_falls_back_to_tooling_ref(self) -> None:
+        code, out, outputs = self.run_step('{"status": "success"}')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(outputs, {"repository": "hop-top/.github", "ref": "v0"})
+        self.assertIn("::warning::job.workflow_sha is empty", out)
+
+
 class WorkflowShapeTests(unittest.TestCase):
     """Shape checks read the YAML as text: the tests stay standard-library
     only (DEVELOPING.md), and actionlint already validates the syntax."""
@@ -172,6 +210,8 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertIn("required: true", self.block_of(secrets, name), name)
 
     def test_outputs_pass_release_please_outputs_through(self) -> None:
+        # Each output comes from whichever of the two release steps ran:
+        # the action (`release`) or the extension runner (`target`).
         outputs = self.block("on", "workflow_call", "outputs")
         job_outputs = self.block("jobs", "release-please", "outputs")
         for name in ("releases_created", "paths_released", "prs_created", "pr", "prs",
@@ -180,11 +220,70 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertIn(f"value: ${{{{ jobs.release-please.outputs.{name} }}}}",
                           self.block_of(outputs, name), name)
             self.assertRegex(job_outputs,
-                             rf"(?m)^\s*{name}: \$\{{\{{ steps\.release\.outputs\.{name} \}}\}}$")
+                             rf"(?m)^\s*{name}: \$\{{\{{ steps\.release\.outputs\.{name} "
+                             rf"\|\| steps\.target\.outputs\.{name} \}}\}}$")
         self.assertIn("value: ${{ jobs.release-please.outputs.json }}",
                       self.block_of(outputs, "json"))
         self.assertRegex(job_outputs,
-                         r"(?m)^\s*json: \$\{\{ toJSON\(steps\.release\.outputs\) \}\}$")
+                         r"(?m)^\s*json: \$\{\{ inputs\.versioning-extension && "
+                         r"toJSON\(steps\.target\.outputs\) \|\| toJSON\(steps\.release\.outputs\) \}\}$")
+
+    # --- versioning-extension -------------------------------------------------
+
+    def steps_list(self) -> list[str]:
+        steps = self.block("jobs", "release-please", "steps")
+        parts = re.split(r"(?m)^      - ", steps)
+        return ["- " + p for p in parts[1:]]
+
+    def step(self, marker: str) -> str:
+        hits = [x for x in self.steps_list() if marker in x]
+        self.assertEqual(len(hits), 1, marker)
+        return hits[0]
+
+    def test_versioning_extension_is_an_opt_in_input(self) -> None:
+        inputs = self.block("on", "workflow_call", "inputs")
+        ext = self.block_of(inputs, "versioning-extension")
+        self.assertIn("type: boolean", ext)
+        self.assertIn("default: false", ext)
+        self.assertIn("default: v0", self.block_of(inputs, "tooling-ref"))
+
+    def test_action_step_runs_only_without_the_extension(self) -> None:
+        action = self.step("uses: googleapis/release-please-action@v5")
+        self.assertIn("if: steps.config.outputs.skip != 'true' && !inputs.versioning-extension", action)
+
+    def test_extension_steps_run_only_with_it_and_after_the_app_token(self) -> None:
+        steps = self.steps_list()
+        start = next(i for i, x in enumerate(steps) if "googleapis/release-please-action" in x)
+        ext = steps[start + 1:]
+        self.assertEqual(len(ext), 5)
+        for x in ext:
+            self.assertIn("if: steps.config.outputs.skip != 'true' && inputs.versioning-extension", x)
+        token = next(i for i, x in enumerate(steps) if "create-github-app-token" in x)
+        self.assertLess(token, start)
+
+    def test_extension_is_checked_out_at_the_resolved_revision(self) -> None:
+        checkout = self.step("repository: ${{ steps.tooling.outputs.repository }}")
+        self.assertIn("repository: ${{ steps.tooling.outputs.repository }}", checkout)
+        self.assertIn("ref: ${{ steps.tooling.outputs.ref }}", checkout)
+        self.assertIn("persist-credentials: false", checkout)
+        install = self.step("name: Install the target-versioning extension")
+        self.assertIn("working-directory: .hop-top-dotgithub/scripts/release-please-target", install)
+        self.assertIn("npm ci", install)
+
+    def test_runner_gets_the_action_inputs(self) -> None:
+        runner = self.step("id: target")
+        for line in ("TOKEN: ${{ steps.app-token.outputs.token }}",
+                     "REPO_URL: ${{ github.repository }}",
+                     "TARGET_BRANCH: ${{ steps.config.outputs.target-branch }}",
+                     "CONFIG_FILE: ${{ inputs.config-file }}",
+                     "MANIFEST_FILE: ${{ inputs.manifest-file }}",
+                     "GITHUB_API_URL: ${{ github.api_url }}",
+                     "GITHUB_GRAPHQL_URL: ${{ github.graphql_url }}",
+                     "CHANGELOG_HOST: ${{ github.server_url }}"):
+            self.assertIn(line, runner)
+        m = re.search(r"run: node \.hop-top-dotgithub/(\S+)", runner)
+        self.assertIsNotNone(m)
+        self.assertTrue((WORKFLOW.parents[2] / m.group(1)).is_file(), m.group(1))
 
     def test_release_please_runs_with_the_app_token_and_resolved_inputs(self) -> None:
         steps = self.block("jobs", "release-please", "steps")
