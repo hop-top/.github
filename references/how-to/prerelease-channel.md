@@ -61,8 +61,9 @@ And the manifest seed must be **prerelease-shaped**:
 ## Leave the channel (cut stable)
 
 (With [target versioning](target-versioning.md) the stable branch cuts
-stable from a promoted rc on its own, and `Release-As` footers are
-ignored.)
+stable from a promoted rc on its own, `Release-As` footers are
+ignored, and channels move through recorded promotions instead of
+`prerelease-type`.)
 
 The prerelease suffix is "sticky" — only an explicit footer
 escapes it. Add a `Release-As: X.Y.Z` footer (no suffix) on a

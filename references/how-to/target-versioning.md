@@ -63,14 +63,49 @@ by the commits since its latest release:
 | Situation | Proposal | Example |
 |---|---|---|
 | The current target covers the required target | counter + 1 | `0.5.0-alpha.26` + `feat!` → `0.5.0-alpha.27` |
-| The required target is higher | new line at `alpha.0`, whatever the configured channel | `0.5.1-alpha.3` + `feat!` → `0.6.0-alpha.0`; `1.6.0-beta.2` + `feat!` → `2.0.0-alpha.0` |
+| The required target is higher | new line at `alpha.0`, whatever channel the old line was on | `0.5.1-alpha.3` + `feat!` → `0.6.0-alpha.0`; `1.6.0-beta.2` + `feat!` → `2.0.0-alpha.0` |
 | The current target was already released stable | new line from that stable | `0.6.0-rc.2` (0.6.0 tagged) + `feat` → `0.7.0-alpha.0` |
 | The manifest is stable | new line from it | `0.6.0` + `fix` → `0.6.1-alpha.0` |
-| `prerelease-type` moved ahead (promote) | `<channel>.0` on the same target | `0.6.0-alpha.7` + `fix`, config `beta.0` → `0.6.0-beta.0` |
-| `prerelease-type` behind the current channel | counter + 1, never backwards | `0.6.0-rc.2`, config `alpha.0` → `0.6.0-rc.3` |
+| The line is promoted (`x-channel` for this line) | `<channel>.0` on the same target, then its counter | `0.6.0-alpha.7` + `fix`, promoted to beta on 0.6.0 → `0.6.0-beta.0` |
+| A promotion recorded for another line | ignored: alpha | `0.7.0-alpha.0` + `fix`, record for 0.6.1 → `0.7.0-alpha.1` |
+| An open line (`x-open-line`) not reached yet | `<line>-alpha.0`, unless a change requires more (then **blocked**) | `0.9.0-alpha.3` + `fix`, open 1.0.0 → `1.0.0-alpha.0` |
 
-A channel moves only when `prerelease-type` changes: promotion
-(`alpha.0` → `beta.0` → `rc.0`) is a config change, made on purpose.
+### Channels and lines: manual steps
+
+The engine never changes a channel. Every line starts and stays on
+alpha; moving a package to beta, then rc, is a decision recorded in the
+config with [`bin/promote.js`](#promote-and-open-lines), by package or
+by group. A promotion is recorded together with the line it applies to:
+
+```json
+"x-channel": {"line": "0.6.0", "channel": "beta"}
+```
+
+- It applies while the package's target is `0.6.0`: the next release
+  moves to `0.6.0-beta.0` (no pin needed), later ones count on beta.
+- It expires with its line. After a line move or a stable cut the
+  package starts on alpha again, and the release PR that leaves the
+  line removes the record from the config.
+- Channels move one step at a time, `alpha` → `beta` → `rc`, never
+  back (promote.js and the preflight refuse anything else).
+
+Reaching a new major from 0.x (or any line no change would open on its
+own) is the same kind of step:
+
+```json
+"x-open-line": "1.0.0"
+```
+
+The next release opens `1.0.0-alpha.0` if that is at or above what the
+commits require; below it, the package is blocked and the run fails.
+Once the target reaches the line the record is ignored, and the
+release PR that reaches it removes it.
+
+Why one object and not `prerelease-type: "beta.0"` plus a line key:
+the channel and its line are one fact and cannot drift apart, an
+absent record simply means alpha, and `prerelease-type` keeps its
+release-please meaning (`alpha.0`, where every line starts) instead of
+holding a promotion that outlives its line.
 
 ### Stable branch (`main`)
 
@@ -98,16 +133,18 @@ members release independently.
 
 When it links:
 
-- one release PR for the whole group, every member at the same
-  version, members without commits included; merging it tags every
-  member;
-- the version is on the highest target among the members (a member
-  already previewing a later target wins);
-- on that target it is the highest of `alpha.0`, the members' own
-  proposals, and the highest member already on the target line with
-  its counter + 1 — kit-rs at `0.6.0-alpha.4` when kit opens `0.6.0`
-  puts the group at `0.6.0-alpha.5`. A member never moves backwards
-  and linking never changes a channel;
+- one release PR for the whole group, members without commits
+  included; merging it tags every member;
+- every member moves to the group's target, the highest among the
+  members (a member already previewing a later target wins);
+- each member keeps its own channel: the channel it is on for that
+  line, or its promotion recorded for that line, alpha otherwise;
+- members on the same channel share one counter: the highest of that
+  channel's members already on the line + 1, or `.0`. kit-rs at
+  `0.6.0-alpha.4` when kit opens `0.6.0` puts every alpha member at
+  `0.6.0-alpha.5`; a member promoted to beta on `0.6.0` at `beta.2`
+  gets `0.6.0-beta.3` in the same PR. Nobody moves backwards or
+  changes channel;
 - a member that already released the target (or later) as stable
   blocks the group: no member gets a PR.
 
@@ -173,7 +210,10 @@ component must use `versioning: "target"`.
 
 Per target package:
 
-- `prerelease-type`: `alpha.0`, `beta.0` or `rc.0` (unset = `alpha.0`)
+- `prerelease-type`: `alpha.0` (or unset); promotions are `x-channel`
+- `x-channel` / `x-open-line`: written by `bin/promote.js`; a recorded
+  line must be the package's current target, a channel the current one
+  or the next
 - no `release-as`
 - `bump-minor-pre-major: true`, no `bump-patch-for-minor-pre-major`
   (the bump table above is fixed)
@@ -200,6 +240,31 @@ jobs:
 [`release-please-preflight`](add-preflight.md) checks all of the above
 at PR time.
 
+## Promote and open lines
+
+`scripts/release-please-target/bin/promote.js` writes the records,
+keeping the rest of the config file as written. A repository's promote
+script or gate calls it from the repository root (Node 20+, after
+`npm ci` in `scripts/release-please-target` of a hop-top/.github
+checkout):
+
+```sh
+P=path/to/hop-top-dotgithub/scripts/release-please-target/bin/promote.js
+
+node "$P" channel beta --package kit --package qmochi   # by package (path or component)
+node "$P" channel rc --group kit                          # by conditional-linked-versions group
+node "$P" open-line 1.0.0 --group kit                     # open 1.0.0 for the family
+node "$P" clear channel --package kit                     # drop a record
+node "$P" channel beta --package kit --dry-run            # print, write nothing
+```
+
+`--config` / `--manifest` override the `.github/` defaults. The line
+recorded is the package's current target, from the manifest. All or
+nothing: if one package is refused (not on `target`, no open line,
+already on that channel, a skipped or backward step, a line already
+reached), nothing is written and it exits 1. Commit the change; it
+takes effect on each package's next release.
+
 ## Migrate
 
 From `versioning: "prerelease"` with `Release-As` cuts:
@@ -210,9 +275,12 @@ From `versioning: "prerelease"` with `Release-As` cuts:
    into `main`, then move it to `stableBranches` (the config travels
    with the merge).
 2. **Edit the config.** Every package: `versioning: "prerelease"` →
-   `"target"`, drop `release-as`. Add `{"type": "target-context"}`
-   first in `plugins`; replace `linked-versions` (or any hand-kept
-   group list) with `conditional-linked-versions`.
+   `"target"`, `prerelease-type: "alpha.0"`, drop `release-as`. Add
+   `{"type": "target-context"}` first in `plugins`; replace
+   `linked-versions` (or any hand-kept group list) with
+   `conditional-linked-versions`. A package already past alpha on its
+   current line keeps counting on its channel; record the promotion
+   (`promote.js channel beta --package …`) so the config says so.
 3. **Leave old `Release-As` footers alone.** They are ignored from now
    on (the log names each one); history needs no rewrite. Stop
    writing new ones.
@@ -245,7 +313,9 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
 | `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target | owner decision: re-seed the member or the group |
 | `plugins has no "target-context"` | config lists target packages without the plugin | add it, first |
-| `prerelease-type '…' is not a target channel` | `alpha`, `dev.0`, ... | `alpha.0`, `beta.0` or `rc.0` |
+| `prerelease-type '…': every line starts on alpha.0` | a channel set through `prerelease-type` | `alpha.0`; promote with `promote.js channel` |
+| `x-open-line … is below the required target …` | a change since needs more than the opened line | raise the line or remove it (`promote.js clear open-line`) |
+| preflight: `x-channel is for line …, but its current target is …` | a record for another line (hand edit) | `promote.js clear channel`, or promote the current line |
 
 A caller chaining a job on the outputs (`releases_created`, ...)
 should gate it on `!cancelled()` as well: a failed run still created
