@@ -47,6 +47,7 @@ spec-versioning rules before release-please ever sees it — see
 | Stay in an alpha/beta/rc channel | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
 | Version by branch role: one target per prerelease line, rc promoted to stable without `Release-As`, patch-only `release/x.y`, families linked only on a new line | [references/how-to/target-versioning.md](references/how-to/target-versioning.md) |
 | Migrate from `versioning: "prerelease"` + `Release-As` to target versioning | [references/how-to/target-versioning.md § Migrate](references/how-to/target-versioning.md#migrate) |
+| Promote a package or family to beta / rc, or open the 1.0.0 line (`bin/promote.js`) | [references/how-to/target-versioning.md § Promote and open lines](references/how-to/target-versioning.md#promote-and-open-lines) |
 | Keep a monorepo Release-free (Releases only on mirrors) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
 | Re-trigger a failed publish | [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md) |
 | Understand why a workflow-file fix on main doesn't apply on rerun | [Re-runs use the tag's workflow snapshot, not main](#re-runs-use-the-tags-workflow-snapshot-not-main) |

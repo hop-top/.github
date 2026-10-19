@@ -69,7 +69,7 @@ CI runs the same on every PR.
 
 ```
 scripts/release-please-target/
-  package.json, package-lock.json   release-please pinned exactly (no range)
+  package.json, package-lock.json   release-please and jsonc-parser pinned exactly (no range)
   index.js                          require() registers the extension
   lib/rules.js                      the version rules; no release-please import
   lib/install.js                    versioning "target", plugins "target-context",
@@ -77,11 +77,14 @@ scripts/release-please-target/
   lib/internals.js                  every release-please surface used (public,
                                     deep imports, relied-on internals)
   lib/runner.js, bin/run.js         action-equivalent runner (inputs as env vars)
-  lib/report.js                     per-run decisions and blocked packages
+  lib/report.js                     per-run raw config, decisions, blocked packages
+  lib/config-edit.js                format-keeping edits of one package block (jsonc-parser)
+  lib/promote.js, bin/promote.js    manual steps: x-channel / x-open-line records
   test/rules.test.js                rules, one test per owner rule
   test/contract.test.js             every lib/internals.js entry vs the pinned version
   test/scenarios.test.js            kit-shaped fixture repos, reads from local git
   test/runner.test.js               runner vs a fake GitHub (recorded writes)
+  test/promote.test.js              bin/promote.js on a kit-shaped config
   test/mutate.js                    mutation check (npm run mutate)
 ```
 
