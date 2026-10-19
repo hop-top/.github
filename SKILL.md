@@ -45,9 +45,9 @@ spec-versioning rules before release-please ever sees it — see
 | Understand annotated `extra-files` — where it belongs, where it breaks | [references/concepts/version-strings.md § Where `extra-files` is right](references/concepts/version-strings.md#where-extra-files-is-right) |
 | Configure a single-language repo (no polyglot split) | [references/how-to/single-language-repo.md](references/how-to/single-language-repo.md) |
 | Stay in an alpha/beta/rc channel | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
-| Version by branch role: one target per prerelease line, rc promoted to stable without `Release-As`, patch-only `release/x.y`, families linked only on a new line | [references/how-to/target-versioning.md](references/how-to/target-versioning.md) |
+| Version by branch role: one target per prerelease line, stable cut from the rc without `Release-As` (non-rc packages skipped), patch-only `release/x.y`, families linked only on a new major (or a pre-1.0 minor) | [references/how-to/target-versioning.md](references/how-to/target-versioning.md) |
 | Migrate from `versioning: "prerelease"` + `Release-As` to target versioning | [references/how-to/target-versioning.md § Migrate](references/how-to/target-versioning.md#migrate) |
-| Promote a package or family to beta / rc, or open the 1.0.0 line (`bin/promote.js`) | [references/how-to/target-versioning.md § Promote and open lines](references/how-to/target-versioning.md#promote-and-open-lines) |
+| Promote a package or family to beta / rc, or open the 1.0.0 line (`bin/promote.js`; the release PR is cut on the next run) | [references/how-to/target-versioning.md § Promote and open lines](references/how-to/target-versioning.md#promote-and-open-lines) |
 | Keep a monorepo Release-free (Releases only on mirrors) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
 | Re-trigger a failed publish | [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md) |
 | Understand why a workflow-file fix on main doesn't apply on rerun | [Re-runs use the tag's workflow snapshot, not main](#re-runs-use-the-tags-workflow-snapshot-not-main) |
