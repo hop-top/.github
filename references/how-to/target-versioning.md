@@ -1,10 +1,10 @@
 # Version by target
 
 Let the branch decide the version: a prerelease line previews one
-target stable version, the stable branch promotes it, maintenance
-branches take patches only, and a linked family moves together only
-when it opens a new line. Nobody picks a version and nobody writes
-`Release-As`.
+target stable version, the stable branch cuts exactly that version
+from its rc, maintenance branches take patches only, and a linked
+family moves together only when it opens a new major (or, before 1.0,
+a new minor). Nobody picks a version and nobody writes `Release-As`.
 
 ## Use this when
 
@@ -15,7 +15,8 @@ when it opens a new line. Nobody picks a version and nobody writes
   stable branch to promote the rc on its own.
 - A `release/x.y` branch must never ship a feature.
 - A polyglot family (kit, kit-ts, kit-py, ...) should link on a new
-  line and version independently otherwise.
+  major (and on every minor while pre-1.0) and version independently
+  otherwise.
 
 ## Before you begin
 
@@ -34,9 +35,11 @@ You need:
 Every push to a role branch runs release-please with the
 target-versioning extension. The standing release PR on that branch
 proposes the version the rules below give; merging it tags and
-releases as usual. A package the rules cannot version is left out
-and the run fails with the reason, after every other package was
-processed.
+releases as usual. A package the rules cannot version is **blocked**:
+left out, and the run fails with the reason after every other package
+was processed. A package the branch does not release (an alpha or beta
+on the stable branch, a prerelease on a maintenance branch) is
+**skipped**: left out with a notice, and the run stays green.
 
 ## How it works
 
@@ -66,9 +69,10 @@ by the commits since its latest release:
 | The required target is higher | new line at `alpha.0`, whatever channel the old line was on | `0.5.1-alpha.3` + `feat!` → `0.6.0-alpha.0`; `1.6.0-beta.2` + `feat!` → `2.0.0-alpha.0` |
 | The current target was already released stable | new line from that stable | `0.6.0-rc.2` (0.6.0 tagged) + `feat` → `0.7.0-alpha.0` |
 | The manifest is stable | new line from it | `0.6.0` + `fix` → `0.6.1-alpha.0` |
-| The line is promoted (`x-channel` for this line) | `<channel>.0` on the same target, then its counter | `0.6.0-alpha.7` + `fix`, promoted to beta on 0.6.0 → `0.6.0-beta.0` |
-| A promotion recorded for another line | ignored: alpha | `0.7.0-alpha.0` + `fix`, record for 0.6.1 → `0.7.0-alpha.1` |
-| An open line (`x-open-line`) not reached yet | `<line>-alpha.0`, unless a change requires more (then **blocked**) | `0.9.0-alpha.3` + `fix`, open 1.0.0 → `1.0.0-alpha.0` |
+| The line is promoted (`x-channel` for this line) | `<channel>.0` on the same target, then its counter; cut at once, with no other change | `0.6.0-alpha.7`, promoted to beta on 0.6.0 → `0.6.0-beta.0` |
+| A promotion that skips a channel (alpha → rc) | **blocked** | `0.6.0-alpha.7`, `rc` recorded for 0.6.0 |
+| A promotion recorded for another line | not used (the runner refuses the config first) | `0.7.0-alpha.0` + `fix`, record for 0.6.1 → `0.7.0-alpha.1` |
+| An open line (`x-open-line`) not reached yet | `<line>-alpha.0`, cut at once, unless a change requires more (then **blocked**) | `0.9.0-alpha.3`, open 1.0.0 → `1.0.0-alpha.0` |
 
 ### Channels and lines: manual steps
 
@@ -81,13 +85,22 @@ by group. A promotion is recorded together with the line it applies to:
 "x-channel": {"line": "0.6.0", "channel": "beta"}
 ```
 
-- It applies while the package's target is `0.6.0`: the next release
-  moves to `0.6.0-beta.0` (no pin needed), later ones count on beta.
+- It applies while the package is on `0.6.0`: the run on the
+  prerelease branch that first sees the record cuts `0.6.0-beta.0`
+  (no pin, and no commit needed besides the config change); later
+  releases count on beta. Once that release is merged the record is
+  just the channel the package is on, so nothing more is cut.
+- It counts only for a package already on that line. A record for a
+  line the package has not reached is refused (runner and preflight);
+  a package moved to a new line by a change or by its linked family
+  starts it on alpha.
 - It expires with its line. After a line move or a stable cut the
-  package starts on alpha again, and the release PR that leaves the
-  line removes the record from the config.
-- Channels move one step at a time, `alpha` → `beta` → `rc`, never
-  back (promote.js and the preflight refuse anything else).
+  package starts on alpha again, and the release PR on the prerelease
+  branch that leaves the line removes the record from the config.
+- Channels move one step at a time, `alpha` → `beta` → `rc`, from the
+  channel the package is released on, never back: `promote.js`, the
+  preflight and the runner refuse anything else, and the rules block
+  a package whose record skips a step.
 
 Reaching a new major from 0.x (or any line no change would open on its
 own) is the same kind of step:
@@ -96,10 +109,17 @@ own) is the same kind of step:
 "x-open-line": "1.0.0"
 ```
 
-The next release opens `1.0.0-alpha.0` if that is at or above what the
-commits require; below it, the package is blocked and the run fails.
-Once the target reaches the line the record is ignored, and the
-release PR that reaches it removes it.
+The run that first sees it opens `1.0.0-alpha.0` at once (no other
+change needed) if that is at or above what the commits require; below
+it, the package is blocked and the run fails. The release PR that
+reaches the line removes the record; a record for a line already
+reached is refused.
+
+The records live in the config, which the prerelease branch merges
+into the stable branch. There they are inert: a stable or maintenance
+branch neither uses them, nor checks them against its manifest (only
+their shape), nor edits them (only the prerelease branch's release PRs
+do, so the two branches never churn the same keys).
 
 Why one object and not `prerelease-type: "beta.0"` plus a line key:
 the channel and its line are one fact and cannot drift apart, an
@@ -112,39 +132,59 @@ holding a promotion that outlives its line.
 | Situation | Proposal |
 |---|---|
 | Manifest at `x.y.z-rc.N` (next promoted into main) | `x.y.z`, even with no commit since the merge |
-| … and a commit since requires more than `x.y.z` | the required version (guard against main's previous stable) |
+| … and a commit since requires more than `x.y.z` (`1.3.0-rc.1`, then a `feat!` → `2.0.0`) | **blocked**: stable must equal what the rc previewed; land the change on `next`, where it opens a new line |
 | Manifest stable | plain stable bump (`0.6.0` + `fix` → `0.6.1`) |
-| Manifest at an alpha or beta | **blocked**: a stable branch promotes only an rc |
+| Manifest at an alpha or beta (an experimental SDK, a package still previewing) | **skipped** with a notice: no PR, no failure |
+
+Only rc packages are cut on the stable branch: merging `next` into
+`main` while some packages are still on alpha or beta cuts the rc ones
+and leaves the others for a later merge.
 
 ### Maintenance branch (`release/x.y`)
 
-Patch only. `fix` → `x.y.(z+1)`. A `feat` or breaking change since
-the package's last release produces no version for that package: it
-is blocked, every other package still gets its PR, and the run fails
-at the end. A package whose manifest is off the branch's `x.y` line
-still gets its patch, with a warning in the log.
+Stable patches only. `fix` → `x.y.(z+1)`. A `feat` or breaking change
+since the package's last release produces no version for that
+package: it is blocked, every other package still gets its PR, and the
+run fails at the end. A package whose manifest is a prerelease there
+is skipped with a notice (never turned into its stable). A package
+whose manifest is off the branch's `x.y` line still gets its patch,
+with a warning in the log.
 
 ### Linked family
 
 A `conditional-linked-versions` group links only when one member's
-proposal opens a new major (on the stable branch: against its last
-stable), or a new minor line on the prerelease branch. Otherwise its
-members release independently.
+proposal opens a new major (always; on the stable branch against its
+last stable), or a new minor line while the family is before 1.0
+(major 0), on the prerelease branch. From 1.0 a new minor is
+independent, and on the stable branch only a major links: each member
+is cut from its own rc otherwise. A member opening a line through a
+record (promotion or `x-open-line`) links the same way.
 
 When it links:
 
-- one release PR for the whole group, members without commits
-  included; merging it tags every member;
+- one release PR for the whole group, members without commits (or
+  with only a chore or config change) included; merging it tags every
+  member;
 - every member moves to the group's target, the highest among the
   members (a member already previewing a later target wins);
-- each member keeps its own channel: the channel it is on for that
-  line, or its promotion recorded for that line, alpha otherwise;
+- each member keeps its own channel: a member already on the target
+  line keeps its channel there, or takes its promotion recorded for
+  that line; any other member starts the line on alpha;
 - members on the same channel share one counter: the highest of that
   channel's members already on the line + 1, or `.0`. kit-rs at
   `0.6.0-alpha.4` when kit opens `0.6.0` puts every alpha member at
   `0.6.0-alpha.5`; a member promoted to beta on `0.6.0` at `beta.2`
-  gets `0.6.0-beta.3` in the same PR. Nobody moves backwards or
-  changes channel;
+  gets `0.6.0-beta.3` in the same PR. A member promoted from
+  `0.6.0-alpha.4` to beta in that PR still leaves `alpha.4` counted:
+  the alpha members get `alpha.5`. Nobody moves backwards or changes
+  channel;
+- on the stable branch every member must be at an rc of the target:
+  kit at `1.0.0-rc.1` with kit-py still at `1.0.0-alpha.3` blocks the
+  group (no member is cut, the run fails) until kit-py is promoted to
+  rc; a linked major never ships a member that previewed anything but
+  that rc;
+- a member blocked on its own (an `x-open-line` below what its
+  commits require, say) blocks the group;
 - a member that already released the target (or later) as stable
   blocks the group: no member gets a PR.
 
@@ -163,9 +203,10 @@ drops it from the commits of every target package and logs
 - An open release PR on the branch that the run no longer proposes is
   closed with a comment: `Superseded by #N.` when another PR now
   carries its components (per-package PRs replaced by a group PR, or
-  the reverse), or the block reason when its package is blocked. A PR
-  with neither is left open. Nothing is closed while a merged release
-  PR waits for its tag.
+  the reverse), or the reason when its package is blocked or skipped.
+  A PR with neither is left open, and so is any PR not on a
+  release-please branch (one opened by hand with the release label).
+  Nothing is closed while a merged release PR waits for its tag.
 
 ## Config
 
@@ -210,10 +251,12 @@ component must use `versioning: "target"`.
 
 Per target package:
 
-- `prerelease-type`: `alpha.0` (or unset); promotions are `x-channel`
-- `x-channel` / `x-open-line`: written by `bin/promote.js`; a recorded
-  line must be the package's current target, a channel the current one
-  or the next
+- `prerelease-type`: exactly `alpha.0` (or unset); promotions are
+  `x-channel`
+- `x-channel` / `x-open-line`: written by `bin/promote.js`; on the
+  prerelease branch a recorded line must be the package's current
+  target, a channel the current one or the next, an open line not yet
+  reached (inert on other branches; the shape is checked everywhere)
 - no `release-as`
 - `bump-minor-pre-major: true`, no `bump-patch-for-minor-pre-major`
   (the bump table above is fixed)
@@ -238,7 +281,9 @@ jobs:
 ```
 
 [`release-please-preflight`](add-preflight.md) checks all of the above
-at PR time.
+at PR time. The runner refuses the same config before it writes any
+pull request; releases of release PRs already merged are still
+created, so a config problem never holds a tag back.
 
 ## Promote and open lines
 
@@ -259,21 +304,29 @@ node "$P" channel beta --package kit --dry-run            # print, write nothing
 ```
 
 `--config` / `--manifest` override the `.github/` defaults. The line
-recorded is the package's current target, from the manifest. All or
-nothing: if one package is refused (not on `target`, no open line,
-already on that channel, a skipped or backward step, a line already
-reached), nothing is written and it exits 1. Commit the change; it
-takes effect on each package's next release.
+recorded is the package's current target, from the manifest, and the
+step is measured from the channel the manifest shows: with beta
+recorded but `0.5.0-beta.0` not released yet, `channel rc` is refused
+as a skip. All or nothing: if one package is refused (not on
+`target`, no open line, already on that channel or already promoted
+to it, a skipped or backward step, a line already reached), nothing is
+written and it exits 1. Commit the change to the prerelease branch:
+the run that push triggers cuts each package's release PR
+(`0.5.0-beta.0`, `1.0.0-alpha.0`) with no other commit.
+
+The kit round, `channel beta --package kit --package qmochi` on `next`:
+that run proposes `kit 0.5.0-beta.0` and `qmochi 0.2.0-beta.0`; every
+other package stays where it is.
 
 ## Migrate
 
 From `versioning: "prerelease"` with `Release-As` cuts:
 
-1. **Pick the branch roles.** A stable branch blocks a manifest at an
-   alpha or beta. If `main` carries prereleases today, list it under
-   `prereleaseBranches` until `next` is promoted to rc and merged
-   into `main`, then move it to `stableBranches` (the config travels
-   with the merge).
+1. **Pick the branch roles.** A stable branch skips a manifest at an
+   alpha or beta (no release there until it is an rc). If `main`
+   carries prereleases today, list it under `prereleaseBranches` until
+   `next` is promoted to rc and merged into `main`, then move it to
+   `stableBranches` (the config travels with the merge).
 2. **Edit the config.** Every package: `versioning: "prerelease"` →
    `"target"`, `prerelease-type: "alpha.0"`, drop `release-as`. Add
    `{"type": "target-context"}` first in `plugins`; replace
@@ -309,7 +362,10 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 
 | Run fails with | Cause | Fix |
 |---|---|---|
-| `… is not an rc: a stable branch promotes only an rc` | `main` carries an alpha/beta | promote `next` to rc and merge it, or give `main` the prerelease role for now |
+| notice `… is not an rc: skipped` (not a failure) | `main` carries an alpha/beta of that package | promote it to rc on `next` and merge, or leave it for a later merge |
+| `changes since x.y.z-rc.N require …, more than the x.y.z it previews` | a change on `main` needs a bigger version than the rc | revert it on `main` and land it on `next` (a new line there) |
+| `linked at x.0.0 …, but … is at …: a linked release is cut only when every member is at an rc` | a linked major reached `main` with a member not at rc | promote that member to rc on `next` and merge again |
+| `x-channel … skips a channel from …` | a promotion two steps ahead (hand edit) | record the next channel only (`promote.js channel`) |
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
 | `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target | owner decision: re-seed the member or the group |
 | `plugins has no "target-context"` | config lists target packages without the plugin | add it, first |

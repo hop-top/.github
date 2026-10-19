@@ -77,7 +77,7 @@ scripts/release-please-target/
   lib/internals.js                  every release-please surface used (public,
                                     deep imports, relied-on internals)
   lib/runner.js, bin/run.js         action-equivalent runner (inputs as env vars)
-  lib/report.js                     per-run raw config, decisions, blocked packages
+  lib/report.js                     per-run raw config, decisions, blocked / skipped packages
   lib/config-edit.js                format-keeping edits of one package block (jsonc-parser)
   lib/promote.js, bin/promote.js    manual steps: x-channel / x-open-line records
   test/rules.test.js                rules, one test per owner rule
