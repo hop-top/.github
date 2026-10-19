@@ -31,6 +31,20 @@ name: release-please-on-push (reusable)
 #   - target-branch defaults to the branch that triggered the run, so a
 #     caller pushing on several integration branches (main + next)
 #     releases each against itself.
+#   - Opt-in target versioning (`versioning-extension: true`): the run
+#     uses this repository's release-please extension
+#     (scripts/release-please-target, release-please pinned exactly)
+#     through an action-equivalent runner instead of
+#     googleapis/release-please-action — same inputs, secrets and
+#     outputs. Required by a config using `versioning: "target"`; see
+#     references/how-to/target-versioning.md. The extension is checked
+#     out at this workflow's own commit (`job.workflow_sha`), so the
+#     runner and the workflow always ship together; `tooling-ref` is the
+#     fallback when the runner does not expose that SHA. A run that
+#     leaves a package blocked (feat on a release/x.y branch, a linked
+#     group that cannot move) fails after every package was processed:
+#     a caller chaining jobs on the outputs should gate them on
+#     `!cancelled()` as well.
 #
 # Caller template (.github/workflows/release-please.yml):
 #
@@ -47,6 +61,8 @@ name: release-please-on-push (reusable)
 #       secrets:
 #         RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
 #         RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+#       # with:
+#       #   versioning-extension: true   # config uses versioning "target"
 #
 # Chaining a publish job on the outputs (in the caller). Outputs keep
 # release-please-action's names; per-path outputs of a manifest with
@@ -74,6 +90,18 @@ on:
           branch that triggered the caller (`github.ref_name`).
         type: string
         default: ""
+      versioning-extension:
+        description: |
+          Run release-please with hop-top/.github's target-versioning
+          extension (scripts/release-please-target) instead of
+          googleapis/release-please-action. Needed when the config uses
+          `versioning: "target"`. Same inputs, secrets and outputs.
+        type: boolean
+        default: false
+      tooling-ref:
+        description: Ref of hop-top/.github to check the extension out at when the runner does not expose the running workflow's SHA (normally never used; only read with versioning-extension)
+        type: string
+        default: v0
     secrets:
       RELEASE_BOT_APP_ID:
         required: true
@@ -139,22 +167,24 @@ jobs:
     concurrency:
       group: release-please-on-push-${{ github.ref }}
       cancel-in-progress: true
+    # Exactly one of `release` (the action) and `target` (the extension
+    # runner) runs; each output is whichever one set it.
     outputs:
-      releases_created: ${{ steps.release.outputs.releases_created }}
-      paths_released: ${{ steps.release.outputs.paths_released }}
-      prs_created: ${{ steps.release.outputs.prs_created }}
-      pr: ${{ steps.release.outputs.pr }}
-      prs: ${{ steps.release.outputs.prs }}
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-      version: ${{ steps.release.outputs.version }}
-      major: ${{ steps.release.outputs.major }}
-      minor: ${{ steps.release.outputs.minor }}
-      patch: ${{ steps.release.outputs.patch }}
-      sha: ${{ steps.release.outputs.sha }}
-      upload_url: ${{ steps.release.outputs.upload_url }}
-      html_url: ${{ steps.release.outputs.html_url }}
-      json: ${{ toJSON(steps.release.outputs) }}
+      releases_created: ${{ steps.release.outputs.releases_created || steps.target.outputs.releases_created }}
+      paths_released: ${{ steps.release.outputs.paths_released || steps.target.outputs.paths_released }}
+      prs_created: ${{ steps.release.outputs.prs_created || steps.target.outputs.prs_created }}
+      pr: ${{ steps.release.outputs.pr || steps.target.outputs.pr }}
+      prs: ${{ steps.release.outputs.prs || steps.target.outputs.prs }}
+      release_created: ${{ steps.release.outputs.release_created || steps.target.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name || steps.target.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version || steps.target.outputs.version }}
+      major: ${{ steps.release.outputs.major || steps.target.outputs.major }}
+      minor: ${{ steps.release.outputs.minor || steps.target.outputs.minor }}
+      patch: ${{ steps.release.outputs.patch || steps.target.outputs.patch }}
+      sha: ${{ steps.release.outputs.sha || steps.target.outputs.sha }}
+      upload_url: ${{ steps.release.outputs.upload_url || steps.target.outputs.upload_url }}
+      html_url: ${{ steps.release.outputs.html_url || steps.target.outputs.html_url }}
+      json: ${{ inputs.versioning-extension && toJSON(steps.target.outputs) || toJSON(steps.release.outputs) }}
     steps:
       # Only the two files the config check reads.
       - uses: actions/checkout@v4
@@ -209,10 +239,74 @@ jobs:
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
 
       - uses: googleapis/release-please-action@v5
-        if: steps.config.outputs.skip != 'true'
+        if: steps.config.outputs.skip != 'true' && !inputs.versioning-extension
         id: release
         with:
           config-file: ${{ inputs.config-file }}
           manifest-file: ${{ inputs.manifest-file }}
           target-branch: ${{ steps.config.outputs.target-branch }}
           token: ${{ steps.app-token.outputs.token }}
+
+      # ---- versioning-extension: true ------------------------------------
+      - name: Resolve the shared tooling revision
+        if: steps.config.outputs.skip != 'true' && inputs.versioning-extension
+        id: tooling
+        # The reusable workflow's own commit is the revision of hop-top/.github
+        # to run the extension from. GitHub documents it as job.workflow_sha /
+        # job.workflow_repository, but actionlint types the `job` context
+        # strictly (container, services, status only) and rejects those as
+        # property accesses; toJSON(job) passes the type check and jq reads
+        # the keys at run time.
+        env:
+          JOB_CONTEXT: ${{ toJSON(job) }}
+          FALLBACK_REF: ${{ inputs.tooling-ref }}
+        run: |
+          set -euo pipefail
+          sha=$(jq -r '.workflow_sha // empty' <<<"$JOB_CONTEXT")
+          repo=$(jq -r '.workflow_repository // empty' <<<"$JOB_CONTEXT")
+          if [ -z "$sha" ]; then
+            echo "::warning::job.workflow_sha is empty on this runner; checking out the shared tooling at '$FALLBACK_REF' instead"
+            sha="$FALLBACK_REF"
+          fi
+          [ -n "$repo" ] || repo="hop-top/.github"
+          echo "Shared tooling: $repo@$sha"
+          { echo "repository=$repo"; echo "ref=$sha"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.skip != 'true' && inputs.versioning-extension
+        with:
+          repository: ${{ steps.tooling.outputs.repository }}
+          ref: ${{ steps.tooling.outputs.ref }}
+          path: .hop-top-dotgithub
+          persist-credentials: false
+          sparse-checkout: scripts/release-please-target
+
+      - uses: actions/setup-node@v7
+        if: steps.config.outputs.skip != 'true' && inputs.versioning-extension
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .hop-top-dotgithub/scripts/release-please-target/package-lock.json
+
+      # Lockfile install: release-please at the exact version the extension
+      # was tested against (its contract test gates every upgrade).
+      - name: Install the target-versioning extension
+        if: steps.config.outputs.skip != 'true' && inputs.versioning-extension
+        working-directory: .hop-top-dotgithub/scripts/release-please-target
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Same inputs as the action step above (its defaults included), same
+      # outputs (written to GITHUB_OUTPUT by the runner).
+      - name: release-please (target versioning)
+        if: steps.config.outputs.skip != 'true' && inputs.versioning-extension
+        id: target
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO_URL: ${{ github.repository }}
+          TARGET_BRANCH: ${{ steps.config.outputs.target-branch }}
+          CONFIG_FILE: ${{ inputs.config-file }}
+          MANIFEST_FILE: ${{ inputs.manifest-file }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_GRAPHQL_URL: ${{ github.graphql_url }}
+          CHANGELOG_HOST: ${{ github.server_url }}
+        run: node .hop-top-dotgithub/scripts/release-please-target/bin/run.js
