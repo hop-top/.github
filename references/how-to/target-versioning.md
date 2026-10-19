@@ -40,8 +40,9 @@ proposes the version the rules below give; merging it tags and
 releases as usual. A package the rules cannot version is **blocked**:
 left out, and the run fails with the reason after every other package
 was processed. A package the branch does not release (an alpha or beta
-on the stable branch, a prerelease on a maintenance branch) is
-**skipped**: left out with a notice, and the run stays green.
+on the stable branch, a prerelease on a maintenance branch, a package
+with no release yet on either) is **skipped**: left out with a notice,
+and the run stays green.
 
 ## How it works
 
@@ -71,6 +72,7 @@ by the commits since its latest release:
 | The required target is higher | new line at `alpha.0`, whatever channel the old line was on | `0.5.1-alpha.3` + `feat!` → `0.6.0-alpha.0`; `1.6.0-beta.2` + `feat!` → `2.0.0-alpha.0` |
 | The current target was already released stable (a cut, or a hotfix on `main`) | new line from that stable | `0.6.0-rc.2` (0.6.0 tagged) + `feat` → `0.7.0-alpha.0`; `0.6.1-alpha.4`, `main` hotfixed 0.6.1, + `fix` → `0.6.2-alpha.0` |
 | The manifest is stable | new line from it | `0.6.0` + `fix` → `0.6.1-alpha.0` |
+| No release yet (no manifest entry, no tag) | its `initial-version`, as release-please opens it | `initial-version: "0.1.0-alpha.0"` + `feat` → `0.1.0-alpha.0` |
 | The line is promoted (`x-channel` for this line) | `<channel>.0` on the same target, then its counter; cut at once, with no other change | `0.6.0-alpha.7`, promoted to beta on 0.6.0 → `0.6.0-beta.0` |
 | A promotion that skips a channel (alpha → rc) | **blocked** | `0.6.0-alpha.7`, `rc` recorded for 0.6.0 |
 | A promotion recorded for another line | not used (the runner refuses the config first) | `0.7.0-alpha.0` + `fix`, record for 0.6.1 → `0.7.0-alpha.1` |
@@ -139,6 +141,7 @@ holding a promotion that outlives its line.
 | Manifest stable, only fixes since (no `feat`, nothing breaking) | patch: `0.6.0` + `fix` → `0.6.1`, `1.2.0` + `fix` → `1.2.1` |
 | Manifest stable, a `feat` or breaking change since | **blocked**: it would ship unpreviewed; land it on `next` |
 | Manifest at an alpha or beta (an experimental SDK, a package still previewing) | **skipped** with a notice: no PR, no failure |
+| No release yet (no manifest entry, no tag: a package added since) | **skipped** with a notice, never opened at its `initial-version`: that opens it on `next` |
 
 Only rc packages are cut on the stable branch: merging `next` into
 `main` while some packages are still on alpha or beta cuts the rc ones
@@ -157,9 +160,10 @@ Stable patches only. `fix` → `x.y.(z+1)`. A `feat` or breaking change
 since the package's last release produces no version for that
 package: it is blocked, every other package still gets its PR, and the
 run fails at the end. A package whose manifest is a prerelease there
-is skipped with a notice (never turned into its stable). A package
-whose manifest is off the branch's `x.y` line still gets its patch,
-with a warning in the log.
+is skipped with a notice (never turned into its stable), and so is a
+package with no release yet (never opened at its `initial-version`). A
+package whose manifest is off the branch's `x.y` line still gets its
+patch, with a warning in the log.
 
 ### Linked family
 
@@ -386,6 +390,7 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | Run fails with | Cause | Fix |
 |---|---|---|
 | notice `… is not an rc: skipped` (not a failure) | `main` carries an alpha/beta of that package | promote it to rc on `next` and merge, or leave it for a later merge |
+| notice `no release yet: skipped` (not a failure) | a package added on `main` or `release/x.y` that was never released | release it on `next` (its `initial-version`), promote it via beta to rc, then merge |
 | `changes since x.y.z-rc.N require …, more than the x.y.z it previews` | a change on `main` needs a bigger version than the rc | revert it on `main` and land it on `next` (a new line there) |
 | `feat since stable x.y.z would ship … unpreviewed` (or `breaking change since …`) | a feature or breaking change landed on `main` for a package already stable there | revert it on `main` and land it on `next`; `main` takes fixes only |
 | `x.y.z-rc.N previews x.y.z, already released …: re-line on next` | `main` released `x.y.z` (a hotfix) while `next` previewed it, then `next` merged | on `next`, land a change or `promote.js open-line x.y.(z+1) --package <path>`, promote that line via beta to rc, merge again |
