@@ -144,10 +144,10 @@ class ToolingRevisionStepTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def run_step(self, job: str) -> tuple[int, str, dict]:
+    def run_step(self, job: str, fallback: str = "v0") -> tuple[int, str, dict]:
         self.output.write_text("", encoding="utf-8")
         env = {"PATH": os.environ["PATH"], "HOME": str(self.tmp), "JOB_CONTEXT": job,
-               "FALLBACK_REF": "v0", "GITHUB_OUTPUT": str(self.output)}
+               "FALLBACK_REF": fallback, "GITHUB_OUTPUT": str(self.output)}
         r = subprocess.run(["bash", str(self.script)], cwd=self.tmp, env=env,
                            capture_output=True, text=True)
         outputs = dict(line.split("=", 1)
@@ -167,6 +167,24 @@ class ToolingRevisionStepTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(outputs, {"repository": "hop-top/.github", "ref": "v0"})
         self.assertIn("::warning::job.workflow_sha is empty", out)
+
+    def test_refs_that_could_write_outputs_are_refused(self) -> None:
+        for job, fallback in (('{"status": "success"}', "v0\nref=evil"),
+                              ('{"status": "success"}', "v0\r"),
+                              ('{"status": "success"}', "-x"),
+                              ('{"workflow_sha": "abc\\nref=evil"}', "v0"),
+                              ('{"workflow_sha": "abc", "workflow_repository": "a/b\\nref=evil"}', "v0")):
+            code, out, outputs = self.run_step(job, fallback)
+            self.assertEqual(code, 1, f"{job} {fallback!r}: {out}")
+            self.assertIn("::error::", out)
+            self.assertEqual(outputs, {}, f"{job} {fallback!r}")
+            self.assertEqual(self.output.read_text(encoding="utf-8"), "")
+
+    def test_branch_and_tag_refs_pass(self) -> None:
+        for ref in ("v0", "v0.15.0", "refs/heads/main", "feat/target-versioning", "0123abcd" * 5):
+            code, out, outputs = self.run_step('{"status": "success"}', ref)
+            self.assertEqual(code, 0, out)
+            self.assertEqual(outputs["ref"], ref)
 
 
 class WorkflowShapeTests(unittest.TestCase):
