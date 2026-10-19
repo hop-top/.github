@@ -151,6 +151,15 @@ const MUTATIONS = [
   {id: 'M44', what: 'a package never released is opened at its initial-version on a maintenance branch',
     file: 'lib/rules.js', from: "if (kind === 'maintenance') {\n    return skipped('unreleased',", to: "if (false) {\n    return skipped('unreleased',",
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M45', what: 'a pre-1.0 minor does not link on a stable branch (each member cut from its own rc)',
+    file: 'lib/rules.js', from: '    return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;', to: '    return false;',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M46', what: 'a pre-1.0 patch (a hotfix) links the family on a stable branch',
+    file: 'lib/rules.js', from: 'return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;', to: 'return V.major === 0 && cmpCore(V, ref) > 0;',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M47', what: 'a minor from 1.0 links the family on a stable branch',
+    file: 'lib/rules.js', from: 'return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;', to: 'return V.patch === 0 && cmpCore(V, ref) > 0;',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
 ];
 
 function copy() {
