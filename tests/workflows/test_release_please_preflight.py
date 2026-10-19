@@ -316,7 +316,7 @@ class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
         self.assertLine(lines, "[OK]    package .: prerelease four-piece combo complete")
         self.assertLine(lines, "[OK]    plugins: target-context present, ahead of any conditional-linked-versions")
         self.assertLine(lines, "[OK]    target-context options and 1 conditional-linked-versions group(s) well-formed")
-        self.assertLine(lines, "[OK]    package sdk/ts: versioning target, channel alpha.0")
+        self.assertLine(lines, "[OK]    package sdk/ts: versioning target")
         self.assertLine(lines, "[OK]    release-please.yml runs release-please-on-push with versioning-extension: true")
 
     def test_stable_seed_is_fine_for_a_target_package(self) -> None:
@@ -335,7 +335,7 @@ class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
         self.setup_repo(config)
         code, lines = self.run_step()
         self.assertEqual(code, 0, "\n".join(lines))
-        self.assertLine(lines, "[OK]    package incubator/qmochi: versioning target, channel alpha.0")
+        self.assertLine(lines, "[OK]    package incubator/qmochi: versioning target")
 
     def test_missing_target_context_fails(self) -> None:
         config = self.kit()
@@ -397,11 +397,74 @@ class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
         self.setup_repo(config)
         code, lines = self.run_step()
         self.assertEqual(code, 1)
-        self.assertLine(lines, "[BREAK] package . prerelease-type 'alpha' is not a target channel")
+        self.assertLine(lines, "[BREAK] package . prerelease-type 'alpha': every target line starts on alpha.0")
         self.assertLine(lines, "[BREAK] package sdk/ts sets release-as '0.6.0-alpha.0' — target versioning picks the version")
         self.assertLine(lines, "[BREAK] package incubator/qmochi: bump-minor-pre-major false / "
                                "bump-patch-for-minor-pre-major true contradict target versioning "
                                "(pre-1.0 breaking or feat -> minor)")
+
+    # --- x-channel / x-open-line records ----------------------------------------
+
+    def test_kit_mixed_promotion_passes(self) -> None:
+        # kit and qmochi promoted to beta on their current lines; kit-ts stays alpha.
+        config = self.kit()
+        config["packages"]["."]["x-channel"] = {"line": "0.5.0", "channel": "beta"}
+        config["packages"]["incubator/qmochi"]["x-channel"] = {"line": "0.2.0", "channel": "beta"}
+        self.setup_repo(config, seeds={".": "0.5.0-alpha.26", "sdk/ts": "0.5.0-alpha.3",
+                                       "incubator/qmochi": "0.2.0-alpha.1"})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    package .: versioning target, beta promotion for 0.5.0")
+        self.assertLine(lines, "[OK]    package incubator/qmochi: versioning target, beta promotion for 0.2.0")
+        self.assertLine(lines, "[OK]    package sdk/ts: versioning target")
+
+    def test_applied_and_next_step_promotions_pass(self) -> None:
+        config = self.kit()
+        config["packages"]["."]["x-channel"] = {"line": "0.5.0", "channel": "beta"}
+        config["packages"]["sdk/ts"]["x-channel"] = {"line": "0.5.0", "channel": "rc"}
+        config["packages"]["incubator/qmochi"]["x-open-line"] = "1.0.0"
+        self.setup_repo(config, seeds={".": "0.5.0-beta.2", "sdk/ts": "0.5.0-beta.4",
+                                       "incubator/qmochi": "0.9.0-alpha.3"})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    package sdk/ts: versioning target, rc promotion for 0.5.0")
+        self.assertLine(lines, "[OK]    package incubator/qmochi: versioning target, opens 1.0.0")
+
+    def test_bad_records_fail(self) -> None:
+        cases = [
+            ({"x-channel": {"line": "0.4.0", "channel": "beta"}}, "0.5.0-alpha.3",
+             "package . x-channel is for line 0.4.0, but its current target is 0.5.0 (manifest 0.5.0-alpha.3)"),
+            ({"x-channel": {"line": "0.5.0", "channel": "beta"}}, "0.5.0",
+             "package . x-channel is for line 0.5.0, but the manifest has stable '0.5.0': no open line to promote"),
+            ({"x-channel": {"line": "0.5.0", "channel": "rc"}}, "0.5.0-alpha.3",
+             "package . x-channel rc skips a channel from 0.5.0-alpha.3: channels move alpha -> beta -> rc"),
+            ({"x-channel": {"line": "0.5.0", "channel": "beta"}}, "0.5.0-rc.1",
+             "package . x-channel beta is behind its current 0.5.0-rc.1: channels never move backwards"),
+            ({"x-channel": {"line": "0.5.0", "channel": "alpha"}}, "0.5.0-alpha.3",
+             'package . x-channel {"line":"0.5.0","channel":"alpha"}: expected {"line": "x.y.z", "channel": "beta" | "rc"}'),
+            ({"x-channel": "beta"}, "0.5.0-alpha.3",
+             'package . x-channel "beta": expected {"line": "x.y.z", "channel": "beta" | "rc"}'),
+            ({"x-open-line": "1.0.0"}, "1.0.0-alpha.2", "package . x-open-line 1.0.0 is already reached (manifest 1.0.0-alpha.2)"),
+            ({"x-open-line": "1.0"}, "0.9.0-alpha.2", 'package . x-open-line "1.0": expected "x.y.z"'),
+            ({"prerelease-type": "beta.0"}, "0.5.0-alpha.3", "package . prerelease-type 'beta.0': every target line starts on alpha.0"),
+        ]
+        for extra, seed, line in cases:
+            config = self.kit()
+            config["packages"]["."].update(extra)
+            self.setup_repo(config, seeds={".": seed, "sdk/ts": "0.5.0-alpha.3", "incubator/qmochi": "0.2.0-alpha.1"})
+            code, lines = self.run_step()
+            self.assertEqual(code, 1, line)
+            self.assertLine(lines, f"[BREAK] {line}")
+
+    def test_records_on_a_non_target_package_fail(self) -> None:
+        config = self.kit()
+        config["packages"]["tools"] = {"component": "tools", "release-type": "simple",
+                                       "x-channel": {"line": "1.0.0", "channel": "beta"}}
+        self.setup_repo(config, seeds={".": "0.5.0-alpha.3", "sdk/ts": "0.5.0-alpha.3",
+                                       "incubator/qmochi": "0.2.0-alpha.1", "tools": "1.0.0"})
+        code, lines = self.run_step()
+        self.assertEqual(code, 1)
+        self.assertLine(lines, "[BREAK] package tools has x-channel but does not use versioning target")
 
     def test_caller_without_the_extension_fails(self) -> None:
         for caller in (PreflightExtraFilesTests.CALLER,

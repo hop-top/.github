@@ -604,12 +604,34 @@ jobs:
           # `versioning: "target"` is hop-top/.github's release-please extension
           # (scripts/release-please-target), run by release-please-on-push with
           # `versioning-extension: true`. Needs the target-context plugin (first),
-          # well-formed conditional-linked-versions groups of target packages, a
-          # target channel, no release-as, and the owner bump table.
+          # well-formed conditional-linked-versions groups of target packages,
+          # prerelease-type alpha.0 (every line starts on alpha), no release-as,
+          # the owner bump table, and records (x-channel: a channel promotion for
+          # the package's current line; x-open-line: a line to open) that match
+          # the manifest.
           TARGETS=""
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             TARGETS=$(jq -r '.versioning as $top | [(.packages // {}) | to_entries[] | select((.value.versioning // $top) == "target") | .key] | sort[]' "$CONFIG_PATH" 2>/dev/null)
+            OFF=$(jq -r '.versioning as $top | [(.packages // {}) | to_entries[] | select((.value.versioning // $top) != "target")
+              | .key as $p | (.value | keys[] | select(. == "x-channel" or . == "x-open-line")) as $k | "\($p)\t\($k)"] | .[]' "$CONFIG_PATH" 2>/dev/null)
+            while IFS=$'\t' read -r path key; do
+              [[ -n "$path" ]] || continue
+              fail "package $path has $key but does not use versioning target"
+              fixhint "drop $key, or set versioning: \"target\" for $path"
+            done <<<"$OFF"
           fi
+          # core_cmp A B: -1 / 0 / 1 comparing x.y.z (any -prerelease ignored)
+          core_cmp() {
+            local a b i
+            IFS=. read -r -a a <<<"${1%%-*}"
+            IFS=. read -r -a b <<<"${2%%-*}"
+            for i in 0 1 2; do
+              if (( 10#${a[$i]} < 10#${b[$i]} )); then echo -1; return; fi
+              if (( 10#${a[$i]} > 10#${b[$i]} )); then echo 1; return; fi
+            done
+            echo 0
+          }
+          channel_rank() { case "$1" in alpha) echo 1 ;; beta) echo 2 ;; rc) echo 3 ;; *) echo 0 ;; esac; }
           if [[ -n "$TARGETS" ]]; then
             {
               echo ""
@@ -672,11 +694,55 @@ jobs:
               RA=$(jq -r --arg p "$path" '.packages[$p]["release-as"] // .["release-as"] // empty' "$CONFIG_PATH")
               BMPM=$(jq -r --arg p "$path" 'if (.packages[$p] | has("bump-minor-pre-major")) then .packages[$p]["bump-minor-pre-major"] else .["bump-minor-pre-major"] end | tostring' "$CONFIG_PATH")
               BPMPM=$(jq -r --arg p "$path" 'if (.packages[$p] | has("bump-patch-for-minor-pre-major")) then .packages[$p]["bump-patch-for-minor-pre-major"] else .["bump-patch-for-minor-pre-major"] end | tostring' "$CONFIG_PATH")
+              SEED=$(jq -r --arg p "$path" '.[$p] // empty' "$MANIFEST_PATH" 2>/dev/null)
               BAD=0
-              if [[ -n "$PT" && ! "$PT" =~ ^(alpha|beta|rc)\.0$ ]]; then
-                fail "package $path prerelease-type '$PT' is not a target channel"
-                fixhint "use alpha.0, beta.0 or rc.0 (every target channel starts at .0)"
+              if [[ -n "$PT" && "$PT" != "alpha.0" ]]; then
+                fail "package $path prerelease-type '$PT': every target line starts on alpha.0"
+                fixhint "set prerelease-type: alpha.0; promote a line with x-channel (scripts/release-please-target/bin/promote.js channel beta --package $path)"
                 BAD=1
+              fi
+              # x-channel: {"line": "x.y.z", "channel": "beta" | "rc"}, for the current line
+              XC=$(jq -c --arg p "$path" '.packages[$p]["x-channel"] // empty' "$CONFIG_PATH")
+              if [[ -n "$XC" ]]; then
+                XL=$(jq -r 'if type == "object" and (.line | type) == "string" and (.line | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) then .line else empty end' <<<"$XC")
+                XCH=$(jq -r 'if type == "object" and (.channel == "beta" or .channel == "rc") then .channel else empty end' <<<"$XC")
+                if [[ -z "$XL" || -z "$XCH" ]]; then
+                  fail "package $path x-channel $XC: expected {\"line\": \"x.y.z\", \"channel\": \"beta\" | \"rc\"}"
+                  BAD=1
+                elif [[ "$SEED" != *-* ]]; then
+                  fail "package $path x-channel is for line $XL, but the manifest has stable '${SEED:-none}': no open line to promote"
+                  fixhint "remove x-channel (bin/promote.js clear channel --package $path); a new line starts on alpha"
+                  BAD=1
+                elif [[ "$(core_cmp "$XL" "$SEED")" != "0" ]]; then
+                  fail "package $path x-channel is for line $XL, but its current target is ${SEED%%-*} (manifest $SEED)"
+                  fixhint "a promotion expires with its line: remove it, or promote the current line (bin/promote.js)"
+                  BAD=1
+                else
+                  CUR_CH=${SEED#*-}
+                  CUR_CH=${CUR_CH%%.*}
+                  RC=$(channel_rank "$CUR_CH")
+                  RX=$(channel_rank "$XCH")
+                  if (( RX < RC )); then
+                    fail "package $path x-channel $XCH is behind its current $SEED: channels never move backwards"
+                    BAD=1
+                  elif (( RX > RC + 1 )); then
+                    fail "package $path x-channel $XCH skips a channel from $SEED: channels move alpha -> beta -> rc"
+                    BAD=1
+                  fi
+                fi
+              fi
+              # x-open-line: "x.y.z", above the current target
+              XO=$(jq -c --arg p "$path" '.packages[$p]["x-open-line"] // empty' "$CONFIG_PATH")
+              if [[ -n "$XO" ]]; then
+                XOL=$(jq -r 'if type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$") then . else empty end' <<<"$XO")
+                if [[ -z "$XOL" ]]; then
+                  fail "package $path x-open-line $XO: expected \"x.y.z\""
+                  BAD=1
+                elif [[ -n "$SEED" && "$(core_cmp "$SEED" "$XOL")" != "-1" ]]; then
+                  fail "package $path x-open-line $XOL is already reached (manifest $SEED)"
+                  fixhint "remove x-open-line (bin/promote.js clear open-line --package $path)"
+                  BAD=1
+                fi
               fi
               if [[ -n "$RA" ]]; then
                 fail "package $path sets release-as '$RA' — target versioning picks the version"
@@ -689,8 +755,9 @@ jobs:
                 BAD=1
               fi
               if [[ $BAD -eq 0 ]]; then
-                ok "package $path: versioning target, channel ${PT:-alpha.0}"
+                ok "package $path: versioning target${XCH:+, $XCH promotion for $XL}${XOL:+, opens $XOL}"
               fi
+              XCH=""; XL=""; XOL=""
             done
 
             if [[ -f "$RP_PATH" ]]; then
