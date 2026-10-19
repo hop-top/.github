@@ -108,6 +108,43 @@ test('by group: every member of the conditional-linked-versions group', () => {
   assert.equal(c.packages['extensions/mcp-tasks']['x-channel'], undefined);
 });
 
+test('by group: a member already on, or already promoted to, the channel is left as it is', () => {
+  const w = workspace();
+  assert.equal(w.run('channel', 'beta', '--package', 'kit').code, 0);
+  const r = w.run('channel', 'beta', '--group', 'kit');
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /^kit \(\.\): unchanged, already promoted to beta for 0\.5\.0 \(its release PR is cut on the next run on the prerelease branch\)$/m);
+  const c = JSON.parse(r.config);
+  for (const p of ['.', 'sdk/experimental/php', 'sdk/experimental/rs', 'sdk/py', 'sdk/ts']) assert.deepEqual(c.packages[p]['x-channel'], {line: '0.5.0', channel: 'beta'}, p);
+  assert.equal((r.out.match(/: x-channel /g) || []).length, 4, 'the four other members recorded');
+  // released on beta: the same
+  w.setManifest({...KIT_MANIFEST, '.': '0.5.0-beta.0', 'sdk/py': '0.5.0-beta.0'});
+  const again = w.run('channel', 'beta', '--group', 'kit');
+  assert.equal(again.code, 0, again.err);
+  assert.match(again.out, /^kit \(\.\): unchanged, already on beta for 0\.5\.0$/m);
+  assert.match(again.out, /^kit-py \(sdk\/py\): unchanged, already on beta for 0\.5\.0$/m);
+  // every member there: nothing to change
+  w.setManifest(Object.fromEntries(Object.entries(KIT_MANIFEST).map(([p, v]) => [p, v.replace(/-alpha\.\d+$/, '-beta.0')])));
+  const none = w.run('channel', 'beta', '--group', 'kit');
+  assert.equal(none.code, 0, none.err);
+  assert.match(none.out, /nothing to change\n$/);
+  // still all or nothing for a real refusal: kit-py backwards, kit pending beta -> rc skips
+  w.setManifest({...KIT_MANIFEST, 'sdk/py': '0.5.0-rc.1'});
+  const back = w.run('channel', 'beta', '--group', 'kit');
+  assert.equal(back.code, 1);
+  assert.match(back.err, /kit-py \(sdk\/py\): on rc for 0\.5\.0: channels never move backwards/);
+  assert.equal(back.config, again.config, 'nothing written');
+  w.setManifest(KIT_MANIFEST);
+  const skip = w.run('channel', 'rc', '--group', 'kit');
+  assert.equal(skip.code, 1);
+  assert.match(skip.err, /kit \(\.\): alpha -> rc skips beta/);
+  assert.equal(skip.config, again.config, 'nothing written');
+  // named with --package, as well as through the group: refused as before
+  const named = w.run('channel', 'beta', '--group', 'kit', '--package', 'kit');
+  assert.equal(named.code, 1);
+  assert.match(named.err, /^refused: kit \(\.\): already promoted to beta for 0\.5\.0/m);
+});
+
 test('one step at a time, never backwards, only open lines', () => {
   const w = workspace();
   assert.equal(w.run('channel', 'beta', '--package', 'kit').code, 0);

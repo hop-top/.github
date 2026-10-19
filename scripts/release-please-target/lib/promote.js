@@ -2,8 +2,10 @@
 // The manual steps of target versioning, as config edits: promote a line's
 // channel (x-channel) and open a line (x-open-line), for packages picked by
 // path, by component, or by conditional-linked-versions group. All or
-// nothing: one refused package and nothing is written. Once the edit lands
-// on the prerelease branch, that run cuts the release PR for it.
+// nothing: one refused package and nothing is written. A group member
+// already on (or already promoted to) the requested channel is left as it
+// is; named with --package, it is refused. Once the edit lands on the
+// prerelease branch, that run cuts the release PR for it.
 const rules = require('./rules');
 const {setPackageKey, removePackageKeys, parseConfig} = require('./config-edit');
 
@@ -13,14 +15,16 @@ const KEYS = {channel: 'x-channel', 'open-line': 'x-open-line'};
 function resolve(config, {packages = [], groups = []}) {
   const pkgs = config.packages || {};
   const byComponent = Object.fromEntries(Object.entries(pkgs).filter(([, c]) => c.component).map(([p, c]) => [c.component, p]));
-  const out = [], problems = [];
+  const out = [], explicit = new Set(), problems = [];
   const add = p => {
     if (!out.includes(p)) out.push(p);
   };
   for (const sel of packages) {
-    if (pkgs[sel]) add(sel);
-    else if (byComponent[sel]) add(byComponent[sel]);
-    else problems.push(`no package or component "${sel}" in the config`);
+    const p = pkgs[sel] ? sel : byComponent[sel];
+    if (p) {
+      add(p);
+      explicit.add(p);
+    } else problems.push(`no package or component "${sel}" in the config`);
   }
   const plugins = (config.plugins || []).filter(p => p && typeof p === 'object' && p.type === 'conditional-linked-versions');
   for (const name of groups) {
@@ -35,7 +39,7 @@ function resolve(config, {packages = [], groups = []}) {
     }
   }
   if (!packages.length && !groups.length) problems.push('pick packages with --package and/or --group');
-  return {paths: out, problems};
+  return {paths: out, explicit, problems};
 }
 
 const nameOf = (config, p) => `${(config.packages[p] || {}).component || p} (${p})`;
@@ -57,8 +61,9 @@ function channelEdit(config, p, cur, value) {
   // manifest), not from a promotion recorded but not released yet.
   const own = cur.pre.split('.')[0];
   const pending = rec && rules.cmpCore(rec.line, target) === 0 && rank(rec.channel) > rank(own) ? rec.channel : undefined;
-  if (value === own) return {problem: `${name}: already on ${value} for ${line}`};
-  if (value === pending) return {problem: `${name}: already promoted to ${value} for ${line} (${CUT})`};
+  // Already there: nothing to record (a no-op for a group member).
+  if (value === own) return {same: `already on ${value} for ${line}`};
+  if (value === pending) return {same: `already promoted to ${value} for ${line} (${CUT})`};
   if (rank(value) < rank(own)) return {problem: `${name}: on ${own} for ${line}: channels never move backwards`};
   if (STEP[own] !== value) {
     const wait = pending ? ` (the ${pending} promotion is not released yet: merge its release PR first)` : '';
@@ -77,11 +82,12 @@ function openLineEdit(config, p, cur, open, value) {
 /**
  * promote({configText, manifest, command, value, packages, groups})
  *   command  'channel' (value beta | rc) | 'open-line' (value x.y.z) | 'clear' (value channel | open-line | all)
- * -> {text, changes: [string], problems: [string]}; text is unchanged when problems is not empty
+ * -> {text, changes: [string], notes: [string], problems: [string]}; text is unchanged when
+ *    problems is not empty; notes name the group members left as they are
  */
 function promote({configText, manifest, command, value, packages, groups}) {
   const config = parseConfig(configText);
-  const {paths, problems} = resolve(config, {packages, groups});
+  const {paths, explicit, problems} = resolve(config, {packages, groups});
   if (command === 'channel' && !['beta', 'rc'].includes(value)) problems.push(`channel: expected beta | rc, got "${value}" (every line starts on alpha)`);
   let open;
   if (command === 'open-line') {
@@ -93,10 +99,10 @@ function promote({configText, manifest, command, value, packages, groups}) {
   }
   if (command === 'clear' && !['channel', 'open-line', 'all'].includes(value)) problems.push(`clear: expected channel | open-line | all, got "${value}"`);
   if (!['channel', 'open-line', 'clear'].includes(command)) problems.push(`unknown command "${command}" (channel | open-line | clear)`);
-  if (problems.length) return {text: configText, changes: [], problems};
+  if (problems.length) return {text: configText, changes: [], notes: [], problems};
 
   let text = configText;
-  const changes = [];
+  const changes = [], notes = [];
   for (const p of paths) {
     const pkg = config.packages[p];
     const name = nameOf(config, p);
@@ -121,11 +127,16 @@ function promote({configText, manifest, command, value, packages, groups}) {
       problems.push(edit.problem);
       continue;
     }
+    if (edit.same) {
+      if (explicit.has(p)) problems.push(`${name}: ${edit.same}`);
+      else notes.push(`${name}: unchanged, ${edit.same}`);
+      continue;
+    }
     text = setPackageKey(text, p, edit.key, edit.value);
     changes.push(edit.change);
   }
-  if (problems.length) return {text: configText, changes: [], problems};
-  return {text, changes, problems};
+  if (problems.length) return {text: configText, changes: [], notes: [], problems};
+  return {text, changes, notes, problems};
 }
 
 module.exports = {promote, resolve};

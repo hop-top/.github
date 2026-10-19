@@ -47,6 +47,7 @@ function main(argv) {
     for (const p of r.problems) process.stderr.write(`refused: ${p}\n`);
     return 1;
   }
+  for (const n of r.notes) process.stdout.write(`${n}\n`);
   for (const c of r.changes) process.stdout.write(`${c}\n`);
   if (!r.changes.length) process.stdout.write('nothing to change\n');
   else if (!o['dry-run']) fs.writeFileSync(o.config, r.text);
