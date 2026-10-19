@@ -2,9 +2,11 @@
 
 Let the branch decide the version: a prerelease line previews one
 target stable version, the stable branch cuts exactly that version
-from its rc, maintenance branches take patches only, and a linked
-family moves together only when it opens a new major (or, before 1.0,
-a new minor). Nobody picks a version and nobody writes `Release-As`.
+from its rc (and otherwise only patches what is already stable),
+maintenance branches take patches only, and a linked family moves
+together only when it opens a new major (or, before 1.0, a new minor).
+Nothing ships that no prerelease previewed. Nobody picks a version and
+nobody writes `Release-As`.
 
 ## Use this when
 
@@ -67,7 +69,7 @@ by the commits since its latest release:
 |---|---|---|
 | The current target covers the required target | counter + 1 | `0.5.0-alpha.26` + `feat!` → `0.5.0-alpha.27` |
 | The required target is higher | new line at `alpha.0`, whatever channel the old line was on | `0.5.1-alpha.3` + `feat!` → `0.6.0-alpha.0`; `1.6.0-beta.2` + `feat!` → `2.0.0-alpha.0` |
-| The current target was already released stable | new line from that stable | `0.6.0-rc.2` (0.6.0 tagged) + `feat` → `0.7.0-alpha.0` |
+| The current target was already released stable (a cut, or a hotfix on `main`) | new line from that stable | `0.6.0-rc.2` (0.6.0 tagged) + `feat` → `0.7.0-alpha.0`; `0.6.1-alpha.4`, `main` hotfixed 0.6.1, + `fix` → `0.6.2-alpha.0` |
 | The manifest is stable | new line from it | `0.6.0` + `fix` → `0.6.1-alpha.0` |
 | The line is promoted (`x-channel` for this line) | `<channel>.0` on the same target, then its counter; cut at once, with no other change | `0.6.0-alpha.7`, promoted to beta on 0.6.0 → `0.6.0-beta.0` |
 | A promotion that skips a channel (alpha → rc) | **blocked** | `0.6.0-alpha.7`, `rc` recorded for 0.6.0 |
@@ -133,12 +135,21 @@ holding a promotion that outlives its line.
 |---|---|
 | Manifest at `x.y.z-rc.N` (next promoted into main) | `x.y.z`, even with no commit since the merge |
 | … and a commit since requires more than `x.y.z` (`1.3.0-rc.1`, then a `feat!` → `2.0.0`) | **blocked**: stable must equal what the rc previewed; land the change on `next`, where it opens a new line |
-| Manifest stable | plain stable bump (`0.6.0` + `fix` → `0.6.1`) |
+| … and `x.y.z` is already released (`next` at `0.6.1-rc.2`, `main` hotfixed `0.6.1`, then `next` merged) | **blocked** (`rc-released`): re-line on `next` (a change there, or `x-open-line 0.6.2`, opens the next line), promote that to rc and merge again |
+| Manifest stable, only fixes since (no `feat`, nothing breaking) | patch: `0.6.0` + `fix` → `0.6.1`, `1.2.0` + `fix` → `1.2.1` |
+| Manifest stable, a `feat` or breaking change since | **blocked**: it would ship unpreviewed; land it on `next` |
 | Manifest at an alpha or beta (an experimental SDK, a package still previewing) | **skipped** with a notice: no PR, no failure |
 
 Only rc packages are cut on the stable branch: merging `next` into
 `main` while some packages are still on alpha or beta cuts the rc ones
-and leaves the others for a later merge.
+and leaves the others for a later merge. A package already stable on
+`main` is patch-only there: a hotfix is cut at once, a `feat` or
+breaking change blocks that package (with or without a group) and
+fails the run, so nothing reaches stable without a preview on `next`.
+A hotfix that releases the version `next` is previewing moves `next`
+on: its next release opens the following line (`0.6.1-alpha.4` →
+`0.6.2-alpha.0` after `main` cut `0.6.1`), and an rc of the released
+version reaching `main` is blocked rather than bumped.
 
 ### Maintenance branch (`release/x.y`)
 
@@ -178,11 +189,19 @@ When it links:
   `0.6.0-alpha.4` to beta in that PR still leaves `alpha.4` counted:
   the alpha members get `alpha.5`. Nobody moves backwards or changes
   channel;
-- on the stable branch every member must be at an rc of the target:
-  kit at `1.0.0-rc.1` with kit-py still at `1.0.0-alpha.3` blocks the
-  group (no member is cut, the run fails) until kit-py is promoted to
-  rc; a linked major never ships a member that previewed anything but
-  that rc;
+- on the stable branch a linked major holds the whole family,
+  experimental members included: every member must be at an rc of
+  the target. kit `1.0.0` is not cut until kit-py, kit-ts, kit-php and
+  kit-rs are all at `1.0.0-rc.N`; kit at `1.0.0-rc.1` with kit-py still
+  at `1.0.0-alpha.3` blocks the group (no member is cut, the run
+  fails) until kit-py is promoted via beta to rc on `next`. A linked
+  major never ships a member that previewed anything but that rc. The
+  consequence: an experimental SDK must graduate, or at least reach
+  rc, before the family's linked 1.0 ships;
+- pre-1.0 minors stay unlinked on the stable branch: each member is
+  cut from its own rc, and a member not at rc is skipped (kit, kit-py
+  and kit-ts at `0.6.0-rc.2` are cut; kit-php and kit-rs, still on
+  alpha, wait for a later merge);
 - a member blocked on its own (an `x-open-line` below what its
   commits require, say) blocks the group;
 - a member that already released the target (or later) as stable
@@ -308,9 +327,13 @@ recorded is the package's current target, from the manifest, and the
 step is measured from the channel the manifest shows: with beta
 recorded but `0.5.0-beta.0` not released yet, `channel rc` is refused
 as a skip. All or nothing: if one package is refused (not on
-`target`, no open line, already on that channel or already promoted
-to it, a skipped or backward step, a line already reached), nothing is
-written and it exits 1. Commit the change to the prerelease branch:
+`target`, no open line, a skipped or backward step, a line already
+reached), nothing is written and it exits 1. A package already on the
+channel, or already promoted to it, is refused when named with
+`--package`; picked through `--group` it is left as it is (printed
+`unchanged, …`) and the other members are recorded, so promoting a
+family after promoting one of its members works. Commit the change to
+the prerelease branch:
 the run that push triggers cuts each package's release PR
 (`0.5.0-beta.0`, `1.0.0-alpha.0`) with no other commit.
 
@@ -364,7 +387,9 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 |---|---|---|
 | notice `… is not an rc: skipped` (not a failure) | `main` carries an alpha/beta of that package | promote it to rc on `next` and merge, or leave it for a later merge |
 | `changes since x.y.z-rc.N require …, more than the x.y.z it previews` | a change on `main` needs a bigger version than the rc | revert it on `main` and land it on `next` (a new line there) |
-| `linked at x.0.0 …, but … is at …: a linked release is cut only when every member is at an rc` | a linked major reached `main` with a member not at rc | promote that member to rc on `next` and merge again |
+| `feat since stable x.y.z would ship … unpreviewed` (or `breaking change since …`) | a feature or breaking change landed on `main` for a package already stable there | revert it on `main` and land it on `next`; `main` takes fixes only |
+| `x.y.z-rc.N previews x.y.z, already released …: re-line on next` | `main` released `x.y.z` (a hotfix) while `next` previewed it, then `next` merged | on `next`, land a change or `promote.js open-line x.y.(z+1)`, promote that line to rc, merge again |
+| `linked at x.0.0 …, but … is at …: a linked release is cut only when every member is at an rc` | a linked major reached `main` with a member not at rc (experimental ones included) | do what the message says on `next` (`promote kit-py via beta to rc …`), then merge again |
 | `x-channel … skips a channel from …` | a promotion two steps ahead (hand edit) | record the next channel only (`promote.js channel`) |
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
 | `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target | owner decision: re-seed the member or the group |
