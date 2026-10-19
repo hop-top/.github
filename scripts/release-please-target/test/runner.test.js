@@ -263,6 +263,18 @@ test('rule 2: a package skipped on main is a notice, and its stale release PR is
   assert.match(fs.readFileSync(summaryFile, 'utf8'), /^- skipped qmochi: 0\.6\.0-beta\.1 is not an rc: skipped/m);
 });
 
+test('rule 2: a package never released is a notice on main, not its initial-version', async () => {
+  const {qmochi, ...released} = MAIN0;
+  const r = repo().commit('chore: initial').release(released).commit('feat(qmochi): first', ['qmochi']).commit('fix(cli): k', ['kit']);
+  const res = await runner(r, 'main', {cfg: config({packages: {'incubator/qmochi': {'initial-version': '0.1.0-alpha.0'}}})});
+  assert.equal(res.exitCode, 0, res.lines.join('\n'));
+  assert.deepEqual(res.blocked, []);
+  assert.deepEqual(res.skipped.map(x => x.component), ['qmochi']);
+  assert.ok(res.lines.some(l => /^::notice::qmochi: no release yet: skipped/.test(l)), res.lines.join('\n'));
+  assert.ok(!res.lines.some(l => l.startsWith('::error::')), res.lines.join('\n'));
+  assert.deepEqual(res.fake.prs.map(p => p.title), ['chore(release): kit 0.4.1']);
+});
+
 test('rule 7 (owner): the kit round: a promotion is cut on the next run, with no other change', async () => {
   const r = nextRepo();
   fs.writeFileSync(path.join(r.dir, CONFIG), '{"edited": true}\n');
