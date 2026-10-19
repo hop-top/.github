@@ -2,6 +2,11 @@
 
 Keep release-please incrementing an alpha/beta/rc counter instead of bumping to stable.
 
+This is release-please's own `versioning: "prerelease"`. To have each
+prerelease line preview one target version, restart new lines at
+`alpha.0`, and let the stable branch promote an rc without
+`Release-As`, use [target versioning](target-versioning.md) instead.
+
 ## Use this when
 
 - You're shipping `0.x` and want every release to be `-alpha.N` until you're ready for stable.
@@ -24,7 +29,9 @@ explicitly cut stable.
 ## The four-piece combo
 
 To stay in an alpha/beta/rc channel (counter-incrementing), every
-package in `release-please-config.json` needs **all four pieces**:
+package in `release-please-config.json` needs **all four pieces**
+(with [target versioning](target-versioning.md), `"versioning": "target"`
+takes the place of `"prerelease"`):
 
 ```json
 {
@@ -52,6 +59,10 @@ And the manifest seed must be **prerelease-shaped**:
 | Prerelease-shaped manifest seed | release-please sees the prior release as stable, bumps to the next stable |
 
 ## Leave the channel (cut stable)
+
+(With [target versioning](target-versioning.md) the stable branch cuts
+stable from a promoted rc on its own, and `Release-As` footers are
+ignored.)
 
 The prerelease suffix is "sticky" — only an explicit footer
 escapes it. Add a `Release-As: X.Y.Z` footer (no suffix) on a

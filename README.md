@@ -20,6 +20,11 @@ run *after* release-please cuts a tag.
 - The shared release-please runner (`release-please-on-push`): one
   guarded, App-token job every repo calls instead of hand-rolling its
   own — it runs release-please, it does not replace it
+- An opt-in release-please extension, target versioning
+  (`scripts/release-please-target`): a versioning strategy and two
+  plugins for release-please, run by `release-please-on-push` with
+  `versioning-extension: true` (see
+  [`references/how-to/target-versioning.md`](references/how-to/target-versioning.md))
 - Org-level community files (CODE_OF_CONDUCT, SECURITY, CONTRIBUTING,
   issue forms, PR template)
 - Profile rendered at <https://github.com/hop-top>
@@ -114,6 +119,7 @@ profile/
   README.md                  org-page content
 scripts/
   spec/                      Python behind the spec-versioning workflows (+ tests)
+  release-please-target/     release-please extension behind versioning-extension (+ tests)
 SKILL.md                     consumer-facing how-to
 DEVELOPING.md                collaborator-facing how-to
 VERSION                      current release-please-managed version

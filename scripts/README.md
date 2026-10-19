@@ -1,8 +1,10 @@
 # scripts/
 
 Helper scripts that complement the publish-on-tag CI pipeline.
-These run locally — they exist for the steps CI deliberately
-cannot perform.
+`bootstrap-first-publish.sh` runs locally — it exists for the steps
+CI deliberately cannot perform. `spec/` and `release-please-target/`
+run inside the reusable workflows that check this repository out
+(see [`DEVELOPING.md`](../DEVELOPING.md#layout)).
 
 ## `bootstrap-first-publish.sh`
 

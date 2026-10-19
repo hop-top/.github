@@ -73,6 +73,7 @@ Inputs, all optional:
 | `config-file` | `.github/release-please-config.json` | the config lives elsewhere |
 | `manifest-file` | `.github/.release-please-manifest.json` | the manifest lives elsewhere |
 | `target-branch` | the branch that triggered the run | release PRs should target a fixed branch |
+| `versioning-extension` | `false` | the config uses `versioning: "target"` — see [target versioning](how-to/target-versioning.md) |
 
 Outputs keep `googleapis/release-please-action`'s names
 (`releases_created`, `release_created`, `tag_name`, `version`, `prs_created`,

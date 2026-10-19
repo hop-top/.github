@@ -34,6 +34,8 @@ For non-brew users:
 make lint           # actionlint on all workflows
 make test-scripts   # unit tests for scripts/spec
 make test-workflows # tests for the workflows' inline check scripts
+make test-release-please-target   # rules, contract, simulation, runner (Node)
+make mutate-release-please-target # each reintroduced defect must turn them red
 ```
 
 CI runs the same on every PR.
@@ -49,6 +51,12 @@ CI runs the same on every PR.
   own commit and runs the scripts from there, so a script and the
   workflow that wraps it always ship together. Standard library only;
   tests in `scripts/spec/tests/`, run with `make test-scripts`
+- `scripts/release-please-target/` — the release-please extension
+  behind `release-please-on-push`'s `versioning-extension: true`
+  (target versioning): a Node package pinning release-please exactly,
+  with its lockfile. Same delivery as `scripts/spec/`: the workflow
+  checks this repo out at its own commit and runs `bin/run.js` from
+  there. See [release-please-target](#release-please-target)
 - `tests/workflows/` — tests that lift a workflow step's `run:`
   block out of its `.yml` and run it with bash against a fixture
   repository (`release-please-preflight`'s checks). Standard library
@@ -56,6 +64,49 @@ CI runs the same on every PR.
 - `docs/` — architecture diagrams + consumer-facing reference
 - `SKILL.md` — consumer-facing skill (how to USE the workflows)
 - `DEVELOPING.md` — this file (how to MODIFY the workflows)
+
+## release-please-target
+
+```
+scripts/release-please-target/
+  package.json, package-lock.json   release-please pinned exactly (no range)
+  index.js                          require() registers the extension
+  lib/rules.js                      the version rules; no release-please import
+  lib/install.js                    versioning "target", plugins "target-context",
+                                    "conditional-linked-versions"
+  lib/internals.js                  every release-please surface used (public,
+                                    deep imports, relied-on internals)
+  lib/runner.js, bin/run.js         action-equivalent runner (inputs as env vars)
+  lib/report.js                     per-run decisions and blocked packages
+  test/rules.test.js                rules, one test per owner rule
+  test/contract.test.js             every lib/internals.js entry vs the pinned version
+  test/scenarios.test.js            kit-shaped fixture repos, reads from local git
+  test/runner.test.js               runner vs a fake GitHub (recorded writes)
+  test/mutate.js                    mutation check (npm run mutate)
+```
+
+Tests are hermetic: fixture repositories in a temp dir, every GitHub
+read served from local git, every client that could reach the network
+replaced by one that throws. `PRINT_SCENARIOS=1 npm test` prints the
+scenario table, with what stock `versioning: "prerelease"` proposes on
+the same repository.
+
+Deep imports into release-please (`build/src/...`) are allowed only
+through `lib/internals.js`, and each one is exercised by the contract
+test. Adding one: list it there with why, cover it in the contract test.
+
+Upgrading release-please:
+
+1. `cd scripts/release-please-target && npm install --save-exact release-please@<version>`
+2. `npm test` — the contract test names any surface that moved;
+   `RP_ROOT=<dir of another release-please> node --test test/contract.test.js`
+   checks a copy without touching the pin
+3. `npm run mutate` — still every mutation killed
+4. One commit with `package.json` + `package-lock.json`
+
+A rule change is a change to `lib/rules.js` plus a red-then-green test
+in `test/rules.test.js`; add a mutation to `test/mutate.js` when the
+rule guards against a defect that could come back.
 
 ## Workflow authoring rules
 
@@ -202,7 +253,9 @@ prerelease modes.
   to parse
 - **Pinning consumers to `@main`** → next breaking change here
   silently breaks them
-- **Adding version/changelog logic here** → belongs in release-please
+- **Adding version/changelog logic here** (outside the opt-in
+  `release-please-target` extension, which plugs into release-please
+  rather than replacing it) → belongs in release-please
   config on the consumer side, not in dotgithub workflows
 
 ## Verification checklist before pushing
@@ -215,4 +268,5 @@ prerelease modes.
 - [ ] If a secret is added or newly consumed, the [`references/secrets.md`](references/secrets.md) table is updated
 - [ ] If `scripts/spec/` changed, `make test-scripts` green
 - [ ] If a tested workflow step changed, `make test-workflows` green
+- [ ] If `scripts/release-please-target/` changed, `make test-release-please-target` and `make mutate-release-please-target` green
 - [ ] If new ecosystem added, SKILL.md ecosystems section updated
