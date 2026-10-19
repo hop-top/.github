@@ -262,17 +262,18 @@ function next(input) {
 }
 
 // Rule 4: does `proposed` open a line the family links on? A new major
-// always (on a stable branch: against the last stable); a new minor line
-// only before 1.0 (major 0), on the prerelease branch. From 1.0 minors
-// are independent; on a stable branch only a major links (each member is
-// cut from its own rc otherwise, a member not at rc is skipped). Never on
-// a maintenance branch.
+// always; a new minor line only before 1.0 (major 0). From 1.0 minors
+// are independent, and a patch never links. On a stable branch the cut
+// is measured against the last stable (with none, the smallest stable
+// the rc can stem from): x.0.0 above its major, or before 1.0 a 0.y.0
+// above its minor. Never on a maintenance branch.
 function startsLinkedLine({kind, current, proposed, lastStable}) {
   if (kind === 'maintenance') return false;
   const C = parse(current), V = parse(proposed), S = opt(lastStable);
   if (kind === 'stable') {
     const ref = S || (C.pre ? deriveBase(core(C)) : C);
-    return V.major > ref.major;
+    if (V.major > ref.major) return true;
+    return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;
   }
   if (V.major > C.major) return true;
   return V.major === 0 && C.major === 0 && V.minor > C.minor;
@@ -317,7 +318,7 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   }));
   const triggers = M.filter(m => m.proposed && m.current &&
     startsLinkedLine({kind, current: m.current, proposed: m.proposed, lastStable: m.lastStable}));
-  if (!triggers.length) return {linked: false, reason: `${groupName}: no new major or prerelease minor line: independent`, blocked: []};
+  if (!triggers.length) return {linked: false, reason: `${groupName}: no new major or pre-1.0 minor line: independent`, blocked: []};
   const by = triggers.map(t => `${t.component}@${fmt(t.proposed)}`).join(', ');
   const L = M.reduce((a, m) => maxV(a, m.proposed), undefined);
   const fail = reason => ({linked: true, reason: `${groupName}: ${reason}`, blocked: [`${groupName}: ${reason}`]});

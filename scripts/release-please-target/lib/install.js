@@ -11,10 +11,10 @@
 //                                        PRs on the prerelease branch drop the records
 //                                        their versions make stale
 //   plugin "conditional-linked-versions" linked-versions that links only for a new
-//                                        major, or a new minor line before 1.0 on the
-//                                        prerelease branch; each member keeps its channel;
-//                                        on a stable branch every member must be at an rc
-//                                        of a linked major (rules.resolveGroup)
+//                                        major, or a new minor line before 1.0; each
+//                                        member keeps its channel; on a stable branch
+//                                        every member must be at an rc of the linked
+//                                        version (rules.resolveGroup)
 const rules = require('./rules');
 const {load} = require('./internals');
 const {reportFor} = require('./report');
