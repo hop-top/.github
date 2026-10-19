@@ -37,3 +37,22 @@ jobs:
 
       - name: Tests for the workflows' inline check scripts
         run: make test-workflows
+
+  release-please-target:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/release-please-target/package-lock.json
+
+      - name: Tests for scripts/release-please-target
+        run: make test-release-please-target
+
+      - name: Mutation check for scripts/release-please-target
+        run: make mutate-release-please-target
