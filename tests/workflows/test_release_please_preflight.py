@@ -74,7 +74,7 @@ class PreflightFixture:
         self.write(MANIFEST, json.dumps({p: "1.0.0" for p in packages}))
 
     def run_step(self, single_lang: str = "true",
-                 go_only: str = "false") -> tuple[int, list[str]]:
+                 go_only: str = "false", branch: str = "") -> tuple[int, list[str]]:
         summary = self.tmp / "summary.md"
         summary.write_text("", encoding="utf-8")
         env = {
@@ -90,6 +90,7 @@ class PreflightFixture:
             "GO_ONLY": go_only,
             "GH_TOKEN": "",
             "REPO": "example/example",
+            "BRANCH": branch,
             "GITHUB_STEP_SUMMARY": str(summary),
             "GITHUB_OUTPUT": str(self.tmp / "output"),
         }
@@ -455,6 +456,40 @@ class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
             code, lines = self.run_step()
             self.assertEqual(code, 1, line)
             self.assertLine(lines, f"[BREAK] {line}")
+
+    def test_records_are_checked_on_the_prerelease_branch_only(self) -> None:
+        # main carries next's config as merged: a promotion for the line it
+        # just cut, an open line it reached; inert there.
+        config = self.kit()
+        config["packages"]["."]["x-channel"] = {"line": "0.6.0", "channel": "rc"}
+        config["packages"]["incubator/qmochi"]["x-open-line"] = "0.2.0"
+        seeds = {".": "0.6.0", "sdk/ts": "0.6.0", "incubator/qmochi": "0.2.0"}
+        self.setup_repo(config, seeds=seeds)
+        for branch in ("main", "release/0.6"):
+            code, lines = self.run_step(branch=branch)
+            self.assertEqual(code, 0, "\n".join(lines))
+            self.assertLine(lines, f"[INFO]  branch {branch} is not a prerelease branch (next): x-channel / x-open-line "
+                                   "records are inert here and not checked against the manifest")
+        for branch in ("next", ""):
+            code, lines = self.run_step(branch=branch)
+            self.assertEqual(code, 1, branch)
+            self.assertLine(lines, "[BREAK] package . x-channel is for line 0.6.0, but the manifest has stable "
+                                   "'0.6.0': no open line to promote")
+            self.assertLine(lines, "[BREAK] package incubator/qmochi x-open-line 0.2.0 is already reached (manifest 0.2.0)")
+        # target-context names the prerelease branches
+        config["plugins"][0] = {"type": "target-context", "prereleaseBranches": ["develop"]}
+        self.setup_repo(config, seeds=seeds)
+        self.assertEqual(self.run_step(branch="next")[0], 0)
+        self.assertEqual(self.run_step(branch="develop")[0], 1)
+
+    def test_record_shapes_are_checked_on_every_branch(self) -> None:
+        config = self.kit()
+        config["packages"]["."]["x-channel"] = {"line": "0.6", "channel": "rc"}
+        self.setup_repo(config, seeds={".": "0.6.0", "sdk/ts": "0.6.0", "incubator/qmochi": "0.2.0"})
+        code, lines = self.run_step(branch="main")
+        self.assertEqual(code, 1)
+        self.assertLine(lines, '[BREAK] package . x-channel {"line":"0.6","channel":"rc"}: '
+                               'expected {"line": "x.y.z", "channel": "beta" | "rc"}')
 
     def test_records_on_a_non_target_package_fail(self) -> None:
         config = self.kit()
