@@ -2,7 +2,8 @@
 // The manual steps of target versioning, as config edits: promote a line's
 // channel (x-channel) and open a line (x-open-line), for packages picked by
 // path, by component, or by conditional-linked-versions group. All or
-// nothing: one refused package and nothing is written.
+// nothing: one refused package and nothing is written. Once the edit lands
+// on the prerelease branch, that run cuts the release PR for it.
 const rules = require('./rules');
 const {setPackageKey, removePackageKeys, parseConfig} = require('./config-edit');
 
@@ -39,6 +40,7 @@ function resolve(config, {packages = [], groups = []}) {
 
 const nameOf = (config, p) => `${(config.packages[p] || {}).component || p} (${p})`;
 const rank = ch => rules.CHANNELS.indexOf(ch);
+const CUT = 'its release PR is cut on the next run on the prerelease branch';
 
 function channelEdit(config, p, cur, value) {
   const name = nameOf(config, p);
@@ -51,20 +53,25 @@ function channelEdit(config, p, cur, value) {
   } catch (e) {
     return {problem: `${name}: ${e.message}`};
   }
+  // The step is measured from the channel the package is released on (the
+  // manifest), not from a promotion recorded but not released yet.
   const own = cur.pre.split('.')[0];
-  const pending = rec && rules.cmpCore(rec.line, target) === 0 ? rec.channel : undefined;
-  const now = pending && rank(pending) > rank(own) ? pending : own;
-  if (value === now) return {problem: `${name}: already on ${value} for ${line}${pending === value && own !== value ? ' (applied on its next release)' : ''}`};
-  if (rank(value) < rank(now)) return {problem: `${name}: on ${now} for ${line}: channels never move backwards`};
-  if (STEP[now] !== value) return {problem: `${name}: ${now} -> ${value} skips ${STEP[now]}: channels move alpha -> beta -> rc`};
-  return {key: 'x-channel', value: {line, channel: value}, change: `${name}: x-channel {"line": "${line}", "channel": "${value}"} (${rules.fmt(cur)} -> ${line}-${value}.0 on its next release)`};
+  const pending = rec && rules.cmpCore(rec.line, target) === 0 && rank(rec.channel) > rank(own) ? rec.channel : undefined;
+  if (value === own) return {problem: `${name}: already on ${value} for ${line}`};
+  if (value === pending) return {problem: `${name}: already promoted to ${value} for ${line} (${CUT})`};
+  if (rank(value) < rank(own)) return {problem: `${name}: on ${own} for ${line}: channels never move backwards`};
+  if (STEP[own] !== value) {
+    const wait = pending ? ` (the ${pending} promotion is not released yet: merge its release PR first)` : '';
+    return {problem: `${name}: ${own} -> ${value} skips ${STEP[own]}: channels move alpha -> beta -> rc${wait}`};
+  }
+  return {key: 'x-channel', value: {line, channel: value}, change: `${name}: x-channel {"line": "${line}", "channel": "${value}"} (${rules.fmt(cur)} -> ${line}-${value}.0: ${CUT})`};
 }
 
 function openLineEdit(config, p, cur, open, value) {
   const name = nameOf(config, p);
   const reach = cur.pre ? rules.core(cur) : cur;
   if (rules.cmpCore(reach, open) >= 0) return {problem: `${name}: at ${rules.fmt(cur)}: line ${value} already reached`};
-  return {key: 'x-open-line', value, change: `${name}: x-open-line "${value}" (${rules.fmt(cur)} -> ${value}-alpha.0 on its next release, unless a change requires more)`};
+  return {key: 'x-open-line', value, change: `${name}: x-open-line "${value}" (${rules.fmt(cur)} -> ${value}-alpha.0, unless a change requires more: ${CUT})`};
 }
 
 /**
