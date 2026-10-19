@@ -419,6 +419,9 @@ jobs:
           GO_ONLY: ${{ steps.detect.outputs.go_only }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          # The branch the config is checked for: a pull request's base, or
+          # the pushed / dispatched branch (target versioning's records).
+          BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
           set -uo pipefail
 
@@ -606,9 +609,12 @@ jobs:
           # `versioning-extension: true`. Needs the target-context plugin (first),
           # well-formed conditional-linked-versions groups of target packages,
           # prerelease-type alpha.0 (every line starts on alpha), no release-as,
-          # the owner bump table, and records (x-channel: a channel promotion for
-          # the package's current line; x-open-line: a line to open) that match
-          # the manifest.
+          # the owner bump table, and well-formed records (x-channel: a channel
+          # promotion for the package's current line; x-open-line: a line to
+          # open). The records are checked against the manifest only for a
+          # prerelease branch (target-context prereleaseBranches, default next):
+          # on a stable or maintenance branch they are inert (main carries
+          # next's config as merged) and the runner leaves them alone.
           TARGETS=""
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             TARGETS=$(jq -r '.versioning as $top | [(.packages // {}) | to_entries[] | select((.value.versioning // $top) == "target") | .key] | sort[]' "$CONFIG_PATH" 2>/dev/null)
@@ -639,6 +645,17 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             TARGET_LIST=$(echo "$TARGETS" | paste -sd ' ' -)
             TARGETS_JSON=$(echo "$TARGETS" | jq -R . | jq -sc .)
+            # Records against the manifest: on a prerelease branch, or when the
+            # branch is unknown.
+            PRE_BRANCHES=$(jq -r '([(.plugins // [])[] | objects | select(.type == "target-context")][0] // {})
+              | (.prereleaseBranches // ["next"]) | if type == "array" then .[] | strings else empty end' "$CONFIG_PATH" 2>/dev/null)
+            RECORDS_LIVE=1
+            if [[ -n "${BRANCH:-}" ]] && ! grep -Fxq -- "$BRANCH" <<<"$PRE_BRANCHES"; then
+              RECORDS_LIVE=0
+              if jq -e '[(.packages // {})[] | select(has("x-channel") or has("x-open-line"))] | length > 0' "$CONFIG_PATH" >/dev/null 2>&1; then
+                info "branch $BRANCH is not a prerelease branch ($(echo "$PRE_BRANCHES" | paste -sd ' ' -)): x-channel / x-open-line records are inert here and not checked against the manifest"
+              fi
+            fi
             PLUGIN_TYPES='[(.plugins // [])[] | if type == "string" then . else (.type // "") end]'
             CTX_AT=$(jq -r "$PLUGIN_TYPES | index(\"target-context\") // -1" "$CONFIG_PATH")
             GROUP_AT=$(jq -r "$PLUGIN_TYPES | index(\"conditional-linked-versions\") // -1" "$CONFIG_PATH")
@@ -709,6 +726,8 @@ jobs:
                 if [[ -z "$XL" || -z "$XCH" ]]; then
                   fail "package $path x-channel $XC: expected {\"line\": \"x.y.z\", \"channel\": \"beta\" | \"rc\"}"
                   BAD=1
+                elif [[ $RECORDS_LIVE -eq 0 ]]; then
+                  :
                 elif [[ "$SEED" != *-* ]]; then
                   fail "package $path x-channel is for line $XL, but the manifest has stable '${SEED:-none}': no open line to promote"
                   fixhint "remove x-channel (bin/promote.js clear channel --package $path); a new line starts on alpha"
@@ -738,7 +757,7 @@ jobs:
                 if [[ -z "$XOL" ]]; then
                   fail "package $path x-open-line $XO: expected \"x.y.z\""
                   BAD=1
-                elif [[ -n "$SEED" && "$(core_cmp "$SEED" "$XOL")" != "-1" ]]; then
+                elif [[ $RECORDS_LIVE -eq 1 && -n "$SEED" && "$(core_cmp "$SEED" "$XOL")" != "-1" ]]; then
                   fail "package $path x-open-line $XOL is already reached (manifest $SEED)"
                   fixhint "remove x-open-line (bin/promote.js clear open-line --package $path)"
                   BAD=1
