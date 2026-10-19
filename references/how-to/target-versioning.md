@@ -135,7 +135,7 @@ holding a promotion that outlives its line.
 |---|---|
 | Manifest at `x.y.z-rc.N` (next promoted into main) | `x.y.z`, even with no commit since the merge |
 | … and a commit since requires more than `x.y.z` (`1.3.0-rc.1`, then a `feat!` → `2.0.0`) | **blocked**: stable must equal what the rc previewed; land the change on `next`, where it opens a new line |
-| … and `x.y.z` is already released (`next` at `0.6.1-rc.2`, `main` hotfixed `0.6.1`, then `next` merged) | **blocked** (`rc-released`): re-line on `next` (a change there, or `x-open-line 0.6.2`, opens the next line), promote that to rc and merge again |
+| … and `x.y.z` is already released (`next` at `0.6.1-rc.2`, `main` hotfixed `0.6.1`, then `next` merged) | **blocked** (`rc-released`): re-line on `next` (a change there, or `x-open-line 0.6.2`, opens the next line), promote that line via beta to rc and merge again |
 | Manifest stable, only fixes since (no `feat`, nothing breaking) | patch: `0.6.0` + `fix` → `0.6.1`, `1.2.0` + `fix` → `1.2.1` |
 | Manifest stable, a `feat` or breaking change since | **blocked**: it would ship unpreviewed; land it on `next` |
 | Manifest at an alpha or beta (an experimental SDK, a package still previewing) | **skipped** with a notice: no PR, no failure |
@@ -388,7 +388,7 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | notice `… is not an rc: skipped` (not a failure) | `main` carries an alpha/beta of that package | promote it to rc on `next` and merge, or leave it for a later merge |
 | `changes since x.y.z-rc.N require …, more than the x.y.z it previews` | a change on `main` needs a bigger version than the rc | revert it on `main` and land it on `next` (a new line there) |
 | `feat since stable x.y.z would ship … unpreviewed` (or `breaking change since …`) | a feature or breaking change landed on `main` for a package already stable there | revert it on `main` and land it on `next`; `main` takes fixes only |
-| `x.y.z-rc.N previews x.y.z, already released …: re-line on next` | `main` released `x.y.z` (a hotfix) while `next` previewed it, then `next` merged | on `next`, land a change or `promote.js open-line x.y.(z+1)`, promote that line to rc, merge again |
+| `x.y.z-rc.N previews x.y.z, already released …: re-line on next` | `main` released `x.y.z` (a hotfix) while `next` previewed it, then `next` merged | on `next`, land a change or `promote.js open-line x.y.(z+1) --package <path>`, promote that line via beta to rc, merge again |
 | `linked at x.0.0 …, but … is at …: a linked release is cut only when every member is at an rc` | a linked major reached `main` with a member not at rc (experimental ones included) | do what the message says on `next` (`promote kit-py via beta to rc …`), then merge again |
 | `x-channel … skips a channel from …` | a promotion two steps ahead (hand edit) | record the next channel only (`promote.js channel`) |
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
