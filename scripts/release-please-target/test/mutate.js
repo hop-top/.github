@@ -142,6 +142,15 @@ const MUTATIONS = [
   {id: 'M41', what: 'a line moved past a target released meanwhile (main hotfix) keeps counting',
     file: 'lib/rules.js', from: "    const v = bumpStable(S, summary);\n    return decision(atChannel(v, FIRST), 'line',", to: "    const v = bumpStable(S, summary);\n    return decision({...v, pre: bumpCounter(C.pre)}, 'line',",
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M42', what: 'a package never released is opened at its initial-version on every branch (no unreleased check)',
+    file: 'lib/install.js', from: 'const first = latestRelease ? undefined : rules.unreleased(ctx);', to: 'const first = undefined;',
+    tests: ['test/scenarios.test.js', 'test/runner.test.js']},
+  {id: 'M43', what: 'a package never released is opened at its initial-version on a stable branch',
+    file: 'lib/rules.js', from: "if (kind === 'stable') {\n    return skipped('unreleased',", to: "if (false) {\n    return skipped('unreleased',",
+    tests: ['test/rules.test.js', 'test/scenarios.test.js', 'test/runner.test.js']},
+  {id: 'M44', what: 'a package never released is opened at its initial-version on a maintenance branch',
+    file: 'lib/rules.js', from: "if (kind === 'maintenance') {\n    return skipped('unreleased',", to: "if (false) {\n    return skipped('unreleased',",
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
 ];
 
 function copy() {
