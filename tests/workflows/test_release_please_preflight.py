@@ -264,6 +264,168 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
                                "— PRs won't trigger downstream workflows")
 
 
+class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
+    """Check 4b (`versioning: "target"`) and the target-aware parts of
+    checks 4 and 5."""
+
+    CALLER = textwrap.dedent("""\
+        name: release-please
+        on:
+          push:
+            branches: [main, next]
+          workflow_dispatch: {}
+        permissions:
+          contents: read
+        jobs:
+          release-please:
+            uses: hop-top/.github/.github/workflows/release-please-on-push.yml@v0
+            secrets:
+              RELEASE_BOT_APP_ID: ${{ secrets.RELEASE_BOT_APP_ID }}
+              RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+            with:
+              versioning-extension: true
+        """)
+
+    TARGET = {"release-type": "go", "prerelease": True, "prerelease-type": "alpha.0",
+              "versioning": "target", "bump-minor-pre-major": True}
+
+    def kit(self, **top) -> dict:
+        packages = {
+            ".": {"component": "kit", "exclude-paths": ["sdk", "incubator"], **self.TARGET},
+            "sdk/ts": {"component": "kit-ts", **self.TARGET},
+            "incubator/qmochi": {"component": "qmochi", **self.TARGET},
+        }
+        return {"plugins": [{"type": "target-context"},
+                            {"type": "conditional-linked-versions", "groupName": "kit",
+                             "components": ["kit", "kit-ts"]}],
+                "packages": packages, **top}
+
+    def setup_repo(self, config: dict, seeds: dict | None = None, caller: str | None = None) -> None:
+        self.write(CONFIG, json.dumps(config))
+        self.write(MANIFEST, json.dumps(seeds or {p: "0.5.0-alpha.3" for p in config["packages"]}))
+        self.write(".github/workflows/release-please.yml", self.CALLER if caller is None else caller)
+
+    def breaks(self, lines: list[str]) -> list[str]:
+        return [x for x in lines if x.startswith("[BREAK]")]
+
+    def test_kit_shaped_config_passes(self) -> None:
+        self.setup_repo(self.kit())
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.breaks(lines), [])
+        self.assertLine(lines, "[OK]    package .: prerelease four-piece combo complete")
+        self.assertLine(lines, "[OK]    plugins: target-context present, ahead of any conditional-linked-versions")
+        self.assertLine(lines, "[OK]    target-context options and 1 conditional-linked-versions group(s) well-formed")
+        self.assertLine(lines, "[OK]    package sdk/ts: versioning target, channel alpha.0")
+        self.assertLine(lines, "[OK]    release-please.yml runs release-please-on-push with versioning-extension: true")
+
+    def test_stable_seed_is_fine_for_a_target_package(self) -> None:
+        # On a stable branch the manifest carries the promoted stable.
+        self.setup_repo(self.kit(), seeds={".": "0.6.0", "sdk/ts": "0.6.0", "incubator/qmochi": "0.2.0-alpha.1"})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    package .: manifest seed '0.6.0' (versioning target: "
+                               "the branch decides stable or prerelease)")
+
+    def test_top_level_versioning_target_counts(self) -> None:
+        config = self.kit()
+        for pkg in config["packages"].values():
+            del pkg["versioning"]
+        config["versioning"] = "target"
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    package incubator/qmochi: versioning target, channel alpha.0")
+
+    def test_missing_target_context_fails(self) -> None:
+        config = self.kit()
+        config["plugins"] = config["plugins"][1:]
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1)
+        self.assertLine(lines, "[BREAK] packages . incubator/qmochi sdk/ts use versioning target "
+                               "but plugins has no target-context")
+
+    def test_target_context_after_a_group_fails(self) -> None:
+        config = self.kit()
+        config["plugins"].reverse()
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1)
+        self.assertLine(lines, "[BREAK] plugins lists conditional-linked-versions before target-context")
+
+    def test_bad_groups_fail(self) -> None:
+        config = self.kit()
+        config["packages"]["sdk/py"] = {"component": "kit-py", "release-type": "python"}
+        config["plugins"] += [
+            {"type": "conditional-linked-versions", "groupName": "sdk", "components": ["kit-ts", "kit-py", "nope"]},
+            {"type": "conditional-linked-versions", "components": ["kit"]},
+            {"type": "conditional-linked-versions", "groupName": "empty", "components": []},
+            {"type": "linked-versions", "groupName": "old", "components": ["qmochi"]},
+        ]
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1)
+        for line in ("group sdk: component kit-py (sdk/py) does not use versioning target",
+                     "group sdk: component nope is not a configured component",
+                     "a conditional-linked-versions entry has no groupName",
+                     "group empty: components must be a non-empty array",
+                     "component kit-ts is in more than one conditional-linked-versions group",
+                     "component qmochi uses versioning target but sits in a linked-versions group"):
+            self.assertLine(lines, f"[BREAK] {line}")
+
+    def test_bad_target_context_options_fail(self) -> None:
+        config = self.kit()
+        config["plugins"][0] = {"type": "target-context", "stableBranches": ["main", "next"],
+                                "prereleaseBranches": "next", "maintenanceBranchPattern": 3}
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1)
+        self.assertLine(lines, "[BREAK] target-context prereleaseBranches must be an array of branch names")
+        self.assertLine(lines, "[BREAK] target-context maintenanceBranchPattern must be a string (a regular expression)")
+        config["plugins"][0] = {"type": "target-context", "stableBranches": ["main", "next"]}
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1)
+        self.assertLine(lines, "[BREAK] target-context: branch next is in both stableBranches and prereleaseBranches")
+
+    def test_package_constraints(self) -> None:
+        config = self.kit()
+        config["packages"]["."]["prerelease-type"] = "alpha"
+        config["packages"]["sdk/ts"]["release-as"] = "0.6.0-alpha.0"
+        config["packages"]["incubator/qmochi"]["bump-patch-for-minor-pre-major"] = True
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1)
+        self.assertLine(lines, "[BREAK] package . prerelease-type 'alpha' is not a target channel")
+        self.assertLine(lines, "[BREAK] package sdk/ts sets release-as '0.6.0-alpha.0' — target versioning picks the version")
+        self.assertLine(lines, "[BREAK] package incubator/qmochi: bump-minor-pre-major false / "
+                               "bump-patch-for-minor-pre-major true contradict target versioning "
+                               "(pre-1.0 breaking or feat -> minor)")
+
+    def test_caller_without_the_extension_fails(self) -> None:
+        for caller in (PreflightExtraFilesTests.CALLER,
+                       self.CALLER.replace("versioning-extension: true", "versioning-extension: false"),
+                       self.CALLER.replace("      versioning-extension: true", "      # versioning-extension: true")):
+            self.setup_repo(self.kit(), caller=caller)
+            code, lines = self.run_step()
+            self.assertEqual(code, 1, caller)
+            self.assertLine(lines, "[BREAK] packages . incubator/qmochi sdk/ts use versioning target, but "
+                                   "release-please.yml does not run release-please-on-push with "
+                                   "versioning-extension: true (release-please-action has no target versioning)")
+
+    def test_stock_prerelease_config_is_untouched(self) -> None:
+        config = self.kit()
+        for pkg in config["packages"].values():
+            pkg["versioning"] = "prerelease"
+        config["plugins"] = []
+        self.setup_repo(config, caller=PreflightExtraFilesTests.CALLER)
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertNotIn("### target versioning", lines)
+        self.assertNoLine(lines, "[BREAK]")
+
+
 class PreflightPublishWorkflowTests(PreflightFixture, unittest.TestCase):
     """Whether a missing publish.yml is a misconfiguration.
 

@@ -567,6 +567,8 @@ jobs:
           fi
 
           # ---------- Check 4: prerelease four-piece combo ----------
+          # `versioning` is `prerelease` (release-please's counter strategy) or
+          # `target` (hop-top/.github's extension, Check 4b).
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             {
               echo ""
@@ -576,11 +578,11 @@ jobs:
               PRERELEASE=$(jq -r --arg p "$path" '.packages[$p].prerelease // false' "$CONFIG_PATH")
               if [[ "$PRERELEASE" == "true" ]]; then
                 PR_TYPE=$(jq -r --arg p "$path" '.packages[$p]["prerelease-type"] // empty' "$CONFIG_PATH")
-                VERSIONING=$(jq -r --arg p "$path" '.packages[$p].versioning // empty' "$CONFIG_PATH")
+                VERSIONING=$(jq -r --arg p "$path" '.packages[$p].versioning // .versioning // empty' "$CONFIG_PATH")
                 BUMP_MINOR=$(jq -r --arg p "$path" '.packages[$p]["bump-minor-pre-major"] // false' "$CONFIG_PATH")
                 MISSING=""
                 [[ -z "$PR_TYPE" ]] && MISSING="$MISSING prerelease-type"
-                [[ "$VERSIONING" != "prerelease" ]] && MISSING="$MISSING versioning"
+                [[ "$VERSIONING" != "prerelease" && "$VERSIONING" != "target" ]] && MISSING="$MISSING versioning"
                 [[ "$BUMP_MINOR" != "true" ]] && MISSING="$MISSING bump-minor-pre-major"
                 if [[ -n "$MISSING" ]]; then
                   fail "package $path is prerelease but missing:$MISSING"
@@ -596,6 +598,110 @@ jobs:
                 info "package $path: stable channel (prerelease: false / unset)"
               fi
             done
+          fi
+
+          # ---------- Check 4b: target versioning ----------
+          # `versioning: "target"` is hop-top/.github's release-please extension
+          # (scripts/release-please-target), run by release-please-on-push with
+          # `versioning-extension: true`. Needs the target-context plugin (first),
+          # well-formed conditional-linked-versions groups of target packages, a
+          # target channel, no release-as, and the owner bump table.
+          TARGETS=""
+          if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            TARGETS=$(jq -r '.versioning as $top | [(.packages // {}) | to_entries[] | select((.value.versioning // $top) == "target") | .key] | sort[]' "$CONFIG_PATH" 2>/dev/null)
+          fi
+          if [[ -n "$TARGETS" ]]; then
+            {
+              echo ""
+              echo "### target versioning"
+            } >> "$GITHUB_STEP_SUMMARY"
+            TARGET_LIST=$(echo "$TARGETS" | paste -sd ' ' -)
+            TARGETS_JSON=$(echo "$TARGETS" | jq -R . | jq -sc .)
+            PLUGIN_TYPES='[(.plugins // [])[] | if type == "string" then . else (.type // "") end]'
+            CTX_AT=$(jq -r "$PLUGIN_TYPES | index(\"target-context\") // -1" "$CONFIG_PATH")
+            GROUP_AT=$(jq -r "$PLUGIN_TYPES | index(\"conditional-linked-versions\") // -1" "$CONFIG_PATH")
+            if [[ "$CTX_AT" == "-1" ]]; then
+              fail "packages $TARGET_LIST use versioning target but plugins has no target-context"
+              fixhint "add {\"type\": \"target-context\"} to plugins in $CONFIG_PATH, before any conditional-linked-versions"
+            elif [[ "$GROUP_AT" != "-1" && "$GROUP_AT" -lt "$CTX_AT" ]]; then
+              fail "plugins lists conditional-linked-versions before target-context"
+              fixhint "move {\"type\": \"target-context\"} ahead of every conditional-linked-versions in $CONFIG_PATH"
+            else
+              ok "plugins: target-context present, ahead of any conditional-linked-versions"
+            fi
+
+            # target-context options, then the groups
+            PROBLEMS=$(jq -r --argjson targets "$TARGETS_JSON" '
+              ([(.plugins // [])[] | objects | select(.type == "target-context")][0] // {}) as $ctx
+              | ((.packages // {}) | to_entries | map(select(.value.component != null) | {key: .value.component, value: .key}) | from_entries) as $pathOf
+              | [(.plugins // [])[] | objects | select(.type == "conditional-linked-versions")] as $groups
+              | ( ($ctx | ("stableBranches", "prereleaseBranches") as $k
+                    | select(has($k)) | select((.[$k] | type) != "array" or any(.[$k][]; type != "string"))
+                    | "target-context \($k) must be an array of branch names"),
+                  ($ctx | select(has("maintenanceBranchPattern")) | select((.maintenanceBranchPattern | type) != "string")
+                    | "target-context maintenanceBranchPattern must be a string (a regular expression)"),
+                  ($ctx | (.stableBranches // ["main"]) as $s | (.prereleaseBranches // ["next"]) as $p
+                    | select(($s | type) == "array" and ($p | type) == "array")
+                    | ($s - ($s - $p))[] | "target-context: branch \(.) is in both stableBranches and prereleaseBranches"),
+                  ($groups[]
+                    | if (.groupName | type) != "string" or .groupName == "" then "a conditional-linked-versions entry has no groupName"
+                      elif (.components | type) != "array" or (.components | length) == 0 then "group \(.groupName): components must be a non-empty array"
+                      else .groupName as $g | .components[] | . as $c | $pathOf[$c] as $path
+                        | if $path == null then "group \($g): component \($c) is not a configured component"
+                          elif ($targets | index($path)) == null then "group \($g): component \($c) (\($path)) does not use versioning target"
+                          else empty end
+                      end),
+                  ([$groups[] | select((.components | type) == "array") | .components[]] | group_by(.)[] | select(length > 1)
+                    | "component \(.[0]) is in more than one conditional-linked-versions group"),
+                  ([(.plugins // [])[] | objects | select(.type == "linked-versions") | (.components // [])[]] | unique[]
+                    | . as $c | $pathOf[$c] as $path | select($path != null and ($targets | index($path)) != null)
+                    | "component \($c) uses versioning target but sits in a linked-versions group")
+                )' "$CONFIG_PATH" 2>&1)
+            if [[ -n "$PROBLEMS" ]]; then
+              while IFS= read -r problem; do
+                fail "$problem"
+              done <<<"$PROBLEMS"
+              fixhint "see references/how-to/target-versioning.md#config for the plugin shapes"
+            else
+              GROUPS_N=$(jq -r '[(.plugins // [])[] | objects | select(.type == "conditional-linked-versions")] | length' "$CONFIG_PATH")
+              ok "target-context options and $GROUPS_N conditional-linked-versions group(s) well-formed"
+            fi
+
+            for path in $TARGETS; do
+              PT=$(jq -r --arg p "$path" '.packages[$p]["prerelease-type"] // .["prerelease-type"] // empty' "$CONFIG_PATH")
+              RA=$(jq -r --arg p "$path" '.packages[$p]["release-as"] // .["release-as"] // empty' "$CONFIG_PATH")
+              BMPM=$(jq -r --arg p "$path" 'if (.packages[$p] | has("bump-minor-pre-major")) then .packages[$p]["bump-minor-pre-major"] else .["bump-minor-pre-major"] end | tostring' "$CONFIG_PATH")
+              BPMPM=$(jq -r --arg p "$path" 'if (.packages[$p] | has("bump-patch-for-minor-pre-major")) then .packages[$p]["bump-patch-for-minor-pre-major"] else .["bump-patch-for-minor-pre-major"] end | tostring' "$CONFIG_PATH")
+              BAD=0
+              if [[ -n "$PT" && ! "$PT" =~ ^(alpha|beta|rc)\.0$ ]]; then
+                fail "package $path prerelease-type '$PT' is not a target channel"
+                fixhint "use alpha.0, beta.0 or rc.0 (every target channel starts at .0)"
+                BAD=1
+              fi
+              if [[ -n "$RA" ]]; then
+                fail "package $path sets release-as '$RA' — target versioning picks the version"
+                fixhint "remove release-as from $CONFIG_PATH (references/how-to/target-versioning.md#migrate)"
+                BAD=1
+              fi
+              if [[ "$BMPM" == "false" || "$BPMPM" == "true" ]]; then
+                fail "package $path: bump-minor-pre-major false / bump-patch-for-minor-pre-major true contradict target versioning (pre-1.0 breaking or feat -> minor)"
+                fixhint "set bump-minor-pre-major: true and drop bump-patch-for-minor-pre-major"
+                BAD=1
+              fi
+              if [[ $BAD -eq 0 ]]; then
+                ok "package $path: versioning target, channel ${PT:-alpha.0}"
+              fi
+            done
+
+            if [[ -f "$RP_PATH" ]]; then
+              if grep -Eq "uses:[[:space:]]*hop-top/\.github/\.github/workflows/release-please-on-push\.yml@" "$RP_PATH" \
+                && grep -Eq "^[[:space:]]*versioning-extension:[[:space:]]*true([[:space:]]|$)" "$RP_PATH"; then
+                ok "release-please.yml runs release-please-on-push with versioning-extension: true"
+              else
+                fail "packages $TARGET_LIST use versioning target, but release-please.yml does not run release-please-on-push with versioning-extension: true (release-please-action has no target versioning)"
+                fixhint "call hop-top/.github/.github/workflows/release-please-on-push.yml@v0 with 'versioning-extension: true'"
+              fi
+            fi
           fi
 
           # ---------- Check 5: manifest seed shape vs prerelease config ----------
@@ -615,7 +721,10 @@ jobs:
                   fixhint "add \"$path\": \"<version>\" to $MANIFEST_PATH"
                   continue
                 fi
-                if [[ "$PRERELEASE" == "true" ]]; then
+                VERSIONING=$(jq -r --arg p "$path" '.packages[$p].versioning // .versioning // empty' "$CONFIG_PATH")
+                if [[ "$VERSIONING" == "target" ]]; then
+                  ok "package $path: manifest seed '$SEED' (versioning target: the branch decides stable or prerelease)"
+                elif [[ "$PRERELEASE" == "true" ]]; then
                   if [[ "$SEED" == *-* ]]; then
                     ok "package $path: manifest seed '$SEED' is prerelease-shaped"
                   else
