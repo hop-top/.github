@@ -26,16 +26,18 @@ const CONFIG = '.github/release-please-config.json';
 const MANIFEST = '.github/.release-please-manifest.json';
 
 /**
- * config({versioning, prereleaseType, plugins, groups, roles, extra})
+ * config({versioning, groups, roles, packages, records})
  *   versioning  'target' (default) | 'prerelease' (stock release-please)
  *   groups      [[name, components]] conditional-linked-versions groups
+ *   packages    {path: extra package keys}
+ *   records     {component: {'x-channel': {line, channel}, 'x-open-line': 'x.y.z'}}
  */
-function config({versioning = 'target', prereleaseType = 'alpha.0', groups = [['kit', FAMILY]], roles = {}, packages: pkgExtra = {}} = {}) {
+function config({versioning = 'target', groups = [['kit', FAMILY]], roles = {}, packages: pkgExtra = {}, records = {}} = {}) {
   const packages = {};
   for (const [p, c] of Object.entries(PKGS)) {
     packages[p] = {
       'release-type': 'go', ...c, 'changelog-path': 'CHANGELOG.md', 'bump-minor-pre-major': true,
-      prerelease: true, 'prerelease-type': prereleaseType, versioning, ...(pkgExtra[p] || {}),
+      prerelease: true, 'prerelease-type': 'alpha.0', versioning, ...(pkgExtra[p] || {}), ...(records[c.component] || {}),
     };
   }
   const plugins = versioning === 'target'

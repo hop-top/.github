@@ -3,6 +3,7 @@
 // main() (GitHub.create with the target branch, createReleases() then
 // createPullRequests(), the same outputs), on a release-please instance with
 // the target extension installed, plus:
+//   - hand the extension the raw config (release-please drops x-* keys)
 //   - fail fast on config the extension cannot honour (before any write)
 //   - rule 6: a stable release is never created as a GitHub prerelease
 //   - rule 7: close release PRs a new proposal superseded
@@ -26,7 +27,8 @@ const os = require('os');
 const path = require('path');
 const {install, isTarget} = require('./install');
 const {load} = require('./internals');
-const {reportFor} = require('./report');
+const {reportFor, attachConfig} = require('./report');
+const rules = require('./rules');
 
 const DEFAULT_CONFIG_FILE = 'release-please-config.json';
 const DEFAULT_MANIFEST_FILE = '.release-please-manifest.json';
@@ -103,10 +105,26 @@ async function loadManifest(rp, github, inputs) {
 const pluginType = p => (typeof p === 'object' && p ? p.type : p);
 
 // Config the extension cannot honour: refuse before anything is written.
-async function checkConfig(manifest, configFile) {
+async function checkConfig(manifest, configFile, raw) {
   const problems = [];
   const strategies = await manifest.getStrategiesByPath();
   const target = Object.keys(manifest.repositoryConfig).filter(p => isTarget(strategies[p]));
+  for (const p of Object.keys(manifest.repositoryConfig)) {
+    const pkg = (raw.packages || {})[p] || {};
+    for (const key of ['x-channel', 'x-open-line']) {
+      if (pkg[key] === undefined) continue;
+      if (!target.includes(p)) {
+        problems.push(`${configFile}: package ${p} has ${key} but does not use versioning "target"`);
+        continue;
+      }
+      try {
+        if (key === 'x-channel') rules.promotionOf(pkg[key]);
+        else rules.openLineOf(pkg[key]);
+      } catch (e) {
+        problems.push(`${configFile}: package ${p}: ${e.message}`);
+      }
+    }
+  }
   if (!target.length) return problems;
   const types = (manifest.plugins || []).map(p => p.constructor && p.constructor.name);
   const ctxAt = types.indexOf('TargetContext');
@@ -114,7 +132,11 @@ async function checkConfig(manifest, configFile) {
   const linkedAt = types.indexOf('ConditionalLinkedVersions');
   if (ctxAt >= 0 && linkedAt >= 0 && linkedAt < ctxAt) problems.push(`${configFile}: "target-context" must be listed before "conditional-linked-versions"`);
   for (const p of target) {
-    if (manifest.repositoryConfig[p].releaseAs) problems.push(`${configFile}: package ${p} sets release-as; target versioning picks the version (remove it)`);
+    const c = manifest.repositoryConfig[p];
+    if (c.releaseAs) problems.push(`${configFile}: package ${p} sets release-as; target versioning picks the version (remove it)`);
+    if (c.prereleaseType !== undefined && !/^alpha(\.0)?$/.test(String(c.prereleaseType))) {
+      problems.push(`${configFile}: package ${p} prerelease-type '${c.prereleaseType}': every line starts on alpha.0; promote a line with x-channel (bin/promote.js)`);
+    }
   }
   for (const [i, plugin] of (manifest.plugins || []).entries()) {
     if (types[i] !== 'LinkedVersions' || !plugin.components) continue;
@@ -252,7 +274,10 @@ async function run({env = process.env, rpRoot = rpRootDefault(), github, logger 
 
   const prepare = async () => {
     const m = await loadManifest(rp, github, inputs);
-    const problems = await checkConfig(m, inputs.configFile);
+    // release-please drops keys it does not know; the records come from the raw file.
+    const raw = await github.getFileJson(inputs.configFile, github.repository.defaultBranch);
+    attachConfig(github, inputs.configFile, raw);
+    const problems = await checkConfig(m, inputs.configFile, raw);
     if (problems.length) {
       for (const p of problems) logger.error(`::error::${p}`);
       return undefined;

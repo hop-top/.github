@@ -69,7 +69,7 @@ test('tag, branch and pull request body parsing', () => {
 
 async function strategy(extra = {}) {
   const github = await rp.GitHub.create({owner: 'o', repo: 'r', token: 'x', defaultBranch: 'next', fetch: offline});
-  return I.buildStrategy({github, releaseType: 'simple', component: 'c', versioning: 'target', prereleaseType: 'beta.0', prerelease: true, ...extra});
+  return I.buildStrategy({github, releaseType: 'simple', component: 'c', versioning: 'target', prereleaseType: 'alpha.0', prerelease: true, ...extra});
 }
 const latest = v => ({tag: new (require(path.join(RP, 'build/src/util/tag-name')).TagName)(I.Version.parse(v), 'c'), sha: 'abc', notes: ''});
 const commits = msgs => I.parseConventionalCommits(msgs.map((m, i) => ({sha: `s${i}`, message: m, files: []})));
@@ -78,13 +78,12 @@ test('the target strategy reaches strategy.versioningStrategy with its options',
   const s = await strategy();
   assert.ok(s.versioningStrategy, 'strategy.versioningStrategy');
   assert.equal(typeof s.versioningStrategy.bump, 'function');
-  assert.equal(s.versioningStrategy.options.prereleaseType, 'beta.0', 'prereleaseType reaches the versioning factory');
-  assert.equal(s.versioningStrategy.options.prerelease, true);
+  assert.equal(s.versioningStrategy.options.prerelease, true, 'prerelease reaches the versioning factory (fallback role)');
 });
 
 test('buildReleasePullRequest: bump awaited, bumpOnlyOptions forces a version, releaseAs and Release-As win', async () => {
   const s = await strategy();
-  s.versioningStrategy.ctx = {kind: 'prerelease', component: 'c', branch: 'next'};
+  s.versioningStrategy.ctx = {kind: 'prerelease', component: 'c', branch: 'next', records: {promotion: {line: '0.6.0', channel: 'beta'}}};
   const pr = await s.buildReleasePullRequest(commits(['fix: a']), latest('0.6.0-alpha.7'));
   assert.equal(pr.version.toString(), '0.6.0-beta.0', 'versioningStrategy.bump result (awaited)');
   const forced = await s.buildReleasePullRequest([], latest('0.6.0-rc.1'), false, [], {newVersion: I.Version.parse('0.6.0')});
@@ -175,13 +174,23 @@ test('Manifest: create* call the overridable build* methods; release candidates 
   assert.equal(releasesBuilt, 1, 'createReleases -> this.buildReleases()');
 });
 
+test('GitHub#buildChangeSet runs Update.updater.updateContent, same-path updates merged', async () => {
+  const github = await rp.GitHub.create({owner: 'o', repo: 'r', token: 'x', defaultBranch: 'main', fetch: offline});
+  github.getFileContentsOnBranch = async () => ({content: Buffer.from('a').toString('base64'), parsedContent: 'a', sha: 'x', mode: '100644'});
+  const changes = await github.buildChangeSet([
+    {path: 'f.json', createIfMissing: false, updater: {updateContent: c => `${c}b`}},
+    {path: 'f.json', createIfMissing: false, updater: {updateContent: c => `${c}c`}},
+  ], 'main');
+  assert.equal(changes.get('f.json').content, 'abc');
+});
+
 test('LinkedVersions fields and GitHub methods the extension uses', async () => {
   const github = await rp.GitHub.create({owner: 'o', repo: 'r', token: 'x', defaultBranch: 'main', fetch: offline});
   const lv = new I.LinkedVersions(github, 'main', {}, 'kit', ['kit', 'kit-ts']);
   assert.ok(lv.components instanceof Set && lv.components.has('kit-ts'));
   assert.equal(lv.groupName, 'kit');
   assert.equal(typeof github.octokit.pulls.update, 'function', 'GitHub#octokit.pulls.update');
-  for (const k of ['commentOnIssue', 'tagIterator', 'releaseIterator', 'pullRequestIterator', 'createRelease', 'createPullRequest', 'updatePullRequest']) {
+  for (const k of ['commentOnIssue', 'tagIterator', 'releaseIterator', 'pullRequestIterator', 'createRelease', 'createPullRequest', 'updatePullRequest', 'getFileJson', 'buildChangeSet']) {
     assert.equal(typeof github[k], 'function', `GitHub#${k}`);
   }
   assert.deepEqual(github.repository, {owner: 'o', repo: 'r', defaultBranch: 'main'});

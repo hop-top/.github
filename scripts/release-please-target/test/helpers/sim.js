@@ -6,7 +6,7 @@ const path = require('path');
 const {createGitHub} = require('./git-github');
 const {CONFIG, MANIFEST} = require('./fixture');
 const {install} = require('../../lib/install');
-const {reportFor} = require('../../lib/report');
+const {reportFor, attachConfig} = require('../../lib/report');
 
 const RP = path.resolve(process.env.RP_ROOT || path.dirname(require.resolve('release-please/package.json', {paths: [path.join(__dirname, '../..')]})));
 const rp = install(RP);
@@ -25,13 +25,22 @@ function versionsOf(pr) {
   return [...pr.body.toString().matchAll(/<summary>([^<]+)<\/summary>/g)].map(x => x[1]);
 }
 
+// The config file a PR would write, from release-please's change set.
+async function configAfter(github, pr) {
+  const changes = await github.buildChangeSet(pr.updates, github.repository.defaultBranch);
+  return changes.has(CONFIG) ? JSON.parse(changes.get(CONFIG).content) : undefined;
+}
+
 async function propose(r, branch, cfg) {
   notes.length = 0;
   const github = await createGitHub({rpRoot: RP, dir: r.dir, branch, config: cfg});
+  attachConfig(github, CONFIG, cfg);
   const m = await rp.Manifest.fromManifest(github, branch, CONFIG, MANIFEST);
-  const prs = (await m.buildPullRequests()).map(pr => ({
-    title: pr.title.toString(), branch: pr.headRefName, version: pr.version && pr.version.toString(), versions: versionsOf(pr), pr,
-  }));
+  const prs = [];
+  for (const pr of await m.buildPullRequests()) {
+    prs.push({title: pr.title.toString(), branch: pr.headRefName, version: pr.version && pr.version.toString(), versions: versionsOf(pr), pr,
+      config: await configAfter(github, pr)});
+  }
   return {prs, titles: prs.map(p => p.title), blocked: reportFor(github).list(), notes: [...notes]};
 }
 
@@ -40,6 +49,7 @@ async function land(r, branch, cfg, pr) {
     number: 1, headBranchName: pr.headRefName, baseBranchName: branch, title: pr.title.toString(), body: pr.body.toString(),
     labels: ['status:release-pending'], state: 'MERGED', sha: r.head(),
   }]});
+  attachConfig(github, CONFIG, cfg);
   const m = await rp.Manifest.fromManifest(github, branch, CONFIG, MANIFEST);
   const rels = await m.buildReleases();
   const versions = {};

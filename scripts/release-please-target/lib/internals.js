@@ -38,7 +38,10 @@ const DEEP = [
 //   Manifest#repositoryConfig, #targetBranch     parsed config per path
 //   LinkedVersions#components, #groupName        Set of components, group name
 //   GitHub#octokit.pulls.update                  close a pull request (no GitHub method for it)
-//   GitHub#commentOnIssue, #tagIterator          public methods on the GitHub class
+//   GitHub#commentOnIssue, #tagIterator,         public methods on the GitHub class
+//     #getFileJson                               (the raw config: release-please drops x-* keys)
+//   GitHub#buildChangeSet / Update               {path, createIfMissing, updater.updateContent(text)},
+//                                                same-path updates merged (record cleanup in PRs)
 
 function load(rpRoot) {
   const rp = require(rpRoot);
