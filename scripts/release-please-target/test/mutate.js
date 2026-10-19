@@ -102,7 +102,7 @@ const MUTATIONS = [
     to: 'const channelFor = m => higher(onT(m.current) ? channelOf(m.current.pre) : FIRST, promotedOn(m.promotion, T));',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M29', what: 'a root package without a component is booked as "." (its stale PR stays open)',
-    file: 'lib/install.js', from: 'kind: k, branch: this.targetBranch, component, name,', to: 'kind: k, branch: this.targetBranch, component: name, name,',
+    file: 'lib/install.js', from: 'kind: k, branch: this.targetBranch, prereleaseBranch, component, name,', to: 'kind: k, branch: this.targetBranch, prereleaseBranch, component: name, name,',
     tests: ['test/runner.test.js']},
   {id: 'M30', what: 'records are checked against the manifest on every branch',
     file: 'lib/runner.js', from: "if (bad || roleOf(manifest, raw, p) !== 'prerelease') continue;", to: 'if (bad) continue;',
