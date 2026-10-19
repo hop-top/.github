@@ -95,7 +95,7 @@ test('the kit setup: kit and qmochi to beta by package, the rest stays alpha', (
   const d = lineDiff(KIT_CONFIG, r.config);
   assert.deepEqual(d.removed.sort(), ['"versioning": "target"', '"versioning": "target"'].sort());
   assert.deepEqual(d.added.sort(), ['"versioning": "target",', '"versioning": "target",', '"x-channel": {"line": "0.5.0", "channel": "beta"}', '"x-channel": {"line": "0.2.0", "channel": "beta"}'].sort());
-  assert.match(r.out, /^kit \(\.\): x-channel \{"line": "0\.5\.0", "channel": "beta"\} \(0\.5\.0-alpha\.26 -> 0\.5\.0-beta\.0 on its next release\)$/m);
+  assert.match(r.out, /^kit \(\.\): x-channel \{"line": "0\.5\.0", "channel": "beta"\} \(0\.5\.0-alpha\.26 -> 0\.5\.0-beta\.0: its release PR is cut on the next run on the prerelease branch\)$/m);
 });
 
 test('by group: every member of the conditional-linked-versions group', () => {
@@ -113,9 +113,19 @@ test('one step at a time, never backwards, only open lines', () => {
   assert.equal(w.run('channel', 'beta', '--package', 'kit').code, 0);
   const again = w.run('channel', 'beta', '--package', 'kit');
   assert.equal(again.code, 1);
-  assert.match(again.err, /kit \(\.\): already on beta for 0\.5\.0 \(applied on its next release\)/);
-  // rc while beta is pending is the next step
-  assert.equal(w.run('channel', 'rc', '--package', 'kit').code, 0);
+  assert.match(again.err, /kit \(\.\): already promoted to beta for 0\.5\.0 \(its release PR is cut on the next run on the prerelease branch\)/);
+  // rc while beta is recorded but not released: still a skip from alpha
+  const early = w.run('channel', 'rc', '--package', 'kit');
+  assert.equal(early.code, 1);
+  assert.match(early.err, /kit \(\.\): alpha -> rc skips beta: channels move alpha -> beta -> rc \(the beta promotion is not released yet: merge its release PR first\)/);
+  assert.deepEqual(JSON.parse(early.config).packages['.']['x-channel'], {line: '0.5.0', channel: 'beta'}, 'nothing written');
+  // once beta.0 is released, rc is the next step
+  w.setManifest({...KIT_MANIFEST, '.': '0.5.0-beta.0'});
+  assert.equal(w.run('channel', 'beta', '--package', 'kit').err.trim(), 'refused: kit (.): already on beta for 0.5.0');
+  const rc = w.run('channel', 'rc', '--package', 'kit');
+  assert.equal(rc.code, 0, rc.err);
+  assert.deepEqual(JSON.parse(rc.config).packages['.']['x-channel'], {line: '0.5.0', channel: 'rc'});
+  w.setManifest(KIT_MANIFEST);
   const skip = w.run('channel', 'rc', '--package', 'kit-py');
   assert.equal(skip.code, 1);
   assert.match(skip.err, /kit-py \(sdk\/py\): alpha -> rc skips beta: channels move alpha -> beta -> rc/);
