@@ -9,6 +9,13 @@
 //   stable       stable releases; a promoted rc becomes its stable
 //   maintenance  release/x.y lines: patch only
 //
+// The engine never picks a channel. Every line starts and stays on alpha;
+// a package moves to beta or rc only through a promotion record,
+// {line: 'x.y.z', channel: 'beta' | 'rc'} (config key `x-channel`), which
+// applies while the package's target is that line and expires with it.
+// An open-line record, 'x.y.z' (`x-open-line`), opens that line on the
+// next release when no change requires more; it is spent once reached.
+//
 // Every decision is {version, code, reason, warnings, blocked}. `blocked`
 // lists why no version may be proposed; when it is non-empty `version` is
 // undefined and the caller must not release the package.
@@ -50,23 +57,34 @@ function cmp(a, b) {
 }
 const maxV = (a, b) => (!a ? b : !b ? a : cmp(a, b) >= 0 ? a : b);
 
-// Channels, in promotion order. A new line always opens on the first.
+// Channels, in promotion order. Every line opens on the first.
 const CHANNELS = ['alpha', 'beta', 'rc'];
 const FIRST = CHANNELS[0];
 const rank = ch => CHANNELS.indexOf(ch) + 1; // 0 = not a target channel
 const channelOf = pre => (pre ? pre.split('.')[0] : undefined);
 const atChannel = (v, ch) => ({...core(v), pre: `${ch}.0`});
 
-// The configured channel: `prerelease-type` alpha.0 | beta.0 | rc.0 (the
-// counter digit is accepted but every channel starts at .0). Unset = alpha.
-function channelFrom(prereleaseType) {
-  const t = prereleaseType === undefined || prereleaseType === null || prereleaseType === '' ? `${FIRST}.0` : String(prereleaseType);
-  const m = t.match(/^([a-z]+)(?:\.(\d+))?$/);
-  if (!m || !rank(m[1])) {
-    throw new Error(`prerelease-type '${t}' is not a target channel (expected one of ${CHANNELS.map(c => c + '.0').join(', ')})`);
+const STABLE = /^\d+\.\d+\.\d+$/;
+
+// A promotion record, validated: {line: 'x.y.z', channel: 'beta' | 'rc'}.
+function promotionOf(record) {
+  if (record === undefined || record === null) return undefined;
+  if (typeof record !== 'object' || Array.isArray(record) || !STABLE.test(String(record.line)) || !['beta', 'rc'].includes(record.channel)) {
+    throw new Error(`x-channel ${JSON.stringify(record)}: expected {"line": "x.y.z", "channel": "beta" | "rc"}`);
   }
-  return m[1];
+  return {line: parse(record.line), channel: record.channel};
 }
+
+// An open-line record, validated: 'x.y.z'.
+function openLineOf(record) {
+  if (record === undefined || record === null) return undefined;
+  if (typeof record !== 'string' || !STABLE.test(record)) throw new Error(`x-open-line ${JSON.stringify(record)}: expected "x.y.z"`);
+  return parse(record);
+}
+
+// The channel a promotion gives target T, if it is recorded for T.
+const promotedOn = (promotion, T) => (promotion && cmpCore(promotion.line, T) === 0 ? promotion.channel : undefined);
+const higher = (a, b) => (!a ? b : !b ? a : rank(b) > rank(a) ? b : a);
 
 function bumpCounter(pre) {
   const m = pre.match(/^(.*?)(\d+)$/);
@@ -110,7 +128,7 @@ function decision(version, code, reason, extra = {}) {
 const blocked = (code, reason) => decision(undefined, code, reason, {blocked: [reason]});
 
 // Rule 1: prerelease branch.
-function nextPrerelease(C, S, summary, channel) {
+function nextPrerelease(C, S, summary, promotion) {
   if (!C.pre) {
     const v = bumpStable(maxV(core(C), S), summary);
     return decision(atChannel(v, FIRST), 'open', `open ${fmt(v)} line from stable ${fmt(C)}`);
@@ -124,10 +142,24 @@ function nextPrerelease(C, S, summary, channel) {
   if (cmpCore(req, T) > 0) {
     return decision(atChannel(req, FIRST), 'line', `required ${fmt(req)} > target ${fmt(T)}: new line`);
   }
-  if (rank(channel) > rank(channelOf(C.pre))) {
-    return decision(atChannel(T, channel), 'channel', `channel ${channelOf(C.pre)} -> ${channel}`);
+  const promoted = promotedOn(promotion, T);
+  if (rank(promoted) > rank(channelOf(C.pre))) {
+    return decision(atChannel(T, promoted), 'channel', `promoted to ${promoted} on ${fmt(T)}`);
   }
   return decision({...T, pre: bumpCounter(C.pre)}, 'counter', `target ${fmt(T)} covers it: counter`);
+}
+
+// Rule 1 with an open-line record: open `<line>-alpha.0` instead, when the
+// line is not reached yet and no change requires more than it.
+function withOpenLine(d, C, line) {
+  if (!line || d.blocked.length) return d;
+  const target = C.pre ? core(C) : C;
+  if (cmpCore(target, line) >= 0) return d; // reached: the record is spent
+  const required = core(parse(d.version));
+  if (cmpCore(line, required) < 0) {
+    return blocked('open-line-below', `x-open-line ${fmt(line)} is below the required target ${fmt(required)} (raise or remove it)`);
+  }
+  return decision(atChannel(line, FIRST), 'open-line', `x-open-line: open ${fmt(line)} line`);
 }
 
 // Rule 2: stable branch.
@@ -164,14 +196,18 @@ function nextMaintenance(C, summary, branch) {
 }
 
 /**
- * next({kind, current, summary, lastStable, prereleaseType, branch}) -> decision
+ * next({kind, current, summary, lastStable, promotion, openLine, branch}) -> decision
+ *   promotion  x-channel record {line, channel} | undefined
+ *   openLine   x-open-line record 'x.y.z' | undefined
+ * Both records are read on the prerelease branch only.
  */
 function next(input) {
   const C = parse(input.current);
   const S = opt(input.lastStable);
   const summary = input.summary || {breaking: false, feat: false};
   switch (input.kind) {
-    case 'prerelease': return nextPrerelease(C, S, summary, channelFrom(input.prereleaseType));
+    case 'prerelease':
+      return withOpenLine(nextPrerelease(C, S, summary, promotionOf(input.promotion)), C, openLineOf(input.openLine));
     case 'stable': return nextStable(C, S, summary);
     case 'maintenance': return nextMaintenance(C, summary, input.branch);
     default: throw new Error(`unknown branch kind: ${input.kind}`);
@@ -193,32 +229,37 @@ function startsLinkedLine({kind, current, proposed, lastStable}) {
 }
 
 /**
- * resolveGroup({kind, groupName, members}) -> {linked, version?, reason, blocked}
- * members: [{component, current?, lastStable?, proposed?}] (version strings)
+ * resolveGroup({kind, groupName, members}) -> {linked, versions?, reason, blocked}
+ * members: [{component, current?, lastStable?, proposed?, promotion?}]
+ * versions: {component: version}
  *
- * Linked only when a member's proposal opens a linked line. The group's
- * target is the highest among the members (the proposals, and any member
- * already previewing a later unreleased target). On a prerelease branch
- * the group version is the highest of `<target>-alpha.0`, the members' own
- * proposals on that target, and the highest member already on that target
- * with its counter + 1: never backwards, and the channel is never changed
- * here (a channel moves only through a member's configured channel, rule
- * 1). A member that already released the target (or later) as stable
- * blocks the group: no version is proposed for any member.
+ * Linked only when a member's proposal opens a linked line. Every member
+ * then moves to the group's target, the highest among the members (their
+ * proposals, and any member already previewing a later unreleased target).
+ * On a stable branch every member gets that stable version. On a
+ * prerelease branch each member keeps its own channel (its channel on the
+ * target line, or its promotion recorded for that line; alpha otherwise),
+ * and the members of one channel share one counter: the highest of that
+ * channel's members already on the line + 1, or .0. Nobody moves
+ * backwards or changes channel. A member that already released the target
+ * (or later) as stable blocks the group: no member gets a version.
  */
 function resolveGroup({kind, groupName = 'group', members}) {
-  const M = members.map(m => ({component: m.component, current: opt(m.current), lastStable: opt(m.lastStable), proposed: opt(m.proposed)}));
+  const M = members.map(m => ({
+    component: m.component, current: opt(m.current), lastStable: opt(m.lastStable), proposed: opt(m.proposed), promotion: promotionOf(m.promotion),
+  }));
   const triggers = M.filter(m => m.proposed && m.current &&
     startsLinkedLine({kind, current: m.current, proposed: m.proposed, lastStable: m.lastStable}));
   if (!triggers.length) return {linked: false, reason: `${groupName}: no new major or prerelease minor line: independent`, blocked: []};
   const by = triggers.map(t => `${t.component}@${fmt(t.proposed)}`).join(', ');
   const L = M.reduce((a, m) => maxV(a, m.proposed), undefined);
   const fail = reason => ({linked: true, reason: `${groupName}: ${reason}`, blocked: [`${groupName}: ${reason}`]});
+  const all = v => Object.fromEntries(M.map(m => [m.component, fmt(v)]));
 
   if (kind === 'stable') {
     const at = M.find(m => (m.current && cmp(m.current, L) >= 0) || (m.lastStable && cmp(m.lastStable, L) >= 0));
     if (at) return fail(`${at.component} is already at ${fmt(maxV(at.current, at.lastStable))} >= ${fmt(L)} (linked by ${by})`);
-    return {linked: true, version: fmt(L), reason: `${groupName}: linked at ${fmt(L)} by ${by}`, blocked: []};
+    return {linked: true, versions: all(L), reason: `${groupName}: linked at ${fmt(L)} by ${by}`, blocked: []};
   }
 
   // Highest target first: the group's proposal, or a member already
@@ -232,16 +273,21 @@ function resolveGroup({kind, groupName = 'group', members}) {
   if (done) return fail(`${done.component} already released ${fmt(maxV(done.lastStable, done.current && !done.current.pre ? done.current : undefined))} as stable, at or past group target ${fmt(T)}`);
 
   const onT = v => !!(v && v.pre && cmpCore(core(v), T) === 0);
-  let V = atChannel(T, FIRST);
-  for (const m of M) if (onT(m.proposed)) V = maxV(V, m.proposed);
-  const ahead = M.filter(m => onT(m.current) && cmp(m.current, atChannel(T, FIRST)) >= 0);
-  if (!ahead.length) return {linked: true, version: fmt(V), reason: `${groupName}: linked at ${fmt(V)} by ${by}`, blocked: []};
-  const top = ahead.reduce((a, m) => (cmp(m.current, a.current) > 0 ? m : a));
-  V = maxV(V, {...T, pre: bumpCounter(top.current.pre)});
-  return {linked: true, version: fmt(V), reason: `${groupName}: ${top.component} already at ${fmt(top.current)}: group at ${fmt(V)} (linked by ${by})`, blocked: []};
+  const channelFor = m => higher(onT(m.current) ? channelOf(m.current.pre) : FIRST, promotedOn(m.promotion, T));
+  const top = {}; // channel -> highest member version on the line
+  for (const m of M) if (onT(m.current)) top[channelOf(m.current.pre)] = maxV(top[channelOf(m.current.pre)], m.current);
+  const versions = {};
+  for (const m of M) {
+    const ch = channelFor(m);
+    const v = top[ch] ? {...T, pre: bumpCounter(top[ch].pre)} : atChannel(T, ch);
+    if (m.current && cmp(v, m.current) <= 0) return fail(`${m.component} at ${fmt(m.current)} would move to ${fmt(v)}: never backwards`);
+    versions[m.component] = fmt(v);
+  }
+  const distinct = [...new Set(Object.values(versions))].join(', ');
+  return {linked: true, versions, reason: `${groupName}: linked on ${fmt(T)} at ${distinct} by ${by}`, blocked: []};
 }
 
 module.exports = {
-  CHANNELS, parse, fmt, cmp, cmpCore, channelFrom, bumpStable, deriveBase, summarize,
+  CHANNELS, parse, fmt, core, cmp, cmpCore, bumpStable, deriveBase, summarize, promotionOf, openLineOf,
   next, startsLinkedLine, resolveGroup,
 };

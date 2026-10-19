@@ -39,21 +39,63 @@ const SCENARIOS = [
     return {r: nextRepo({qmochi: '1.5.0-alpha.3'}, {qmochi: '1.4.2'}).commit('feat(qmochi)!: new api', ['qmochi']), branch: 'next'};
   }, expect: [T('qmochi', '2.0.0-alpha.0')], stock: [T('qmochi', '2.0.0-alpha.3')]},
 
-  {id: 'c2', label: 'qmochi 1.6.0-beta.2 (stable 1.5.0) + feat!, channel beta', build() {
-    return {r: nextRepo({qmochi: '1.6.0-beta.2'}, {qmochi: '1.5.0'}).commit('feat(qmochi)!: new api', ['qmochi']), branch: 'next', prereleaseType: 'beta.0'};
-  }, expect: [T('qmochi', '2.0.0-alpha.0')], stock: [T('qmochi', '2.0.0-beta.2')]},
+  {id: 'c2', label: 'qmochi 1.6.0-beta.2 (stable 1.5.0, promoted on 1.6.0) + feat!: new line on alpha, record dropped', build() {
+    return {r: nextRepo({qmochi: '1.6.0-beta.2'}, {qmochi: '1.5.0'}).commit('feat(qmochi)!: new api', ['qmochi']), branch: 'next',
+      records: {qmochi: {'x-channel': {line: '1.6.0', channel: 'beta'}}}};
+  }, expect: [T('qmochi', '2.0.0-alpha.0')], cleared: {qmochi: ['x-channel']}, stockType: 'beta.0', stock: [T('qmochi', '2.0.0-beta.2')]},
 
-  {id: 'd', label: 'qmochi 0.6.0-beta.2 + fix, channel beta', build() {
-    return {r: nextRepo({qmochi: '0.6.0-beta.2'}, {qmochi: '0.5.0'}).commit('fix(qmochi): x', ['qmochi']), branch: 'next', prereleaseType: 'beta.0'};
-  }, expect: [T('qmochi', '0.6.0-beta.3')], stock: [T('qmochi', '0.6.0-beta.3')]},
+  {id: 'd', label: 'qmochi 0.6.0-beta.2 (promoted on 0.6.0) + fix', build() {
+    return {r: nextRepo({qmochi: '0.6.0-beta.2'}, {qmochi: '0.5.0'}).commit('fix(qmochi): x', ['qmochi']), branch: 'next',
+      records: {qmochi: {'x-channel': {line: '0.6.0', channel: 'beta'}}}};
+  }, expect: [T('qmochi', '0.6.0-beta.3')], cleared: {}, stockType: 'beta.0', stock: [T('qmochi', '0.6.0-beta.3')]},
 
-  {id: 'd2', label: 'qmochi 0.6.0-alpha.7 + fix, config alpha -> beta (no pin)', build() {
-    return {r: nextRepo({qmochi: '0.6.0-alpha.7'}, {qmochi: '0.5.0'}).commit('fix(qmochi): x', ['qmochi']), branch: 'next', prereleaseType: 'beta.0'};
-  }, expect: [T('qmochi', '0.6.0-beta.0')], stock: [T('qmochi', '0.6.0-alpha.8')]},
+  {id: 'd2', label: 'qmochi 0.6.0-alpha.7 + fix, promoted to beta on 0.6.0 (no pin)', build() {
+    return {r: nextRepo({qmochi: '0.6.0-alpha.7'}, {qmochi: '0.5.0'}).commit('fix(qmochi): x', ['qmochi']), branch: 'next',
+      records: {qmochi: {'x-channel': {line: '0.6.0', channel: 'beta'}}}};
+  }, expect: [T('qmochi', '0.6.0-beta.0')], cleared: {}, stockType: 'beta.0', stock: [T('qmochi', '0.6.0-alpha.8')]},
 
-  {id: 'e', label: 'main after promotion: qmochi 0.6.0-rc.2 (stable 0.5.0), no new commits', build() {
-    return {r: promoted({qmochi: '0.6.0-rc.2'}), branch: 'main'};
-  }, expect: [T('qmochi', '0.6.0')], stock: []},
+  {id: 'd3', label: 'promotion expires: qmochi 0.6.1-beta.2 (promoted on 0.6.1) + feat -> 0.7.0-alpha.0', build() {
+    return {r: nextRepo({qmochi: '0.6.1-beta.2'}, {qmochi: '0.6.0'}).commit('feat(qmochi): y', ['qmochi']), branch: 'next',
+      records: {qmochi: {'x-channel': {line: '0.6.1', channel: 'beta'}}}};
+  }, expect: [T('qmochi', '0.7.0-alpha.0')], cleared: {qmochi: ['x-channel']}, stockType: 'beta.0', stock: [T('qmochi', '0.7.0-beta.2')]},
+
+  {id: 'd4', label: 'a record left for an old line is ignored and dropped: 0.7.0-alpha.0 + fix', build() {
+    return {r: nextRepo({qmochi: '0.7.0-alpha.0'}, {qmochi: '0.6.0'}).commit('fix(qmochi): z', ['qmochi']), branch: 'next',
+      records: {qmochi: {'x-channel': {line: '0.6.1', channel: 'beta'}}}};
+  }, expect: [T('qmochi', '0.7.0-alpha.1')], cleared: {qmochi: ['x-channel']}, stock: [T('qmochi', '0.7.0-alpha.1')]},
+
+  {id: 'mix', label: 'kit and qmochi promoted to beta by package, kit-py stays alpha', build() {
+    const r = nextRepo().commit('fix(cli): a', ['kit']).commit('fix(py): b', ['kit-py']).commit('fix(qmochi): c', ['qmochi']);
+    return {r, branch: 'next', records: {kit: {'x-channel': {line: '0.5.0', channel: 'beta'}}, qmochi: {'x-channel': {line: '0.2.0', channel: 'beta'}}}};
+  }, expect: [T('kit', '0.5.0-beta.0'), T('kit-py', '0.5.0-alpha.6'), T('qmochi', '0.2.0-beta.0')], cleared: {},
+  stock: [T('kit', '0.5.0-alpha.27'), T('kit-py', '0.5.0-alpha.6'), T('qmochi', '0.2.0-alpha.2')]},
+
+  {id: 'o1', label: 'open 1.0.0 from qmochi 0.9.0-alpha.3 (x-open-line)', build() {
+    return {r: nextRepo({qmochi: '0.9.0-alpha.3'}, {qmochi: '0.8.0'}).commit('fix(qmochi): x', ['qmochi']), branch: 'next',
+      records: {qmochi: {'x-open-line': '1.0.0'}}};
+  }, expect: [T('qmochi', '1.0.0-alpha.0')], cleared: {qmochi: ['x-open-line']}, stock: [T('qmochi', '0.9.0-alpha.4')]},
+
+  {id: 'o2', label: 'open line 1.6.0 below the required 2.0.0: refused', build() {
+    const r = nextRepo({qmochi: '1.5.0-alpha.3'}, {qmochi: '1.4.2'}).commit('feat(qmochi)!: new api', ['qmochi']).commit('fix(cli): k', ['kit']);
+    return {r, branch: 'next', records: {qmochi: {'x-open-line': '1.6.0'}}};
+  }, expect: [T('kit', '0.5.0-alpha.27')], blocked: {qmochi: /x-open-line 1\.6\.0 is below the required target 2\.0\.0/},
+  stock: [T('kit', '0.5.0-alpha.27'), T('qmochi', '2.0.0-alpha.3')]},
+
+  {id: 'o3', label: 'open line already reached: qmochi 1.0.0-alpha.2 + fix, record ignored and dropped', build() {
+    return {r: nextRepo({qmochi: '1.0.0-alpha.2'}, {qmochi: '0.9.0'}).commit('fix(qmochi): x', ['qmochi']), branch: 'next',
+      records: {qmochi: {'x-open-line': '1.0.0'}}};
+  }, expect: [T('qmochi', '1.0.0-alpha.3')], cleared: {qmochi: ['x-open-line']}, stock: [T('qmochi', '1.0.0-alpha.3')]},
+
+  {id: 'o4', label: 'open 1.0.0 for the kit group, then a fix on kit: linked at 1.0.0-alpha.0', build() {
+    const r = nextRepo(Object.fromEntries(FAMILY.map(c => [c, '0.9.0-alpha.3'])), Object.fromEntries(FAMILY.map(c => [c, '0.8.0'])));
+    r.commit('fix(cli): x', ['kit']);
+    return {r, branch: 'next', records: Object.fromEntries(FAMILY.map(c => [c, {'x-open-line': '1.0.0'}]))};
+  }, expect: [GROUP_NEXT], versions: all('1.0.0-alpha.0'), cleared: Object.fromEntries(FAMILY.map(c => [c, ['x-open-line']])),
+  stock: [T('kit', '0.9.0-alpha.4')]},
+
+  {id: 'e', label: 'main after promotion: qmochi 0.6.0-rc.2 (stable 0.5.0, promoted rc on 0.6.0), no new commits', build() {
+    return {r: promoted({qmochi: '0.6.0-rc.2'}), branch: 'main', records: {qmochi: {'x-channel': {line: '0.6.0', channel: 'rc'}}}};
+  }, expect: [T('qmochi', '0.6.0')], cleared: {qmochi: ['x-channel']}, stock: []},
 
   {id: 'e2', label: 'as e, plus a fix on main', build() {
     return {r: promoted({qmochi: '0.6.0-rc.2'}).commit('fix(qmochi): z', ['qmochi']), branch: 'main'};
@@ -117,24 +159,28 @@ const SCENARIOS = [
     return {r: nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '0.6.0-alpha.4'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next'};
   }, expect: [GROUP_NEXT], versions: all('0.6.0-alpha.5'), stock: [T('kit', '0.6.0-alpha.3')]},
 
-  {id: 'k2', label: 'kit opens 0.6.0 while kit-rs is at 0.6.0-beta.2: same channel, counter + 1', build() {
-    return {r: nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '0.6.0-beta.2'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next'};
-  }, expect: [GROUP_NEXT], versions: all('0.6.0-beta.3'), stock: [T('kit', '0.6.0-alpha.3')]},
+  {id: 'k2', label: 'kit opens 0.6.0 while kit-rs (promoted) is at 0.6.0-beta.2: kit-rs beta.3, the rest alpha.0', build() {
+    return {r: nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '0.6.0-beta.2'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next',
+      records: {'kit-rs': {'x-channel': {line: '0.6.0', channel: 'beta'}}}};
+  }, expect: [GROUP_NEXT], versions: [...all('0.6.0-alpha.0', ['kit', 'kit-php', 'kit-py', 'kit-ts']), 'kit-rs: 0.6.0-beta.3'], cleared: {},
+  stock: [T('kit', '0.6.0-alpha.3')]},
 
-  {id: 'k3', label: 'kit opens 0.6.0 while kit-rs is at 0.6.0-rc.1: rc.2, no channel change; qmochi independent', build() {
+  {id: 'k3', label: 'kit opens 0.6.0 while kit-rs is at 0.6.0-rc.1: kit-rs rc.2, the rest alpha.0; qmochi independent', build() {
     const r = nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '0.6.0-rc.1'}, {kit: '0.5.0'});
     r.commit('feat(cli)!: new line', ['kit']).commit('fix(qmochi): independent', ['qmochi']);
-    return {r, branch: 'next'};
-  }, expect: [GROUP_NEXT, T('qmochi', '0.2.0-alpha.2')], versions: all('0.6.0-rc.2'),
+    return {r, branch: 'next', records: {'kit-rs': {'x-channel': {line: '0.6.0', channel: 'rc'}}}};
+  }, expect: [GROUP_NEXT, T('qmochi', '0.2.0-alpha.2')], versions: [...all('0.6.0-alpha.0', ['kit', 'kit-php', 'kit-py', 'kit-ts']), 'kit-rs: 0.6.0-rc.2'],
   stock: [T('kit', '0.6.0-alpha.3'), T('qmochi', '0.2.0-alpha.2')]},
 
   {id: 'k4', label: 'kit opens 0.6.0 while kit-rs previews 0.7.0-alpha.2: highest target wins -> 0.7.0-alpha.3', build() {
     return {r: nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '0.7.0-alpha.2'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next'};
   }, expect: [GROUP_NEXT], versions: all('0.7.0-alpha.3'), stock: [T('kit', '0.6.0-alpha.3')]},
 
-  {id: 'k5', label: 'as k with the config already on beta.0: the linked release keeps alpha', build() {
-    return {r: nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '0.6.0-alpha.4'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next', prereleaseType: 'beta.0'};
-  }, expect: [GROUP_NEXT], versions: all('0.6.0-alpha.5'), stock: [T('kit', '0.6.0-alpha.3')]},
+  {id: 'k5', label: 'as k, kit-ts at 0.6.0-alpha.1 promoted to beta on 0.6.0: kit-ts beta.0, alpha members share alpha.5', build() {
+    return {r: nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '0.6.0-alpha.4', 'kit-ts': '0.6.0-alpha.1'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next',
+      records: {'kit-ts': {'x-channel': {line: '0.6.0', channel: 'beta'}}}};
+  }, expect: [GROUP_NEXT], versions: [...all('0.6.0-alpha.5', ['kit', 'kit-php', 'kit-py', 'kit-rs']), 'kit-ts: 0.6.0-beta.0'], cleared: {},
+  stock: [T('kit', '0.6.0-alpha.3')]},
 
   {id: 'k6', label: 'kit opens 0.6.0 while kit-php already released 0.6.0 stable: fail closed', build() {
     const r = nextRepo({kit: '0.5.1-alpha.3', 'kit-php': '0.6.0-rc.2'}, {kit: '0.5.0', 'kit-php': '0.6.0'});
@@ -151,12 +197,17 @@ const SCENARIOS = [
 const ROWS = [];
 const PRINT = !!process.env.PRINT_SCENARIOS;
 
+const PATH_OF_C = require('./helpers/fixture').PATH_OF;
+
 for (const s of SCENARIOS) {
   test(`(${s.id}) ${s.label}`, async () => {
-    const {r, branch, prereleaseType, land: doLand} = await s.build();
-    const res = await propose(r, branch, config({prereleaseType}));
+    const {r, branch, records = {}, land: doLand} = await s.build();
+    const cfg = config({records});
+    const res = await propose(r, branch, cfg);
     // stock release-please on the same repository, for the printed table only
-    const stock = PRINT ? (await propose(r, branch, config({prereleaseType, versioning: 'prerelease'}))).titles : s.stock;
+    const stock = PRINT
+      ? (await propose(r, branch, config({versioning: 'prerelease', packages: s.stockType ? Object.fromEntries(Object.keys(records).map(c => [PATH_OF_C[c], {'prerelease-type': s.stockType}])) : {}}))).titles
+      : s.stock;
     ROWS.push({s, titles: res.titles, versions: res.prs.flatMap(p => p.versions), stock, blocked: res.blocked});
     assert.deepEqual([...res.titles].sort(), [...s.expect].sort(), res.notes.join('\n'));
     if (s.versions) assert.deepEqual([...res.prs.find(p => p.title.includes('libraries')).versions].sort(), [...s.versions].sort());
@@ -164,10 +215,24 @@ for (const s of SCENARIOS) {
     assert.deepEqual([...new Set(res.blocked.map(b => b.component))].sort(), Object.keys(blocked).sort(), res.notes.join('\n'));
     for (const b of res.blocked) assert.match(b.reason, blocked[b.component]);
     if (s.note) assert.ok(res.notes.some(n => s.note.test(n)), res.notes.join('\n'));
+    if (s.cleared) {
+      // the release PRs drop exactly the records their versions make stale
+      for (const [c, rec] of Object.entries(records)) {
+        const pr = res.prs.find(p => p.title.includes(` ${c} `) || p.versions.some(x => x.startsWith(`${c}: `)));
+        const after = pr && pr.config ? pr.config.packages[PATH_OF_C[c]] : cfg.packages[PATH_OF_C[c]];
+        for (const key of Object.keys(rec)) {
+          assert.equal(after[key] === undefined, (s.cleared[c] || []).includes(key), `${c} ${key} after the release PR`);
+        }
+      }
+      for (const pr of res.prs.filter(p => p.config)) {
+        const touched = Object.entries(pr.config.packages).filter(([p, v]) => JSON.stringify(v) !== JSON.stringify(cfg.packages[p])).map(([p]) => p);
+        assert.ok(touched.every(p => Object.keys(s.cleared).map(c => PATH_OF_C[c]).includes(p)), `only stale records change: ${touched}`);
+      }
+    }
     if (doLand) {
-      const tags = await land(r, branch, config({prereleaseType}), res.prs[0].pr);
+      const tags = await land(r, branch, cfg, res.prs[0].pr);
       assert.deepEqual(tags.sort(), [...s.landed].sort());
-      const after = await propose(r, branch, config({prereleaseType}));
+      const after = await propose(r, branch, cfg);
       assert.deepEqual(after.titles, [], 'nothing left to release after landing');
     }
   });

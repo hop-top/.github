@@ -19,6 +19,7 @@ const offline = () => {
 /**
  * createGitHub({rpRoot, dir, branch, config, prs})
  *   config  release-please config served for any *release-please-config.json
+ *           (as JSON and as file contents, 2-space indented)
  *   prs     initial pull requests: {number, headBranchName, baseBranchName,
  *           title, body, labels, state: OPEN|MERGED|CLOSED, sha}
  * Returns the GitHub client; `client.fake` holds the recorded state.
@@ -50,9 +51,10 @@ async function createGitHub({rpRoot, dir, branch, config, prs = []}) {
       throw new FileNotFoundError(p);
     }
   };
-  gh.getFileJson = async p => (p.endsWith('release-please-config.json') && config ? JSON.parse(JSON.stringify(config)) : JSON.parse(show(p)));
+  const isConfig = p => p.endsWith('release-please-config.json') && config;
+  gh.getFileJson = async p => (isConfig(p) ? JSON.parse(JSON.stringify(config)) : JSON.parse(show(p)));
   const contents = async p => {
-    const s = show(p);
+    const s = isConfig(p) ? `${JSON.stringify(config, null, 2)}\n` : show(p);
     return {sha: 'x', content: Buffer.from(s).toString('base64'), parsedContent: s, mode: '100644'};
   };
   gh.getFileContentsOnBranch = contents;
@@ -88,6 +90,11 @@ async function createGitHub({rpRoot, dir, branch, config, prs = []}) {
   gh.pullRequestIterator = async function* (targetBranch, status = 'MERGED') {
     for (const pr of fake.prs) if (pr.baseBranchName === targetBranch && pr.state === status) yield {...pr};
   };
+  // The files a PR would carry, through release-please's own change set.
+  const changed = async (updates, targetBranch) => {
+    const changes = await GitHub.prototype.buildChangeSet.call(gh, updates, targetBranch);
+    return Object.fromEntries([...changes].map(([p, c]) => [p, c.content]));
+  };
   gh.createPullRequest = async (pullRequest, targetBranch, message, updates, options = {}) => {
     const pr = {
       headBranchName: pullRequest.headBranchName,
@@ -101,17 +108,21 @@ async function createGitHub({rpRoot, dir, branch, config, prs = []}) {
       draft: !!options.draft,
       fork: !!options.fork,
       updates: updates.map(u => u.path),
+      contents: await changed(updates, targetBranch),
     };
     fake.prs.push(pr);
-    return pr;
+    const {contents: _c, ...out} = pr;
+    return out;
   };
-  gh.updatePullRequest = async (number, releasePullRequest) => {
+  gh.updatePullRequest = async (number, releasePullRequest, targetBranch) => {
     const pr = fake.prs.find(p => p.number === number);
     pr.title = releasePullRequest.title.toString();
     pr.body = releasePullRequest.body.toString();
     pr.state = 'OPEN';
     pr.updated = true;
-    return {...pr};
+    pr.contents = await changed(releasePullRequest.updates, targetBranch);
+    const {contents: _c, ...out} = pr;
+    return out;
   };
   gh.createRelease = async (release, options = {}) => {
     const r = {

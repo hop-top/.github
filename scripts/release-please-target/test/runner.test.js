@@ -232,6 +232,10 @@ test('config the extension cannot honour is refused before any write', async () 
     [{...config(), plugins: []}, /plugins has no "target-context"/],
     [{...config(), plugins: [config().plugins[1], config().plugins[0]]}, /"target-context" must be listed before "conditional-linked-versions"/],
     [{...config(), plugins: [{type: 'target-context'}, {type: 'linked-versions', groupName: 'kit', components: FAMILY}]}, /kit is in a "linked-versions" group/],
+    [config({packages: {'sdk/py': {'prerelease-type': 'beta.0'}}}), /package sdk\/py prerelease-type 'beta.0': every line starts on alpha\.0; promote a line with x-channel/],
+    [config({records: {kit: {'x-channel': {line: '0.5.0', channel: 'gamma'}}}}), /package \.: x-channel .*expected/],
+    [config({records: {kit: {'x-open-line': '1.0'}}}), /package \.: x-open-line "1\.0": expected/],
+    [config({packages: {'sdk/py': {versioning: 'prerelease', 'x-channel': {line: '0.5.0', channel: 'beta'}}}}), /package sdk\/py has x-channel but does not use versioning "target"/],
   ];
   for (const [cfg, msg] of cases) {
     const res = await runner(r, 'next', {cfg});
@@ -240,6 +244,26 @@ test('config the extension cannot honour is refused before any write', async () 
     assert.deepEqual(res.fake.prs, []);
     assert.deepEqual(res.fake.releases, []);
   }
+});
+
+test('a release PR drops the records its version makes stale, and nothing else', async () => {
+  const r = nextRepo({qmochi: '0.6.1-beta.2', kit: '0.5.0-beta.1'}, {qmochi: '0.6.0'}).commit('feat(qmochi): y', ['qmochi']).commit('fix(cli): z', ['kit']);
+  const cfg = config({records: {qmochi: {'x-channel': {line: '0.6.1', channel: 'beta'}}, kit: {'x-channel': {line: '0.5.0', channel: 'beta'}}}});
+  const res = await runner(r, 'next', {cfg});
+  assert.equal(res.exitCode, 0, res.lines.join('\n'));
+  const pr = t => res.fake.prs.find(p => p.title === t);
+  const q = pr('chore(release): qmochi 0.7.0-alpha.0');
+  const before = `${JSON.stringify(cfg, null, 2)}\n`;
+  const written = q.contents[CONFIG];
+  assert.equal(JSON.parse(written).packages['incubator/qmochi']['x-channel'], undefined);
+  const expected = JSON.parse(before);
+  delete expected.packages['incubator/qmochi']['x-channel'];
+  assert.deepEqual(JSON.parse(written), expected);
+  assert.equal(written.split('\n').length, before.split('\n').length - 4, 'only the record lines removed');
+  // kit stays on its promoted line: its PR leaves the config alone
+  const k = pr('chore(release): kit 0.5.0-beta.2');
+  assert.ok(k, res.fake.prs.map(p => p.title).join(', '));
+  assert.equal(k.contents[CONFIG], undefined);
 });
 
 test('a stock-only config runs unchanged through the runner', async () => {

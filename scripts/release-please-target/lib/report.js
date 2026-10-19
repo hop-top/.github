@@ -1,13 +1,16 @@
 'use strict';
-// What a run decided, per GitHub client (one per runner invocation): the
-// version decisions, and the packages blocked from releasing. The plugins
-// write here; the runner reads it to fail the run and to explain why a
-// stale release PR was closed.
+// Per GitHub client (one per runner invocation): the raw release-please
+// config the run reads (release-please keeps only the keys it knows, so the
+// `x-channel` / `x-open-line` records come from here), the version
+// decisions, and the packages blocked from releasing. The runner attaches
+// the config and reads the rest to fail the run and to explain why a stale
+// release PR was closed.
 
 const reports = new WeakMap();
 
 class Report {
   constructor() {
+    this.config = undefined; // {file, json}
     this.decisions = new Map(); // component -> {from, to, reason}
     this.blocked = new Map(); // `${component}\0${reason}` -> {component, reason}
   }
@@ -30,4 +33,8 @@ function reportFor(github) {
   return reports.get(github);
 }
 
-module.exports = {reportFor, Report};
+function attachConfig(github, file, json) {
+  reportFor(github).config = {file, json};
+}
+
+module.exports = {reportFor, attachConfig, Report};
