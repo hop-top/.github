@@ -37,6 +37,24 @@ function promoted(rcs, main0 = MAIN0) {
   return r;
 }
 
+// qmochi stable 0.6.0; next previews `onNext`; main then hotfixes 0.6.1.
+// The repository is left on next.
+function hotfixOnMain(onNext) {
+  const r = repo();
+  r.commit('chore: initial').release({...MAIN0, qmochi: '0.6.0'});
+  r.checkout('-b', 'next').commit('fix(qmochi): on next', ['qmochi']).release({qmochi: onNext});
+  r.checkout('main').commit('fix(qmochi): hotfix', ['qmochi']).release({qmochi: '0.6.1'});
+  return r.checkout('next');
+}
+
+// hotfixOnMain at 0.6.1-rc.2, then next merged into main (next's side of
+// every conflict: its manifest lands on main). The repository is left on main.
+function hotfixThenPromotion() {
+  const r = hotfixOnMain('0.6.1-rc.2').checkout('main');
+  r.git('merge', '-q', '--no-ff', '-X', 'theirs', 'next', '-m', "Merge branch 'next'");
+  return r;
+}
+
 const SCENARIOS = [
   {id: 'a', label: 'kit 0.5.0-alpha.26 + feat!', build() {
     return {r: nextRepo().commit('feat(cli)!: drop flag', ['kit']), branch: 'next'};
@@ -165,13 +183,44 @@ const SCENARIOS = [
     r.checkout('main');
     r.git('merge', '-q', '--no-ff', 'next', '-m', "Merge branch 'next'");
     return {r, branch: 'main'};
-  }, expect: [], blocked: Object.fromEntries(FAMILY.map(c => [c, /kit: linked at 1\.0\.0 by .*but kit-py is at 1\.0\.0-alpha\.3: a linked release is cut only when every member is at an rc of 1\.0\.0/])),
+  }, expect: [], blocked: Object.fromEntries(FAMILY.map(c => [c, /kit: linked at 1\.0\.0 by .*but kit-py is at 1\.0\.0-alpha\.3: a linked release is cut only when every member is at an rc of 1\.0\.0 \(promote kit-py via beta to rc on next first\)$/])),
   stock: []},
 
   {id: 'e8', label: 'main: qmochi 1.3.0-rc.1 promoted, then a feat! on main (needs 2.0.0): blocked, stable must equal the rc', build() {
     return {r: promoted({qmochi: '1.3.0-rc.1'}, {...MAIN0, qmochi: '1.2.0'}).commit('feat(qmochi)!: big', ['qmochi']), branch: 'main'};
   }, expect: [], blocked: {qmochi: /changes since 1\.3\.0-rc\.1 require 2\.0\.0 .*stable must equal what the rc previewed/},
   stock: [T('qmochi', '2.0.0-rc.1')]},
+
+  {id: 'e9', label: 'hotfix, then promotion: next at qmochi 0.6.1-rc.2, main hotfixes 0.6.1, next merges into main: the rc is stale, blocked', build() {
+    return {r: hotfixThenPromotion(), branch: 'main'};
+  }, expect: [], blocked: {qmochi: /^0\.6\.1-rc\.2 previews 0\.6\.1, already released \(last stable 0\.6\.1\): re-line on next/},
+  stock: [T('qmochi', '0.6.1-rc.3')]},
+
+  {id: 'e10', label: 'as e9, re-lined on next with x-open-line 0.6.2, no other change: cut at once', build() {
+    const r = hotfixThenPromotion();
+    r.checkout('next');
+    return {r: configCommit(r, 'chore(release): open qmochi 0.6.2'), branch: 'next', records: {qmochi: {'x-open-line': '0.6.2'}}};
+  }, expect: [T('qmochi', '0.6.2-alpha.0')], cleared: {qmochi: ['x-open-line']}, stock: []},
+
+  {id: 'm1', label: 'main, qmochi stable 0.6.0 + fix: patch', build() {
+    return {r: repo().commit('chore: initial').release({...MAIN0, qmochi: '0.6.0'}).commit('fix(qmochi): z', ['qmochi']), branch: 'main'};
+  }, expect: [T('qmochi', '0.6.1')], stock: [T('qmochi', '0.6.1-alpha.0')]},
+
+  {id: 'm2', label: 'main, qmochi stable 0.6.0 + feat: blocked, never shipped unpreviewed', build() {
+    return {r: repo().commit('chore: initial').release({...MAIN0, qmochi: '0.6.0'}).commit('feat(qmochi): z', ['qmochi']).commit('fix(cli): k', ['kit']), branch: 'main'};
+  }, expect: [T('kit', '0.4.1')], blocked: {qmochi: /^feat since stable 0\.6\.0 would ship 0\.7\.0 unpreviewed: a stable package takes fixes only here \(land it on next, where it opens a new line\)$/},
+  stock: [T('kit', '0.4.1-alpha.0'), T('qmochi', '0.7.0-alpha.0')]},
+
+  {id: 'm3', label: 'main, qmochi (no group) stable 1.2.0 + feat!: blocked', build() {
+    return {r: repo().commit('chore: initial').release({...MAIN0, qmochi: '1.2.0'}).commit('feat(qmochi)!: z', ['qmochi']), branch: 'main'};
+  }, expect: [], blocked: {qmochi: /^breaking change since stable 1\.2\.0 would ship 2\.0\.0 unpreviewed: .*land it on next/},
+  stock: [T('qmochi', '2.0.0-alpha.0')]},
+
+  {id: 'm4', label: 'main, the kit family stable at 1.0.0: feat! on kit-py blocks kit-py alone, a fix on kit-ts is patched (no link)', build() {
+    const r = repo().commit('chore: initial').release({...Object.fromEntries(FAMILY.map(c => [c, '1.0.0'])), qmochi: '0.5.0'});
+    return {r: r.commit('feat(py)!: z', ['kit-py']).commit('fix(ts): y', ['kit-ts']), branch: 'main'};
+  }, expect: [T('kit-ts', '1.0.1')], blocked: {'kit-py': /^breaking change since stable 1\.0\.0 would ship 2\.0\.0 unpreviewed/},
+  stock: [T('kit-py', '2.0.0-alpha.0'), T('kit-ts', '1.0.1-alpha.0')]},
 
   {id: 'f', label: 'release/0.5 at 0.5.3 + fix (0.6.0 released on main)', build() {
     const r = repo().commit('chore: initial').release({...MAIN0, qmochi: '0.5.3'});
@@ -226,6 +275,14 @@ const SCENARIOS = [
     r.commit('fix(ts): c', ['kit-ts']);
     return {r, branch: 'next'};
   }, expect: [T('kit-ts', '0.6.0-alpha.1')], stock: [T('kit-ts', '0.6.0-alpha.1')]},
+
+  {id: 'j2', label: 'next previews qmochi 0.6.1-alpha.3, main hotfixes 0.6.1, then a fix on next: re-lined at 0.6.2-alpha.0', build() {
+    return {r: hotfixOnMain('0.6.1-alpha.3').commit('fix(qmochi): on next', ['qmochi']), branch: 'next'};
+  }, expect: [T('qmochi', '0.6.2-alpha.0')], stock: [T('qmochi', '0.6.1-alpha.4')]},
+
+  {id: 'j3', label: 'as j2, a feat on next: re-lined at 0.7.0-alpha.0', build() {
+    return {r: hotfixOnMain('0.6.1-alpha.3').commit('feat(qmochi): on next', ['qmochi']), branch: 'next'};
+  }, expect: [T('qmochi', '0.7.0-alpha.0')], stock: [T('qmochi', '0.7.0-alpha.3')]},
 
   {id: 'j', label: 'stale target: qmochi 0.6.0-rc.2 while 0.6.0 is stable, + feat', build() {
     return {r: nextRepo({qmochi: '0.6.0-rc.2'}, {qmochi: '0.6.0'}).commit('feat(qmochi): w', ['qmochi']), branch: 'next'};
