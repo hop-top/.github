@@ -194,7 +194,7 @@ function nextStable(C, S, summary, on) {
     return skipped('not-rc', `${fmt(C)} is not an rc: skipped (a stable branch cuts only an rc; promote the line to rc on ${on} to release it here)`);
   }
   if (S && cmpCore(T, S) <= 0) {
-    return blocked('rc-released', `${fmt(C)} previews ${fmt(T)}, already released (last stable ${fmt(S)}): re-line on ${on} (a change there, or x-open-line, opens the next line) and promote that to rc`);
+    return blocked('rc-released', `${fmt(C)} previews ${fmt(T)}, already released (last stable ${fmt(S)}): re-line on ${on} (a change there, or x-open-line, opens the next line) and promote that line via beta to rc`);
   }
   const req = bumpStable(S || deriveBase(T), summary);
   if (cmpCore(req, T) > 0) {
