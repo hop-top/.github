@@ -105,9 +105,11 @@ async function manifestWithProbe(branch = 'next') {
   r.commit('fix: a', ['kit']);
   if (branch !== 'main') r.git('branch', branch);
   const calls = [];
+  const seen = {};
   rp.registerPlugin('contract-probe', o => new class extends I.ManifestPlugin {
     async preconfigure(strategies, commitsByPath, releasesByPath) {
       calls.push(['preconfigure', Object.keys(strategies), Object.keys(commitsByPath), Object.keys(releasesByPath)]);
+      seen.strategies = {...strategies};
       const s = strategies['.'];
       const orig = s.buildReleasePullRequest.bind(s);
       s.buildReleasePullRequest = async (...a) => {
@@ -128,11 +130,11 @@ async function manifestWithProbe(branch = 'next') {
   };
   const github = await createGitHub({rpRoot: RP, dir: r.dir, branch, config});
   const m = await rp.Manifest.fromManifest(github, branch, '.github/release-please-config.json', '.github/.release-please-manifest.json');
-  return {r, m, github, calls};
+  return {r, m, github, calls, seen};
 }
 
 test('Manifest: plugins in config order, preconfigure before any pull request is built', async () => {
-  const {m, calls} = await manifestWithProbe();
+  const {m, calls, seen} = await manifestWithProbe();
   assert.equal(m.plugins.map(p => p.constructor.name).indexOf('TargetContext'), 1, 'plugins built in config order');
   const prs = await m.buildPullRequests();
   assert.equal(prs[0].version.toString(), '0.5.0-alpha.2');
@@ -142,6 +144,12 @@ test('Manifest: plugins in config order, preconfigure before any pull request is
   assert.deepEqual(calls[calls.length - 1], ['run', 1]);
   assert.equal(m.targetBranch, 'next');
   assert.equal(m.repositoryConfig['.'].versioning, 'target');
+  // Manifest#getStrategiesByPath (private): memoized, the instances the plugins get
+  assert.equal(typeof m.getStrategiesByPath, 'function');
+  const byPath = await m.getStrategiesByPath();
+  assert.equal(await m.getStrategiesByPath(), byPath, 'memoized');
+  assert.ok(byPath['.'].versioningStrategy, 'path -> strategy');
+  assert.equal(seen.strategies['.'], byPath['.'], 'preconfigure receives the getStrategiesByPath instances');
   assert.deepEqual(m.labels, ['status:release-pending']);
 });
 

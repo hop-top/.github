@@ -202,6 +202,117 @@ test('rule 7: an unproposed PR with no replacement and no block is left open', a
   assert.ok(res.lines.some(l => /#7 .*left open/.test(l)), res.lines.join('\n'));
 });
 
+test('rule 7: a PR opened by hand with the release label stays open', async () => {
+  const r = nextRepo().commit('fix(qmochi): c', ['qmochi']);
+  const first = await runner(r, 'next');
+  // someone wrote release notes for qmochi and kit on their own branch,
+  // with the release label: its body names the components the qmochi
+  // release PR now carries (a release-please branch would be superseded)
+  const {PullRequestBody, Version} = load(RP);
+  const body = new PullRequestBody([
+    {component: 'qmochi', version: Version.parse('0.2.0-alpha.2'), notes: 'x'},
+    {component: 'kit', version: Version.parse('0.5.0-alpha.27'), notes: 'y'},
+  ]).toString();
+  const human = {number: 9, headBranchName: 'feature/manual-release', baseBranchName: 'next',
+    title: 'chore(release): qmochi and kit notes', body, labels: pending, state: 'OPEN'};
+  const res = await runner(r, 'next', {prs: [...first.fake.prs, human]});
+  assert.equal(res.exitCode, 0, res.lines.join('\n'));
+  assert.deepEqual(res.fake.closed, []);
+  assert.deepEqual(res.fake.comments, []);
+  assert.equal(res.fake.prs.find(p => p.number === 9).state, 'OPEN');
+});
+
+test('rule 7: a root package without a component: its stale PR is closed with the reason', async () => {
+  const r = repo().commit('chore: initial');
+  r.manifest({kit: '0.5.3'});
+  r.commit('chore(release): 0.5.3').git('tag', 'v0.5.3');
+  r.checkout('-b', 'release/0.5').commit('fix: backport', ['kit']);
+  const cfg = {label: 'status:release-pending', 'release-label': 'status:release-tagged', plugins: [{type: 'target-context'}],
+    packages: {'.': {'release-type': 'simple', versioning: 'target', 'bump-minor-pre-major': true}}};
+  const first = await runner(r, 'release/0.5', {cfg});
+  assert.equal(first.exitCode, 0, first.lines.join('\n'));
+  assert.deepEqual(first.fake.prs.map(p => [p.title, p.headBranchName]), [['chore(release/0.5): release 0.5.4', 'release-please--branches--release/0.5']]);
+  r.commit('feat: not allowed', ['kit']);
+  const res = await runner(r, 'release/0.5', {cfg, prs: first.fake.prs});
+  assert.equal(res.exitCode, 1);
+  assert.deepEqual(res.blocked.map(b => [b.component, b.name]), [['', '.']]);
+  assert.ok(res.lines.includes('::error::.: feat on maintenance branch release/0.5: patch only'), res.lines.join('\n'));
+  assert.deepEqual(res.fake.closed, [first.fake.prs[0].number]);
+  assert.match(res.fake.comments[0].comment, /^Closed: no release is proposed for \.:\n\n- feat on maintenance branch release\/0\.5: patch only/);
+});
+
+test('rule 2: a package skipped on main is a notice, and its stale release PR is closed', async () => {
+  const r = repo();
+  r.commit('chore: initial').release(MAIN0);
+  r.checkout('-b', 'next').commit('feat(qmochi): y', ['qmochi']).release({qmochi: '0.6.0-beta.1'});
+  r.checkout('main');
+  r.git('merge', '-q', '--no-ff', 'next', '-m', "Merge branch 'next'");
+  r.commit('fix(qmochi): z', ['qmochi']);
+  // a standing proposal from before the switch to target versioning
+  const stock = await runner(r, 'main', {cfg: config({versioning: 'prerelease'})});
+  assert.deepEqual(stock.fake.prs.map(p => p.title), ['chore(release): qmochi 0.6.0-beta.2']);
+  const summaryFile = tmpFile('summary');
+  const res = await runner(r, 'main', {prs: stock.fake.prs, env: {GITHUB_STEP_SUMMARY: summaryFile}});
+  assert.equal(res.exitCode, 0, res.lines.join('\n'));
+  assert.deepEqual(res.blocked, []);
+  assert.deepEqual(res.skipped.map(x => x.component), ['qmochi']);
+  assert.ok(res.lines.some(l => /^::notice::qmochi: 0\.6\.0-beta\.1 is not an rc: skipped/.test(l)), res.lines.join('\n'));
+  assert.ok(!res.lines.some(l => l.startsWith('::error::')), res.lines.join('\n'));
+  assert.deepEqual(res.fake.closed, [stock.fake.prs[0].number]);
+  assert.match(res.fake.comments[0].comment, /^Closed: no release is proposed for qmochi:\n\n- 0\.6\.0-beta\.1 is not an rc: skipped/);
+  assert.match(fs.readFileSync(summaryFile, 'utf8'), /^- skipped qmochi: 0\.6\.0-beta\.1 is not an rc: skipped/m);
+});
+
+test('rule 7 (owner): the kit round: a promotion is cut on the next run, with no other change', async () => {
+  const r = nextRepo();
+  fs.writeFileSync(path.join(r.dir, CONFIG), '{"edited": true}\n');
+  r.commit('chore(release): promote kit, qmochi to beta');
+  const cfg = config({records: {kit: {'x-channel': {line: '0.5.0', channel: 'beta'}}, qmochi: {'x-channel': {line: '0.2.0', channel: 'beta'}}}});
+  const res = await runner(r, 'next', {cfg});
+  assert.equal(res.exitCode, 0, res.lines.join('\n'));
+  assert.deepEqual(res.fake.prs.map(p => p.title).sort(), ['chore(release): kit 0.5.0-beta.0', 'chore(release): qmochi 0.2.0-beta.0']);
+  for (const pr of res.fake.prs) assert.equal(pr.contents[CONFIG], undefined, 'the records stay: the line is unchanged');
+});
+
+test('records: refused against the manifest on the prerelease branch, inert elsewhere', async () => {
+  const r = nextRepo({qmochi: '0.5.1-alpha.3'}, {qmochi: '0.5.0'}).commit('feat(qmochi): x', ['qmochi']);
+  const cases = [
+    // a line the package never reached (single and linked: the same refusal)
+    [{qmochi: {'x-channel': {line: '0.6.0', channel: 'beta'}}}, /package incubator\/qmochi x-channel is for line 0\.6\.0, but its current target is 0\.5\.1 \(manifest 0\.5\.1-alpha\.3\)/],
+    [{'kit-ts': {'x-channel': {line: '0.6.0', channel: 'beta'}}}, /package sdk\/ts x-channel is for line 0\.6\.0, but its current target is 0\.5\.0 \(manifest 0\.5\.0-alpha\.3\)/],
+    [{kit: {'x-channel': {line: '0.5.0', channel: 'rc'}}}, /package \. x-channel rc skips a channel from 0\.5\.0-alpha\.26: channels move alpha -> beta -> rc/],
+    [{'kit-py': {'x-open-line': '0.5.0'}}, /package sdk\/py x-open-line 0\.5\.0 is already reached \(manifest 0\.5\.0-alpha\.5\)/],
+  ];
+  for (const [records, msg] of cases) {
+    const res = await runner(r, 'next', {cfg: config({records})});
+    assert.equal(res.exitCode, 1, JSON.stringify(records));
+    assert.ok(res.lines.some(l => msg.test(l)), `${msg}\n${res.lines.join('\n')}`);
+    assert.deepEqual(res.fake.prs, []);
+  }
+  // main carries next's config as merged: the same records do not stop it
+  const {r: m, prs} = await mergedPromotion();
+  m.commit('fix(kit): z', ['kit']);
+  const onMain = await runner(m, 'main', {prs, cfg: config({records: {qmochi: {'x-channel': {line: '0.6.0', channel: 'rc'}}, kit: {'x-open-line': '0.1.0'}}})});
+  assert.equal(onMain.exitCode, 0, onMain.lines.join('\n'));
+  assert.ok(onMain.fake.prs.some(p => p.state === 'OPEN' && p.title === 'chore(release): kit 0.4.1'), onMain.fake.prs.map(p => p.title).join(', '));
+  assert.deepEqual(onMain.fake.releases.map(x => x.tagName), ['qmochi/v0.6.0']);
+  // the shape is still checked everywhere
+  const bad = await runner(m, 'main', {prs, cfg: config({records: {kit: {'x-open-line': '1.0'}}})});
+  assert.equal(bad.exitCode, 1);
+});
+
+test('a config refusal stops the pull requests, not the releases of merged ones', async () => {
+  const {r, prs} = await mergedPromotion();
+  r.commit('fix(kit): z', ['kit']);
+  const res = await runner(r, 'main', {prs, cfg: config({packages: {'incubator/qmochi': {'release-as': '0.9.0'}}})});
+  assert.equal(res.exitCode, 1);
+  assert.deepEqual(res.fake.releases.map(x => x.tagName), ['qmochi/v0.6.0']);
+  assert.equal(res.file.releases_created, 'true');
+  assert.equal(res.fake.prs.length, prs.length, 'no new pull request');
+  assert.ok(res.lines.some(l => /^::error::.*package incubator\/qmochi sets release-as/.test(l)), res.lines.join('\n'));
+  assert.ok(res.lines.some(l => /^::error::no release pull request proposed/.test(l)), res.lines.join('\n'));
+});
+
 test('rule 7: nothing is closed while a merged release PR is still untagged', async () => {
   const r = nextRepo().commit('fix(qmochi): c', ['qmochi']);
   const first = await runner(r, 'next');
@@ -233,6 +344,7 @@ test('config the extension cannot honour is refused before any write', async () 
     [{...config(), plugins: [config().plugins[1], config().plugins[0]]}, /"target-context" must be listed before "conditional-linked-versions"/],
     [{...config(), plugins: [{type: 'target-context'}, {type: 'linked-versions', groupName: 'kit', components: FAMILY}]}, /kit is in a "linked-versions" group/],
     [config({packages: {'sdk/py': {'prerelease-type': 'beta.0'}}}), /package sdk\/py prerelease-type 'beta.0': every line starts on alpha\.0; promote a line with x-channel/],
+    [config({packages: {'sdk/py': {'prerelease-type': 'alpha'}}}), /package sdk\/py prerelease-type 'alpha': every line starts on alpha\.0/],
     [config({records: {kit: {'x-channel': {line: '0.5.0', channel: 'gamma'}}}}), /package \.: x-channel .*expected/],
     [config({records: {kit: {'x-open-line': '1.0'}}}), /package \.: x-open-line "1\.0": expected/],
     [config({packages: {'sdk/py': {versioning: 'prerelease', 'x-channel': {line: '0.5.0', channel: 'beta'}}}}), /package sdk\/py has x-channel but does not use versioning "target"/],

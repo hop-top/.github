@@ -4,11 +4,12 @@
 // createPullRequests(), the same outputs), on a release-please instance with
 // the target extension installed, plus:
 //   - hand the extension the raw config (release-please drops x-* keys)
-//   - fail fast on config the extension cannot honour (before any write)
+//   - refuse config the extension cannot honour before the pull request
+//     stage writes anything (merged release PRs are still released)
 //   - rule 6: a stable release is never created as a GitHub prerelease
 //   - rule 7: close release PRs a new proposal superseded
 //   - rule 3 (and every other blocked package): exit non-zero once all
-//     packages were processed
+//     packages were processed; a skipped package is a notice only
 //
 // Inputs are environment variables named after the action inputs:
 //   TOKEN (required)           token
@@ -25,7 +26,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {install, isTarget} = require('./install');
+const {install, isTarget, branchKind} = require('./install');
 const {load} = require('./internals');
 const {reportFor, attachConfig} = require('./report');
 const rules = require('./rules');
@@ -104,17 +105,28 @@ async function loadManifest(rp, github, inputs) {
 
 const pluginType = p => (typeof p === 'object' && p ? p.type : p);
 
-// Config the extension cannot honour: refuse before anything is written.
-async function checkConfig(manifest, configFile, raw) {
+// The branch role target-context gives package `p` (its `prerelease` flag
+// on a branch with no role).
+function roleOf(manifest, raw, p) {
+  const ctx = (raw.plugins || []).find(x => x && typeof x === 'object' && x.type === 'target-context') || {};
+  return branchKind(manifest.targetBranch, ctx) || (manifest.repositoryConfig[p].prerelease ? 'prerelease' : 'stable');
+}
+
+// Config the extension cannot honour: the pull request stage refuses it
+// before anything is written. `versions` is the manifest (path -> version).
+async function checkConfig(manifest, configFile, raw, versions = {}) {
   const problems = [];
   const strategies = await manifest.getStrategiesByPath();
   const target = Object.keys(manifest.repositoryConfig).filter(p => isTarget(strategies[p]));
   for (const p of Object.keys(manifest.repositoryConfig)) {
     const pkg = (raw.packages || {})[p] || {};
+    if (pkg['x-channel'] === undefined && pkg['x-open-line'] === undefined) continue;
+    let bad = false;
     for (const key of ['x-channel', 'x-open-line']) {
       if (pkg[key] === undefined) continue;
       if (!target.includes(p)) {
         problems.push(`${configFile}: package ${p} has ${key} but does not use versioning "target"`);
+        bad = true;
         continue;
       }
       try {
@@ -122,7 +134,14 @@ async function checkConfig(manifest, configFile, raw) {
         else rules.openLineOf(pkg[key]);
       } catch (e) {
         problems.push(`${configFile}: package ${p}: ${e.message}`);
+        bad = true;
       }
+    }
+    // Against the manifest on the prerelease branch only: elsewhere the
+    // records are inert (a stable branch carries next's config as merged).
+    if (bad || roleOf(manifest, raw, p) !== 'prerelease') continue;
+    for (const problem of rules.recordProblems({current: versions[p], promotion: pkg['x-channel'], openLine: pkg['x-open-line']})) {
+      problems.push(`${configFile}: package ${p} ${problem}`);
     }
   }
   if (!target.length) return problems;
@@ -134,7 +153,7 @@ async function checkConfig(manifest, configFile, raw) {
   for (const p of target) {
     const c = manifest.repositoryConfig[p];
     if (c.releaseAs) problems.push(`${configFile}: package ${p} sets release-as; target versioning picks the version (remove it)`);
-    if (c.prereleaseType !== undefined && !/^alpha(\.0)?$/.test(String(c.prereleaseType))) {
+    if (c.prereleaseType !== undefined && String(c.prereleaseType) !== 'alpha.0') {
       problems.push(`${configFile}: package ${p} prerelease-type '${c.prereleaseType}': every line starts on alpha.0; promote a line with x-channel (bin/promote.js)`);
     }
   }
@@ -168,7 +187,9 @@ async function componentsOf(I, pr, logger) {
 
 // Rule 7: an open release PR on this branch that this run did not propose
 // is closed, with a comment linking the PR(s) now carrying its components;
-// with no replacement it is closed only when its components are blocked.
+// with no replacement it is closed only when its components are blocked
+// or skipped. Only release-please's own branches: a PR someone opened by
+// hand keeps its labels and stays open.
 async function closeSuperseded({I, manifest, github, candidates, logger}) {
   for await (const _ of manifest.findMergedReleasePullRequests()) {
     logger.info('target: merged, untagged release PRs outstanding: not closing anything');
@@ -181,7 +202,8 @@ async function closeSuperseded({I, manifest, github, candidates, logger}) {
     const pr = open.find(o => o.headBranchName === c.headRefName);
     if (pr) replacements.push({pr, components: await componentsOf(I, {body: c.body.toString(), headRefName: c.headRefName}, logger)});
   }
-  const blocked = reportFor(github).list();
+  const report = reportFor(github);
+  const blocked = [...report.list(), ...report.notices()];
   const closed = [];
   for (const pr of open) {
     if (proposed.has(pr.headBranchName) || !I.BranchName.parse(pr.headBranchName, logger)) continue;
@@ -196,7 +218,7 @@ async function closeSuperseded({I, manifest, github, candidates, logger}) {
         logger.warn(`target: open release PR #${pr.number} (${pr.headBranchName}) is no longer proposed and has no replacement: left open`);
         continue;
       }
-      comment = `Closed: no release is proposed for ${[...new Set(why.map(b => b.component))].join(', ')}:\n\n${[...new Set(why.map(b => `- ${b.reason}`))].join('\n')}`;
+      comment = `Closed: no release is proposed for ${[...new Set(why.map(b => b.name))].join(', ')}:\n\n${[...new Set(why.map(b => `- ${b.reason}`))].join('\n')}`;
     }
     await github.commentOnIssue(`${comment}\n\n(target versioning)`, pr.number);
     await github.octokit.pulls.update({owner: github.repository.owner, repo: github.repository.repo, pull_number: pr.number, state: 'closed'});
@@ -233,14 +255,15 @@ function outputPRs(out, prs) {
 function summary(env, report, closed) {
   if (!env.GITHUB_STEP_SUMMARY) return;
   const lines = ['## release-please (target versioning)', ''];
-  for (const d of report.decisions.values()) lines.push(`- ${d.component}: ${d.from} -> ${d.to} (${d.reason})`);
-  for (const b of report.list()) lines.push(`- **blocked** ${b.component}: ${b.reason}`);
+  for (const d of report.decisions.values()) lines.push(`- ${d.name}: ${d.from} -> ${d.to} (${d.reason})`);
+  for (const b of report.list()) lines.push(`- **blocked** ${b.name}: ${b.reason}`);
+  for (const s of report.notices()) lines.push(`- skipped ${s.name}: ${s.reason}`);
   for (const c of closed) lines.push(`- closed #${c.number}: ${c.comment.split('\n')[0]}`);
   fs.appendFileSync(env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
 }
 
 /**
- * run({env, rpRoot, github, logger}) -> {exitCode, outputs, blocked, closed}
+ * run({env, rpRoot, github, logger}) -> {exitCode, outputs, blocked, skipped, closed}
  * `github` replaces GitHub.create (tests); `logger` is release-please's.
  */
 async function run({env = process.env, rpRoot = rpRootDefault(), github, logger = consoleLogger} = {}) {
@@ -277,17 +300,13 @@ async function run({env = process.env, rpRoot = rpRootDefault(), github, logger 
     // release-please drops keys it does not know; the records come from the raw file.
     const raw = await github.getFileJson(inputs.configFile, github.repository.defaultBranch);
     attachConfig(github, inputs.configFile, raw);
-    const problems = await checkConfig(m, inputs.configFile, raw);
-    if (problems.length) {
-      for (const p of problems) logger.error(`::error::${p}`);
-      return undefined;
-    }
-    return m;
+    return {m, raw};
   };
 
+  // Releases first, whatever the config: a merged release PR is tagged
+  // even when the config now has a problem for the next proposals.
   if (!inputs.skipGitHubRelease) {
-    const m = await prepare();
-    if (!m) return {exitCode: 1, outputs: out.seen, blocked: [], closed};
+    const {m} = await prepare();
     fixPrereleaseFlag(m, m.getStrategiesByPath());
     if (inputs.dryRun) {
       for (const r of await m.buildReleases()) log(`dry-run release: ${r.tag.toString()} prerelease=${r.prerelease}`);
@@ -297,8 +316,14 @@ async function run({env = process.env, rpRoot = rpRootDefault(), github, logger 
   }
 
   if (!inputs.skipGitHubPullRequest) {
-    const m = await prepare();
-    if (!m) return {exitCode: 1, outputs: out.seen, blocked: report.list(), closed};
+    const {m, raw} = await prepare();
+    const versions = await github.getFileJson(inputs.manifestFile, github.repository.defaultBranch);
+    const problems = await checkConfig(m, inputs.configFile, raw, versions);
+    if (problems.length) {
+      for (const p of problems) logger.error(`::error::${p}`);
+      logger.error('::error::no release pull request proposed: fix the config above (releases of merged release PRs, if any, were created)');
+      return {exitCode: 1, outputs: out.seen, blocked: report.list(), closed};
+    }
     let candidates = [];
     const build = m.buildPullRequests.bind(m);
     m.buildPullRequests = async () => (candidates = await build());
@@ -311,9 +336,11 @@ async function run({env = process.env, rpRoot = rpRootDefault(), github, logger 
   }
 
   const blocked = report.list();
-  for (const b of blocked) logger.error(`::error::${b.component}: ${b.reason}`);
+  const skipped = report.notices();
+  for (const s of skipped) logger.info(`::notice::${s.name}: ${s.reason}`);
+  for (const b of blocked) logger.error(`::error::${b.name}: ${b.reason}`);
   summary(env, report, closed);
-  return {exitCode: blocked.length ? 1 : 0, outputs: out.seen, blocked, closed};
+  return {exitCode: blocked.length ? 1 : 0, outputs: out.seen, blocked, skipped, closed};
 }
 
-module.exports = {run, parseInputs, InputError};
+module.exports = {run, parseInputs, checkConfig, InputError};
