@@ -1,6 +1,6 @@
 ---
 name: hop-top-dotgithub
-description: "Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io/Packagist), push subtree mirrors, and gate spec versioning (per-version commit rules, channel-derived status lines, the version-literal guard). Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, adding the release-please-preflight check, adopting the spec-commit-rules / spec-status-line / version-check workflows for a spec tree, deciding where `extra-files` with the x-release-please-version annotation belongs, mapping registry secrets, troubleshooting why a tag didn't trigger a publish, registering a new package on PyPI/Packagist (via OIDC trusted publishing or API tokens), creating GitHub Environments, or debugging pnpm 11 strict-mode install failures."
+description: "Use hop-top/.github's reusable workflows to publish releases (npm/PyPI/crates.io/Packagist), push subtree mirrors, and gate spec versioning (per-version commit rules, channel-derived status lines, the version-literal guard). Use when wiring a hop-top repo's release pipeline to call publish-on-tag.yml on `<component>/v<version>` tag pushes, adding the release-please-preflight check, adopting the spec-commit-rules / spec-status-line / version-check workflows for a spec tree, deciding where `extra-files` with the x-release-please-version annotation belongs, adopting target versioning (`versioning: \"target\"`, `versioning-extension: true`) or migrating to it from `versioning: \"prerelease\"` + `Release-As`, mapping registry secrets, troubleshooting why a tag didn't trigger a publish, registering a new package on PyPI/Packagist (via OIDC trusted publishing or API tokens), creating GitHub Environments, or debugging pnpm 11 strict-mode install failures."
 ---
 
 # Using hop-top/.github
@@ -45,6 +45,8 @@ spec-versioning rules before release-please ever sees it — see
 | Understand annotated `extra-files` — where it belongs, where it breaks | [references/concepts/version-strings.md § Where `extra-files` is right](references/concepts/version-strings.md#where-extra-files-is-right) |
 | Configure a single-language repo (no polyglot split) | [references/how-to/single-language-repo.md](references/how-to/single-language-repo.md) |
 | Stay in an alpha/beta/rc channel | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
+| Version by branch role: one target per prerelease line, rc promoted to stable without `Release-As`, patch-only `release/x.y`, families linked only on a new line | [references/how-to/target-versioning.md](references/how-to/target-versioning.md) |
+| Migrate from `versioning: "prerelease"` + `Release-As` to target versioning | [references/how-to/target-versioning.md § Migrate](references/how-to/target-versioning.md#migrate) |
 | Keep a monorepo Release-free (Releases only on mirrors) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
 | Re-trigger a failed publish | [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md) |
 | Understand why a workflow-file fix on main doesn't apply on rerun | [Re-runs use the tag's workflow snapshot, not main](#re-runs-use-the-tags-workflow-snapshot-not-main) |
