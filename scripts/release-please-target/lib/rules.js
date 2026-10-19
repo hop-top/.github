@@ -225,6 +225,23 @@ function nextMaintenance(C, summary, branch) {
 const onPrerelease = name => name || 'the prerelease branch';
 
 /**
+ * unreleased({kind, branch, prereleaseBranch}) -> decision | undefined
+ * A package with no release yet (no manifest entry, no tag). The
+ * prerelease branch opens it at its initial-version, release-please's
+ * own (undefined: no rule applies). A stable or maintenance branch skips
+ * it: nothing ships there that no prerelease previewed.
+ */
+function unreleased({kind, branch, prereleaseBranch}) {
+  if (kind === 'stable') {
+    return skipped('unreleased', `no release yet: skipped (a stable branch cuts only an rc; release it on ${onPrerelease(prereleaseBranch)}, then promote it via beta to rc)`);
+  }
+  if (kind === 'maintenance') {
+    return skipped('unreleased', `no release yet: skipped (maintenance branch ${branch} releases stable patches only)`);
+  }
+  return undefined;
+}
+
+/**
  * next({kind, current, summary, lastStable, promotion, openLine, branch, prereleaseBranch}) -> decision
  *   promotion         x-channel record {line, channel} | undefined
  *   openLine          x-open-line record 'x.y.z' | undefined
@@ -371,5 +388,5 @@ function recordProblems({current, promotion, openLine}) {
 
 module.exports = {
   CHANNELS, parse, fmt, core, cmp, cmpCore, bumpStable, deriveBase, summarize, promotionOf, openLineOf,
-  next, startsLinkedLine, resolveGroup, recordProblems,
+  next, unreleased, startsLinkedLine, resolveGroup, recordProblems,
 };

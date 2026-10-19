@@ -55,6 +55,17 @@ function hotfixThenPromotion() {
   return r;
 }
 
+// main released without qmochi (a package added since): no manifest
+// entry, no tag, so release-please would open it at its initial-version.
+// Then a feat on qmochi and a fix on kit. The repository is left on main.
+const NEW_QMOCHI = {'incubator/qmochi': {'initial-version': '0.1.0-alpha.0'}};
+function unreleased(branch = 'main') {
+  const {qmochi, ...released} = MAIN0;
+  const r = repo().commit('chore: initial').release(released);
+  if (branch !== 'main') r.checkout('-b', branch);
+  return r.commit('feat(qmochi): first', ['qmochi']).commit('fix(cli): k', ['kit']);
+}
+
 const SCENARIOS = [
   {id: 'a', label: 'kit 0.5.0-alpha.26 + feat!', build() {
     return {r: nextRepo().commit('feat(cli)!: drop flag', ['kit']), branch: 'next'};
@@ -222,6 +233,20 @@ const SCENARIOS = [
   }, expect: [T('kit-ts', '1.0.1')], blocked: {'kit-py': /^breaking change since stable 1\.0\.0 would ship 2\.0\.0 unpreviewed/},
   stock: [T('kit-py', '2.0.0-alpha.0'), T('kit-ts', '1.0.1-alpha.0')]},
 
+  {id: 'n1', label: 'main, qmochi never released (no manifest entry, no tag) + feat: skipped with a notice, never opened at its initial-version', build() {
+    return {r: unreleased(), branch: 'main', packages: NEW_QMOCHI};
+  }, expect: [T('kit', '0.4.1')], skipped: {qmochi: /^no release yet: skipped \(a stable branch cuts only an rc; release it on next, then promote it via beta to rc\)$/},
+  stock: [T('kit', '0.4.1-alpha.0'), T('qmochi', '0.1.0-alpha.0')]},
+
+  {id: 'n2', label: 'release/0.4, qmochi never released + feat: skipped with a notice, kit still patched', build() {
+    return {r: unreleased('release/0.4'), branch: 'release/0.4', packages: NEW_QMOCHI};
+  }, expect: [T('kit', '0.4.1')], skipped: {qmochi: /^no release yet: skipped \(maintenance branch release\/0\.4 releases stable patches only\)$/},
+  stock: [T('kit', '0.4.1-alpha.0'), T('qmochi', '0.1.0-alpha.0')]},
+
+  {id: 'n3', label: 'next, qmochi never released + feat: opened at its initial-version', build() {
+    return {r: unreleased('next'), branch: 'next', packages: NEW_QMOCHI};
+  }, expect: [T('kit', '0.4.1-alpha.0'), T('qmochi', '0.1.0-alpha.0')], stock: [T('kit', '0.4.1-alpha.0'), T('qmochi', '0.1.0-alpha.0')]},
+
   {id: 'f', label: 'release/0.5 at 0.5.3 + fix (0.6.0 released on main)', build() {
     const r = repo().commit('chore: initial').release({...MAIN0, qmochi: '0.5.3'});
     r.checkout('-b', 'release/0.5').checkout('main');
@@ -344,12 +369,12 @@ const PATH_OF_C = require('./helpers/fixture').PATH_OF;
 
 for (const s of SCENARIOS) {
   test(`(${s.id}) ${s.label}`, async () => {
-    const {r, branch, records = {}, land: doLand} = await s.build();
-    const cfg = config({records});
+    const {r, branch, records = {}, packages = {}, land: doLand} = await s.build();
+    const cfg = config({records, packages});
     const res = await propose(r, branch, cfg);
     // stock release-please on the same repository, for the printed table only
     const stock = PRINT
-      ? (await propose(r, branch, config({versioning: 'prerelease', packages: s.stockType ? Object.fromEntries(Object.keys(records).map(c => [PATH_OF_C[c], {'prerelease-type': s.stockType}])) : {}}))).titles
+      ? (await propose(r, branch, config({versioning: 'prerelease', packages: {...packages, ...(s.stockType ? Object.fromEntries(Object.keys(records).map(c => [PATH_OF_C[c], {'prerelease-type': s.stockType}])) : {})}}))).titles
       : s.stock;
     ROWS.push({s, titles: res.titles, versions: res.prs.flatMap(p => p.versions), stock, blocked: res.blocked, skipped: res.skipped});
     assert.deepEqual([...res.titles].sort(), [...s.expect].sort(), res.notes.join('\n'));

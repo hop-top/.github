@@ -2,7 +2,7 @@
 // The version rules on their own (no release-please).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {next, startsLinkedLine, resolveGroup, cmp, parse, bumpStable, promotionOf, openLineOf, recordProblems} = require('../lib/rules');
+const {next, unreleased, startsLinkedLine, resolveGroup, cmp, parse, bumpStable, promotionOf, openLineOf, recordProblems} = require('../lib/rules');
 
 const B = {breaking: true, feat: false}, F = {breaking: false, feat: true}, X = {breaking: false, feat: false};
 const pre = (current, summary, lastStable, promotion, openLine) => next({kind: 'prerelease', current, summary, lastStable, promotion, openLine});
@@ -204,6 +204,21 @@ test('rule 2: an alpha or beta on a stable branch is skipped, not failed', () =>
     assert.equal(d.code, 'not-rc');
     assert.deepEqual(d.blocked, [], current);
     assert.match(d.skipped[0], new RegExp(`^${current.replace(/\./g, '\\.')} is not an rc: skipped`));
+  }
+});
+
+test('a package with no release yet: opened on the prerelease branch only, skipped elsewhere', () => {
+  assert.equal(unreleased({kind: 'prerelease', branch: 'next'}), undefined);
+  for (const [kind, branch, reason] of [
+    ['stable', 'main', /^no release yet: skipped \(a stable branch cuts only an rc; release it on next, then promote it via beta to rc\)$/],
+    ['maintenance', 'release/0.4', /^no release yet: skipped \(maintenance branch release\/0\.4 releases stable patches only\)$/],
+  ]) {
+    const d = unreleased({kind, branch, prereleaseBranch: 'next'});
+    assert.equal(d.version, undefined, kind);
+    assert.equal(d.code, 'unreleased');
+    assert.deepEqual(d.blocked, [], kind);
+    assert.equal(d.skipped.length, 1, kind);
+    assert.match(d.skipped[0], reason);
   }
 });
 

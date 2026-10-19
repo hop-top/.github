@@ -174,6 +174,9 @@ function install(rpRoot) {
     const orig = strategy.buildReleasePullRequest.bind(strategy);
     strategy.buildReleasePullRequest = async (commits, latestRelease, draft, labels, bumpOnly) => {
       const ctx = vs.ctx;
+      // No release yet: release-please would open it at its initial-version.
+      const first = latestRelease ? undefined : rules.unreleased(ctx);
+      if (first && settle(ctx, first, logger)) return undefined;
       const cs = stripReleaseAs(commits || [], ctx, logger);
       vs.last = undefined;
       const pr = await orig(cs, latestRelease, draft, labels, bumpOnly);
