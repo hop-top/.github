@@ -22,7 +22,13 @@ SCRIPT = Path(__file__).resolve().parents[1] / "version_check.py"
 # The script runs under this interpreter: which optional parsers it can
 # import (tomllib / tomli, PyYAML) is known here.
 HAS_TOML = any(importlib.util.find_spec(m) for m in ("tomllib", "tomli"))
-HAS_YAML = importlib.util.find_spec("yaml") is not None
+try:  # importable, not merely present: a stub raising ImportError hides it
+    import yaml  # noqa: F401
+    HAS_YAML = True
+except ImportError:
+    HAS_YAML = False
+# version-check fails every YAML target without PyYAML: tests reading one skip.
+needs_yaml = unittest.skipUnless(HAS_YAML, "PyYAML not importable")
 
 MANIFEST = {"go": "1.0.0-alpha.0", "ts": "1.0.0-alpha.0", "py": "1.0.0-alpha.0",
             "spec/v1.0": "1.0.0-alpha.0"}
@@ -201,6 +207,7 @@ class VersionCheckTests(unittest.TestCase):
         self.write("ts/app.xml", "<app><version>1.0.0-alpha.0</version></app>\n")
         self.write("ts/pom.xml", "<project><version>1.0.0-alpha.0</version></project>\n")
 
+    @needs_yaml
     def test_typed_entries_need_no_annotation(self) -> None:
         self.write(".github/release-please-config.json", _config({"ts": self.TYPED}))
         self.write_typed_targets()
@@ -208,6 +215,7 @@ class VersionCheckTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("version-check: ok (0 annotated,", r.stdout)
 
+    @needs_yaml
     def test_generic_and_string_entries_still_need_their_annotation(self) -> None:
         # So does an object with no type or one release-please rejects
         # (it throws on those; the preflight fails them).
@@ -235,6 +243,7 @@ class VersionCheckTests(unittest.TestCase):
             "ts/install.sh:1: literal: 1.0.0-alpha.0 equals a manifest version and is not "
             "annotated with x-release-please-version"])
 
+    @needs_yaml
     def test_typed_target_still_answers_the_other_rules(self) -> None:
         # Only the annotation requirement (rules 2 and 3) is lifted.
         self.write(".github/release-please-config.json", _config({"ts": self.TYPED}))
@@ -261,20 +270,22 @@ class VersionCheckTests(unittest.TestCase):
         self.write("ts/chart.yaml", "name: x\nversion: 1.0.0-alpha.0\n")
         self.write("ts/app.xml", "<app><version>1.0.0-alpha.0</version></app>\n")
 
+    @needs_yaml
     def test_structured_string_entry_passes_with_a_version_at_the_default_path(self) -> None:
         entries = ["meta.json", "app.xml"]
         entries += ["/engine/meta.toml"] if HAS_TOML else []
-        entries += ["chart.yaml"] if HAS_YAML else []
+        entries += ["chart.yaml"]
         self.write(".github/release-please-config.json", _config({"ts": entries}))
         self.write_structured_targets()
         r = self.run_check()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("version-check: ok (0 annotated,", r.stdout)
 
+    @needs_yaml
     def test_structured_string_entry_needs_a_version_or_an_annotation(self) -> None:
         self.write(".github/release-please-config.json", _config({"ts": [
             "bare.json", "latest.json", "broken.json", "nover.xml", "annotated.json",
-            *(["int.toml"] if HAS_TOML else []), *(["list.yaml"] if HAS_YAML else [])]}))
+            *(["int.toml"] if HAS_TOML else []), "list.yaml"]}))
         self.write("ts/bare.json", '{"name": "x"}\n')
         self.write("ts/latest.json", '{"version": "latest"}\n')
         self.write("ts/broken.json", '{"version": "1.0.0-alpha.0",}\n')
@@ -303,10 +314,9 @@ class VersionCheckTests(unittest.TestCase):
         want.append("ts/latest.json:0: configured: listed in extra-files but carries no "
                     "x-release-please-version line and no version at $.version "
                     '($.version is "latest")')
-        if HAS_YAML:
-            want.append("ts/list.yaml:0: configured: listed in extra-files but carries no "
-                        "x-release-please-version line and no version at $.version "
-                        "($.version is [1])")
+        want.append("ts/list.yaml:0: configured: listed in extra-files but carries no "
+                    "x-release-please-version line and no version at $.version "
+                    "($.version is [1])")
         want.append("ts/nover.xml:0: configured: listed in extra-files but carries no "
                     "x-release-please-version line and no version at /*/version")
         self.assertEqual(r.stdout.splitlines(), want)
@@ -319,6 +329,7 @@ class VersionCheckTests(unittest.TestCase):
             (hide / f"{mod}.py").write_text('raise ImportError("hidden")\n', encoding="utf-8")
         return str(hide)
 
+    @needs_yaml
     def test_structured_string_entry_without_a_toml_parser_is_not_evaluated(self) -> None:
         # The preflight's rule: no TOML parser, the default path is not
         # evaluated and the entry passes; a note says so.
@@ -334,6 +345,7 @@ class VersionCheckTests(unittest.TestCase):
 
     # --- only the selector's line escapes rule 3 ------------------------------
 
+    @needs_yaml
     def test_plain_yaml_stale_sibling_still_fails(self) -> None:
         # release-please rewrites `$.version` only; appVersion stays stale.
         self.write(".github/release-please-config.json", _config({"ts": ["Chart.yaml"]}))
@@ -372,6 +384,7 @@ class VersionCheckTests(unittest.TestCase):
             "ts/b.json:3: literal: 1.0.0-alpha.0 equals a manifest version and is not "
             "annotated with x-release-please-version"])
 
+    @needs_yaml
     def test_each_format_exempts_only_its_selector_line(self) -> None:
         self.write(".github/release-please-config.json", _config({"ts": [
             {"type": "toml", "path": "Cargo.toml", "jsonpath": "$.package.version"},
@@ -417,6 +430,7 @@ class VersionCheckTests(unittest.TestCase):
             "ts/chart.yaml:0: configured: YAML target not checked: PyYAML is not "
             "importable (pip install pyyaml)"])
 
+    @needs_yaml
     def test_yaml_flow_collection_or_anchor_on_the_path_exempts_nothing(self) -> None:
         # One line holds the value and its siblings (flow), or the value
         # is shared with an alias: no line is release-please's alone.
@@ -436,6 +450,7 @@ class VersionCheckTests(unittest.TestCase):
             "version-check: ts/flow.yaml: yaml selector $.app.version not placed; "
             "rule 3 reads every line"])
 
+    @needs_yaml
     def test_yaml_quoted_keys_comments_and_documents(self) -> None:
         self.write(".github/release-please-config.json", _config({"ts": [
             "multi.yaml", {"type": "yaml", "path": "quoted.yaml", "jsonpath": "$.appVersion"}]}))
@@ -449,6 +464,7 @@ class VersionCheckTests(unittest.TestCase):
         self.assertEqual(r.stdout.splitlines(), [stale.format(x) for x in (
             "ts/multi.yaml:7", "ts/quoted.yaml:2")])
 
+    @needs_yaml
     def test_yaml_scalars_are_typed_as_js_yaml_types_them(self) -> None:
         # js-yaml 4.3.2 (release-please 17.11.2's): yes / on are strings,
         # true / 1 / a YYYY-MM-DD date are not; no `_` in numbers, no sign
@@ -515,6 +531,7 @@ class VersionCheckTests(unittest.TestCase):
             "ts/Cargo.toml:3: annotated: a typed extra-files target only: release-please "
             "rewrites its selector, never this annotation"])
 
+    @needs_yaml
     def test_annotation_in_a_yaml_entry_rewritten_at_its_default_path_fails(self) -> None:
         # release-please's YAML updater re-dumps the file once it rewrites
         # $.version, dropping every comment before the annotation step.
