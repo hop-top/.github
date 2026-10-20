@@ -159,7 +159,7 @@ matter:
   bare-name mirror carries the whole tree.
 - The mirror repo is created by the first `<name>/v*` tag if it
   doesn't exist (`mirror-subtree.yml` runs `gh repo view || gh repo
-  create`). Don't pre-seed it by hand — [SKILL.md § Bootstrap-mirror
+  create`). A hand-made seed is overwritten by the first tag — [SKILL.md § Bootstrap-mirror
   gotcha](../../SKILL.md#bootstrap-mirror-gotcha).
 
 Per-language overrides (`test-command`, `pypi-auth`, …):
