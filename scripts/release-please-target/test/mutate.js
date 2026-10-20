@@ -45,7 +45,7 @@ const MUTATIONS = [
     file: 'lib/runner.js', from: "    await github.octokit.pulls.update(", to: "    if (false) await github.octokit.pulls.update(",
     tests: ['test/runner.test.js']},
   {id: 'M11', what: 'linked family links on every proposal (stock linked-versions)',
-    file: 'lib/rules.js', from: "  if (!triggers.length) return {linked: false,", to: "  if (!M.some(m => m.proposed)) return {linked: false,",
+    file: 'lib/rules.js', from: '  if (!triggers.length) {\n', to: '  if (!M.some(m => m.proposed)) {\n',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M12', what: 'a promotion does not expire: applied whatever line it was recorded for',
     file: 'lib/rules.js', from: 'const promotedOn = (promotion, T) => (promotion && cmpCore(promotion.line, T) === 0 ? promotion.channel : undefined);',
