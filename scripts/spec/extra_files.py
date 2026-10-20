@@ -13,9 +13,11 @@ Two questions, for ``version_check.py``:
 Paths are the simple ones the preflight evaluates (``$.a.b``, ``['a']``,
 ``[n]``; for XML ``/a/b``, ``//a/b``, ``*`` and ``*[local-name()="x"]``
 steps); ``selector_lines`` returns None for anything else. YAML is read
-without PyYAML: block-style mappings, scalars typed by release-please's
-js-yaml core schema. TOML values need tomllib (or tomli); their lines are
-found by a key scanner. Standard library only otherwise.
+with PyYAML's BaseLoader (no implicit tags) and its plain scalars typed
+by YAML 1.2's core schema, as release-please's js-yaml types them;
+without PyYAML, ``HAVE_YAML`` is false and YAML is not read. TOML values
+need tomllib (or tomli); their lines are found by a key scanner.
+Standard library otherwise.
 """
 
 from __future__ import annotations
@@ -24,6 +26,12 @@ import json
 import pathlib
 import re
 import xml.parsers.expat
+
+try:
+    import yaml
+except ImportError:  # the caller reports YAML targets as unchecked
+    yaml = None
+HAVE_YAML = yaml is not None
 
 # A plain-string entry with one of these suffixes is rewritten at a default
 # path first (release-please's CompositeUpdater), then through the annotation.
@@ -56,79 +64,70 @@ def parse_jsonpath(sel: str) -> Steps | None:
 
 
 # --------------------------------------------------------------------
-# YAML (block style, js-yaml core schema)
+# YAML (PyYAML nodes, js-yaml's core schema)
 # --------------------------------------------------------------------
 
-_YAML_KEY = re.compile(r"""^(?P<ind> *)(?P<key>"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s#'"\[\]{},&*!|>%@`-][^#]*?|-[^\s#][^#]*?)\s*:(?:\s+(?P<val>.*?))?\s*$""")
+# Plain scalars js-yaml's default schema (YAML 1.2 core, plus timestamps)
+# reads as something other than a string.
 _YAML_NOT_STRING = re.compile(
     r"^(~|null|Null|NULL|true|True|TRUE|false|False|FALSE"
     r"|[-+]?(0|[1-9][0-9_]*)|0b[01_]+|0o[0-7_]+|0x[0-9a-fA-F_]+"
     r"|[-+]?(\.[0-9]+|[0-9][0-9_]*)(\.[0-9_]*)?([eE][-+]?[0-9]+)?"
     r"|[-+]?\.(inf|Inf|INF)|\.(nan|NaN|NAN)"
-    r"|\d{4}-\d\d?-\d\d?([Tt ].*)?)$")
+    r"|\d{4}-\d\d?-\d\d?([Tt ].*)?)?$")
+_YAML_STR_TAG = "tag:yaml.org,2002:str"
 
 
-def _yaml_key(raw: str) -> str:
-    if raw.startswith('"'):
-        return json.loads(raw)
-    if raw.startswith("'"):
-        return raw[1:-1].replace("''", "'")
-    return raw
+class YamlHit:
+    """The scalar at a path in one document: its 1-based line, whether
+    js-yaml reads it as a string, its text, and whether that line is the
+    value's alone (no flow collection, anchor, alias, tag or block scalar
+    on the way to it)."""
+
+    __slots__ = ("line", "is_string", "value", "placeable")
+
+    def __init__(self, line: int, is_string: bool, value: str, placeable: bool) -> None:
+        self.line, self.is_string, self.value, self.placeable = line, is_string, value, placeable
 
 
-def yaml_scalar(raw: str) -> tuple[bool, str]:
-    """(is a string under release-please's js-yaml schema, its text)."""
-    raw = re.sub(r"\s+#.*$", "", raw).strip() if not raw[:1] in "'\"" else raw.strip()
-    raw = re.sub(r"^&\S+\s+", "", raw)
-    if raw.startswith("!!str "):
-        return True, raw[6:].strip()
-    if raw.startswith('"'):
-        try:
-            return True, json.loads(raw)
-        except ValueError:
-            return True, raw.strip('"')
-    if raw.startswith("'"):
-        return True, raw[1:-1].replace("''", "'")
-    if raw[:1] in ("|", ">"):
-        return True, raw
-    if not raw or raw[:1] in "[{*!" or _YAML_NOT_STRING.match(raw):
-        return False, raw
-    return True, raw
+def _yaml_is_string(node, text: str) -> bool:
+    if node.tag != _YAML_STR_TAG:
+        return False  # an explicit !!int, !!bool, ...
+    if node.style or text[node.start_mark.index:][:1] == "!":
+        return True  # quoted, block, or an explicit !!str
+    return not _YAML_NOT_STRING.match(node.value)
 
 
-def yaml_entries(text: str, steps: Steps) -> list[tuple[int, str]]:
-    """``(line, raw value)`` for every block mapping key at ``steps``,
-    across documents. Keys under a sequence item never match."""
-    out: list[tuple[int, str]] = []
-    stack: list[tuple[int, str | None]] = []
-    block_indent = None  # inside a block scalar deeper than this
-    for n, line in enumerate(text.splitlines(), 1):
-        stripped = line.strip()
-        ind = len(line) - len(line.lstrip(" "))
-        if block_indent is not None:
-            if not stripped or ind > block_indent:
-                continue
-            block_indent = None
-        if not stripped or stripped.startswith("#"):
+def yaml_lookup(text: str, steps: Steps) -> list[YamlHit]:
+    """Every scalar at ``steps``, across documents (release-please's YAML
+    updater rewrites them all). Raises ``yaml.YAMLError`` on bad YAML."""
+    hits: list[YamlHit] = []
+    for doc in yaml.compose_all(text, Loader=yaml.BaseLoader):
+        node, placeable = doc, True
+        for step in steps:
+            if node is None:
+                break
+            placeable = placeable and not getattr(node, "flow_style", False)
+            if isinstance(step, str) and isinstance(node, yaml.MappingNode):
+                found = [v for k, v in node.value
+                         if isinstance(k, yaml.ScalarNode) and k.value == step]
+                node = found[-1] if found else None
+            elif isinstance(step, int) and isinstance(node, yaml.SequenceNode):
+                node = node.value[step] if step < len(node.value) else None
+            else:
+                node = None
+            if node is not None and text[node.start_mark.index:][:1] in ("&", "*", "!"):
+                placeable = False  # anchored, aliased or tagged
+        if node is None:
             continue
-        if stripped in ("---", "...") or stripped.startswith("--- "):
-            stack = []
+        if not isinstance(node, yaml.ScalarNode):  # a collection: never a string
+            source = " ".join(text[node.start_mark.index:node.end_mark.index].split())
+            hits.append(YamlHit(node.start_mark.line + 1, False, source, False))
             continue
-        while stack and stack[-1][0] >= ind:
-            stack.pop()
-        if stripped == "-" or stripped.startswith("- "):
-            stack.append((ind, None))  # a sequence: no key path below it
-            continue
-        m = _YAML_KEY.match(line)
-        if not m:
-            continue
-        val = m.group("val") or ""
-        stack.append((ind, _yaml_key(m.group("key"))))
-        if [k for _, k in stack] == steps:
-            out.append((n, val))
-        if val[:1] in ("|", ">"):
-            block_indent = ind
-    return out
+        placeable = placeable and node.style not in ("|", ">")
+        hits.append(YamlHit(node.start_mark.line + 1, _yaml_is_string(node, text),
+                            node.value, placeable))
+    return hits
 
 
 # --------------------------------------------------------------------
@@ -307,10 +306,17 @@ def selector_lines(text: str, kind: str, selector: str | None) -> set[int] | Non
         return None
     if kind == "json":
         return json_lines(text, steps)
+    if kind == "yaml":
+        try:
+            hits = yaml_lookup(text, steps)
+        except yaml.YAMLError:
+            return set()  # release-please leaves an unparseable file alone
+        hits = [hit for hit in hits if hit.is_string]  # the only values it rewrites
+        if not all(hit.placeable for hit in hits):
+            return None
+        return {hit.line for hit in hits}
     if any(isinstance(s, int) for s in steps):
         return None
-    if kind == "yaml":
-        return {n for n, _ in yaml_entries(text, steps)}
     return toml_lines(text, steps)
 
 
@@ -320,18 +326,20 @@ def default_path_value(file: pathlib.Path, kind: str) -> tuple[str, str]:
 
     Returns ``("ok", value)``; ``("missing", "")``; ``("notversion",
     value)`` -- not a string (JSON: not a version string); ``("parse",
-    error)``; or ``("skip", reason)`` when no TOML parser is importable.
+    error)``; ``("skip", reason)`` when no TOML parser is importable; or
+    ``("noyaml", reason)`` for YAML without PyYAML.
     """
+    if kind == "yaml" and not HAVE_YAML:
+        return "noyaml", "PyYAML is not importable"
     if not file.is_file():
         return "missing", ""
     try:
         if kind == "yaml":
-            entries = yaml_entries(file.read_text(encoding="utf-8"), ["version"])
-            if not entries:
+            hits = yaml_lookup(file.read_text(encoding="utf-8"), ["version"])
+            if not hits:
                 return "missing", ""
-            scalars = [yaml_scalar(raw) for _, raw in entries]
-            hit = next((text for is_str, text in scalars if is_str), None)
-            return ("ok", hit) if hit is not None else ("notversion", scalars[0][1])
+            hit = next((h for h in hits if h.is_string), None)
+            return ("ok", hit.value) if hit else ("notversion", hits[0].value)
         if kind == "json":
             with file.open(encoding="utf-8") as handle:
                 docs = [json.load(handle)]

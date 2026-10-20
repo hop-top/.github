@@ -32,6 +32,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # version-check reads YAML extra-files targets with PyYAML (pinned as
+      # in version-check.yml); the preflight's YAML tests use it too.
+      - name: Install PyYAML
+        run: python -m pip install pyyaml==6.0.3
+
       - name: Unit tests for scripts/spec
         run: make test-scripts
 

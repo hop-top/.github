@@ -67,8 +67,10 @@ file for rules 3-5 only. Only ``git ls-files`` output is scanned.
 Output: one ``path:line: <rule>: <detail>`` per finding, then
 ``version-check: <n> finding(s)`` on stderr and exit 1; or
 ``version-check: ok (<n> annotated, <m> files scanned)`` and exit 0.
-Standard library only (``extra_files.py`` beside it); tomli is used
-when importable, for TOML on Python < 3.11.
+Standard library (``extra_files.py`` beside it) and PyYAML, for YAML
+targets: without PyYAML each YAML target is a ``configured`` finding
+instead of passing unread. tomli is used when importable, for TOML on
+Python < 3.11.
 """
 
 from __future__ import annotations
@@ -81,7 +83,8 @@ import re
 import subprocess
 import sys
 
-from extra_files import DEFAULT_PATHS, STRUCTURED_SUFFIXES, default_path_value, selector_lines
+from extra_files import (DEFAULT_PATHS, HAVE_YAML, STRUCTURED_SUFFIXES, default_path_value,
+                         selector_lines)
 
 ANNOTATION = "x-release-please-version"
 DEFAULT_MANIFEST = ".github/.release-please-manifest.json"
@@ -176,6 +179,9 @@ class Repo:
         # path -> state of its default path (extra_files.default_path_value)
         self.default_state: dict[str, str] = {}
         self.notes: list[str] = []
+        # YAML targets left unread without PyYAML: each is a finding
+        self.unreadable: set[str] = set() if HAVE_YAML else {
+            path for path, sels in self.selectors.items() if any(k == "yaml" for k, _ in sels)}
         # files marked by their default path, or not evaluable there
         self.default_marked: set[str] = self._default_marked()
         self.allow = allow
@@ -266,7 +272,9 @@ class Repo:
             sel = DEFAULT_PATHS[kind]
             state, value = default_path_value(self.root / path, kind)
             self.default_state[path] = state
-            if state == "ok":
+            if state == "noyaml":
+                self.unreadable.add(path)
+            elif state == "ok":
                 marked.add(path)
             elif state == "skip":
                 marked.add(path)
@@ -282,7 +290,11 @@ class Repo:
 
     def rewritten_lines(self, path: str, text: str) -> set[int]:
         """The lines release-please rewrites at a selector: every typed
-        entry's, and the default path of a marked plain structured one."""
+        entry's, and the default path of a marked plain structured one.
+        An unread YAML target (already a finding) is not checked line by
+        line."""
+        if path in self.unreadable:
+            return set(range(1, text.count("\n") + 2))
         targets = list(self.selectors.get(path, ()))
         if path in self.default_marked:
             kind = self.structured_files[path]
@@ -374,8 +386,11 @@ def rule_configured(repo: Repo, annotated: set[str]) -> list[Finding]:
     default path can be: neither needs an annotation then.
     """
     out: list[Finding] = []
+    for path in sorted(repo.unreadable):
+        out.append(Finding(path, 0, "configured",
+                           "YAML target not checked: PyYAML is not importable (pip install pyyaml)"))
     configured = repo.configured_extra_files()
-    for path in sorted(configured - annotated - repo.default_marked):
+    for path in sorted(configured - annotated - repo.default_marked - repo.unreadable):
         why = repo.unmarked.get(path)
         out.append(Finding(path, 0, "configured",
                            f"listed in extra-files but carries no {ANNOTATION} line"
