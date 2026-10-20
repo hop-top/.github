@@ -227,6 +227,12 @@ const MUTATIONS = [
   {id: 'M69', what: 'a new member is advised the patch line after the stable even when the family has a line open above it',
     file: 'lib/rules.js', from: 'const advised = openLine || (highestStable', to: 'const advised = (highestStable',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M70', what: 'the step summary shows a blocked package\'s decision next to its block',
+    file: 'lib/runner.js', from: 'for (const d of report.decisions.values()) if (!blocked.has(d.component)) lines.push(', to: 'for (const d of report.decisions.values()) lines.push(',
+    tests: ['test/runner.test.js']},
+  {id: 'M71', what: 'a linked member blocked alone is not reported (the run passes, its stale PR stays open)',
+    file: 'lib/install.js', from: '          report.block(m.component, r, m.ctx.name);\n          this.logger.error(', to: '          this.logger.error(',
+    tests: ['test/runner.test.js', 'test/scenarios.test.js']},
 ];
 
 function copy() {
