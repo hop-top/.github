@@ -8,11 +8,14 @@ name: version-check (reusable)
 #   annotated   every `x-release-please-version` line sits under one
 #               release-please package, holds exactly one version literal,
 #               and that literal equals the manifest's version
-#   configured  the annotated files and the `extra-files` entries are one set
+#   configured  the annotated files and the string / `generic`
+#               `extra-files` entries are one set (a typed json / yaml /
+#               toml / xml / pom entry's jsonpath / xpath is its marker)
 #   literal     no un-annotated line carries a manifest version or a
 #               prerelease-channel literal (X.Y.Z-alpha.N, PEP 440 X.Y.ZaN)
 #               outside the manifest, changelogs, lockfiles, the natively
-#               rewritten files and the `allow` globs
+#               rewritten files, typed `extra-files` targets and the
+#               `allow` globs
 #   spec-path   every `<root>/vX.Y` path names a manifest spec version
 #               (inert when the config has no `<root>/vX.Y` package)
 #   forbidden   no un-annotated line matches a `forbid-literal` regex

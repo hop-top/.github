@@ -99,9 +99,11 @@ export const VERSION = "1.0.0-alpha.3"; // x-release-please-version
 ```
 
 The `version-check` reusable workflow guards the pair on every pull
-request: an annotated literal must equal the manifest, an
-`extra-files` entry must carry the annotation and vice versa, and an
-un-annotated line must not carry a release version at all. The
+request: an annotated literal must equal the manifest, a string or
+`generic` `extra-files` entry must carry the annotation and vice versa
+(a typed `json` / `yaml` / `toml` / `xml` / `pom` entry needs none: its
+`jsonpath` / `xpath` is the marker), and an un-annotated line must not
+carry a release version at all. The
 preflight rejects an `extra-files` entry that points at no file. See
 [how-to/spec-versioning.md](../how-to/spec-versioning.md).
 

@@ -174,6 +174,73 @@ class VersionCheckTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("version-check: ok (2 annotated,", r.stdout)
 
+    # --- typed extra-files: the jsonpath / xpath is the marker -------------
+    # release-please rewrites a typed entry (json / yaml / toml / xml / pom)
+    # at its selector, never through an annotation; a generic or plain
+    # string entry is rewritten through its annotation only.
+
+    TYPED = [
+        {"type": "json", "path": "meta.json", "jsonpath": "$.kit.version"},
+        {"type": "yaml", "path": "chart/Chart.yaml", "jsonpath": "$.appVersion"},
+        {"type": "toml", "path": "/engine/Cargo.toml", "jsonpath": "$.package.version"},
+        {"type": "xml", "path": "app.xml", "xpath": "//app/version"},
+        {"type": "pom", "path": "pom.xml"},
+    ]
+
+    def write_typed_targets(self) -> None:
+        self.write("ts/meta.json", '{"kit": {"version": "1.0.0-alpha.0"}}\n')
+        self.write("ts/chart/Chart.yaml", "appVersion: 1.0.0-alpha.0\n")
+        self.write("engine/Cargo.toml", '[package]\nversion = "1.0.0-alpha.0"\n')
+        self.write("ts/app.xml", "<app><version>1.0.0-alpha.0</version></app>\n")
+        self.write("ts/pom.xml", "<project><version>1.0.0-alpha.0</version></project>\n")
+
+    def test_typed_entries_need_no_annotation(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": self.TYPED}))
+        self.write_typed_targets()
+        r = self.run_check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("version-check: ok (0 annotated,", r.stdout)
+
+    def test_generic_and_string_entries_still_need_their_annotation(self) -> None:
+        # So does an object with no type or one release-please rejects
+        # (it throws on those; the preflight fails them).
+        self.write(".github/release-please-config.json", _config({"ts": [
+            {"type": "generic", "path": "install.sh"}, "VERSION.txt",
+            {"path": "a.txt"}, {"type": "string", "path": "b.txt"}, *self.TYPED]}))
+        self.write_typed_targets()
+        self.write("ts/install.sh", "VERSION=1.0.0-alpha.0\n")
+        self.write("ts/VERSION.txt", "1.0.0-alpha.0\n")
+        self.write("ts/a.txt", "plain\n")
+        self.write("ts/b.txt", "plain\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "ts/VERSION.txt:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line",
+            "ts/VERSION.txt:1: literal: 1.0.0-alpha.0 equals a manifest version and is not "
+            "annotated with x-release-please-version",
+            "ts/a.txt:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line",
+            "ts/b.txt:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line",
+            "ts/install.sh:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line",
+            "ts/install.sh:1: literal: 1.0.0-alpha.0 equals a manifest version and is not "
+            "annotated with x-release-please-version"])
+
+    def test_typed_target_still_answers_the_other_rules(self) -> None:
+        # Only the annotation requirement (rules 2 and 3) is lifted.
+        self.write(".github/release-please-config.json", _config({"ts": self.TYPED}))
+        self.write_typed_targets()
+        self.write("ts/meta.json", '{"kit": {"version": "1.0.0-alpha.0"}, '
+                                   '"spec": "spec/v0.9", "id": "example-ts v1"}\n')
+        r = self.run_check("--forbid-literal", r"example-ts v\d")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            r"ts/meta.json:1: forbidden: example-ts v1 matches forbidden literal pattern "
+            r"example-ts v\d",
+            "ts/meta.json:1: spec-path: spec/v0.9 is not a manifest package (known: spec/v1.0)"])
+
     def test_root_package_native_file_is_not_scanned(self) -> None:
         self.write(".github/.release-please-manifest.json", json.dumps({".": "1.0.0-alpha.0"}))
         self.write(".github/release-please-config.json", _config(
