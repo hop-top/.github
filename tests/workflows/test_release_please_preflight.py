@@ -689,6 +689,30 @@ class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
                                "bump-patch-for-minor-pre-major true contradict target versioning "
                                "(pre-1.0 breaking or feat -> minor)")
 
+    def test_null_bump_options_fall_back_to_the_top_level(self) -> None:
+        # release-please merges a package's options over the top level with
+        # `??`: a package's null is unset, the top-level value applies.
+        contradiction = ("[BREAK] package {}: bump-minor-pre-major false / "
+                         "bump-patch-for-minor-pre-major true contradict target versioning "
+                         "(pre-1.0 breaking or feat -> minor)")
+        config = self.kit(**{"bump-patch-for-minor-pre-major": True})
+        for pkg in (".", "sdk/ts"):
+            config["packages"][pkg]["bump-patch-for-minor-pre-major"] = False
+        config["packages"]["incubator/qmochi"]["bump-patch-for-minor-pre-major"] = None
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertEqual([x for x in self.breaks(lines) if "contradict" in x],
+                         [contradiction.format("incubator/qmochi")])
+
+        config = self.kit(**{"bump-minor-pre-major": False})
+        config["packages"]["sdk/ts"]["bump-minor-pre-major"] = None
+        self.setup_repo(config)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertEqual([x for x in self.breaks(lines) if "contradict" in x],
+                         [contradiction.format("sdk/ts")])
+
     # --- x-channel / x-open-line records ----------------------------------------
 
     def test_kit_mixed_promotion_passes(self) -> None:
