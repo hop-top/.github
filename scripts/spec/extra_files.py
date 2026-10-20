@@ -41,7 +41,8 @@ STRUCTURED_SUFFIXES = {".json": "json", ".yaml": "yaml", ".yml": "yaml",
                        ".toml": "toml", ".xml": "xml"}
 DEFAULT_PATHS = {"json": "$.version", "yaml": "$.version", "toml": "$.version",
                  "xml": "/*/version"}
-# The preflight's test for a JSON version string (searched, not anchored).
+# release-please's JSON updater's version test (searched, not anchored);
+# the preflight's too.
 JSON_VERSION_RE = re.compile(r"\d+\.\d+\.\d+(-[\w.]+)?(\+[-\w.]+)?")
 
 Steps = list  # of str (key) and int (index)
@@ -216,8 +217,11 @@ def json_lines(text: str, steps: Steps) -> set[int]:
             if found is None:
                 return set()
             i = found
-        _, end = decoder.raw_decode(text, i)
+        value, end = decoder.raw_decode(text, i)
     except (IndexError, ValueError):
+        return set()
+    # release-please's JSON updater skips anything but a string holding a version
+    if not (isinstance(value, str) and JSON_VERSION_RE.search(value)):
         return set()
     first = text.count("\n", 0, i) + 1
     return set(range(first, first + text.count("\n", i, end) + 1))
