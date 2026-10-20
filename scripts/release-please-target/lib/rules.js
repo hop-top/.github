@@ -311,8 +311,8 @@ function toRc(members, L) {
  * counter: the highest of that channel's members already on the line + 1,
  * or .0 (a promoted member's last alpha still counts for the alpha
  * members). Nobody moves backwards or changes channel. A member that
- * already released the target (or later) as stable blocks the group: no
- * member gets a version.
+ * already released the target (or later) as stable, or is already on a
+ * later line, blocks the group: no member gets a version.
  */
 function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   const M = members.map(m => ({
@@ -324,6 +324,14 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   const by = triggers.map(t => `${t.component}@${fmt(t.proposed)}`).join(', ');
   const fail = reason => ({linked: true, reason: `${groupName}: ${reason}`, blocked: [`${groupName}: ${reason}`]});
   const all = v => Object.fromEntries(M.map(m => [m.component, fmt(v)]));
+  // A member already on a later line than target T: it never moves back,
+  // so the family links at its line or later only, which x-open-line on
+  // the members below that line opens.
+  const pastTarget = (m, T) => {
+    const line = core(m.current);
+    const below = M.filter(x => x !== m && x.current && cmpCore(x.current, line) < 0).map(x => x.component).join(', ');
+    return fail(`${m.component} is already at ${fmt(m.current)}, past group target ${fmt(T)} (linked by ${by}), and a member never moves backwards: open ${fmt(line)} for ${below} with x-open-line on ${onPrerelease(prereleaseBranch)} so the family links at ${m.component}'s line`);
+  };
 
   if (kind === 'stable') {
     // The target is what the linking members cut: another member's own
@@ -333,7 +341,7 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     const done = M.find(m => stableOf(m) && cmp(stableOf(m), L) >= 0);
     if (done) return fail(`${done.component} already released ${fmt(stableOf(done))} as stable, at or past group target ${fmt(L)} (linked by ${by})`);
     const at = M.find(m => m.current && cmp(m.current, L) >= 0);
-    if (at) return fail(`${at.component} is already at ${fmt(at.current)} >= ${fmt(L)} (linked by ${by})`);
+    if (at) return pastTarget(at, L);
     const notRc = M.filter(m => !(m.current && channelOf(m.current.pre) === 'rc' && cmpCore(core(m.current), L) === 0));
     if (notRc.length) {
       const where = notRc.map(m => `${m.component} is at ${m.current ? fmt(m.current) : 'no release'}`).join(', ');
@@ -366,7 +374,7 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   for (const m of M) {
     const ch = channelFor(m);
     const v = top[ch] ? {...T, pre: bumpCounter(top[ch].pre)} : atChannel(T, ch);
-    if (m.current && cmp(v, m.current) <= 0) return fail(`${m.component} at ${fmt(m.current)} would move to ${fmt(v)}: never backwards`);
+    if (m.current && cmp(v, m.current) <= 0) return pastTarget(m, T);
     versions[m.component] = fmt(v);
   }
   const distinct = [...new Set(Object.values(versions))].join(', ');

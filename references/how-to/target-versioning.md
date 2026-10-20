@@ -232,7 +232,15 @@ When it links:
   opens `0.6.0` with a `feat` while kit-py, cut `0.6.0` on its own, has
   a fix since (`0.6.1-alpha.0`) or already previews `0.6.1-alpha.2`;
   the group links at `0.6.0`, not `0.6.1`, and the run fails naming
-  kit-py as already stable at `0.6.0`.
+  kit-py as already stable at `0.6.0`;
+- a member already on a later line than the target, one that does not
+  raise it, blocks the group too: it never moves backwards. kit
+  (stable `0.5.0`) opens `0.6.0` with a `feat` while kit-rs, with no
+  stable, previews `0.6.1-alpha.0` (or, from 1.0, kit opens `2.0.0`
+  while kit-rs previews `2.3.0-alpha.0`): the run fails naming kit-rs
+  as past group target `0.6.0` (`2.0.0`), on either branch. Opening
+  kit-rs's line for the members below it with `x-open-line` links the
+  family there.
 
 ### Release-As footers
 
@@ -438,6 +446,7 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | `x-channel … skips a channel from …` | a promotion two steps ahead (hand edit) | record the next channel only (`promote.js channel`) |
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
 | `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target (cut on its own before the family linked, on `next` or `main`) | owner decision: re-seed the member or the group |
+| `… is already at …, past group target …, and a member never moves backwards` | a linked member previews a later line than the family links at (its own patch line, a minor from 1.0), so the group would move it back | on `next`, open that line for the members the message names (`promote.js open-line x.y.z --package <path>` for each), then the family links at it |
 | `plugins has no "target-context"` | config lists target packages without the plugin | add it, first |
 | `prerelease-type '…': every line starts on alpha.0` | a channel set through `prerelease-type` | `alpha.0`; promote with `promote.js channel` |
 | `manifest version '…' is on channel '…': target versioning supports alpha/beta/rc only` | a target package's manifest on another channel (`experimental.N` from a stock setup) | seed the manifest on alpha, then promote via beta to rc |

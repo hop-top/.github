@@ -456,6 +456,23 @@ test('rule 4: never moves a member backwards', () => {
   }
 });
 
+test('rule 4: a member already past the group target blocks it, named as past it, with the way out', () => {
+  // kit (stable 0.5.0) + feat opens 0.6.0; kit-rs, no stable, previews its
+  // patch line 0.6.1 (no linked line): the group cannot move it back
+  const kit = {component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.6.0-alpha.0'};
+  const g = resolveGroup({kind: 'prerelease', groupName: 'kit', prereleaseBranch: 'next', members: [
+    kit, {component: 'kit-rs', current: '0.6.1-alpha.0'}, {component: 'kit-py', current: '0.5.0-alpha.5'}, {component: 'kit-ts', current: '0.6.1-alpha.2', lastStable: '0.4.0'},
+  ]});
+  assert.equal(g.linked, true);
+  assert.equal(g.versions, undefined);
+  assert.deepEqual(g.blocked, ["kit: kit-rs is already at 0.6.1-alpha.0, past group target 0.6.0 (linked by kit@0.6.0-alpha.0), and a member never moves backwards: open 0.6.1 for kit, kit-py with x-open-line on next so the family links at kit-rs's line"]);
+  // from 1.0: kit opens 2.0.0 while kit-rs, no stable, previews 2.3.0 (a
+  // minor from 1.0 is no linked line)
+  const h = group([{component: 'kit', current: '1.4.0', lastStable: '1.4.0', proposed: '2.0.0-alpha.0'}, {component: 'kit-rs', current: '2.3.0-alpha.0'}]);
+  assert.equal(h.versions, undefined);
+  assert.deepEqual(h.blocked, ["kit: kit-rs is already at 2.3.0-alpha.0, past group target 2.0.0 (linked by kit@2.0.0-alpha.0), and a member never moves backwards: open 2.3.0 for kit with x-open-line on the prerelease branch so the family links at kit-rs's line"]);
+});
+
 test('rule 4: a promotion that skips a channel blocks the group', () => {
   const g = group([KIT, {component: 'kit-rs', current: '0.6.0-alpha.4', promotion: promo('0.6.0', 'rc')}]);
   assert.equal(g.versions, undefined);
@@ -573,7 +590,7 @@ test('rule 4: a stable-branch link takes its target from the members that open i
   assert.match(stable([
     {component: 'kit', current: '0.6.0-rc.1', lastStable: '0.5.0', proposed: '0.6.0'},
     {component: 'kit-py', current: '0.7.0-alpha.1', lastStable: '0.5.0'},
-  ]).blocked[0], /^kit: kit-py is already at 0\.7\.0-alpha\.1 >= 0\.6\.0 \(linked by kit@0\.6\.0\)$/);
+  ]).blocked[0], /^kit: kit-py is already at 0\.7\.0-alpha\.1, past group target 0\.6\.0 \(linked by kit@0\.6\.0\), and a member never moves backwards: open 0\.7\.0 for kit with x-open-line on next so the family links at kit-py's line$/);
 });
 
 test('rule 4: different targets and last stables: the highest live line wins', () => {
