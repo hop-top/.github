@@ -142,6 +142,17 @@ Configs are validated against `schema/well-known.schema.json` (JSON Schema
 draft 2020-12). Unknown top-level keys, unknown resource keys, and missing
 required fields all fail loudly with `::error::` annotations.
 
+## Runtime
+
+The action sets up Python 3.12 with `update-environment: false` and runs
+the generator from a private venv under `$RUNNER_TEMP`, so it does not
+change the `python` that later steps of the caller's job see. Dependencies
+come from `generator/requirements.txt`: exact versions, `sha256` hashes,
+and prebuilt wheels only (available for GitHub-hosted Linux, macOS and
+Windows x64 runners). After changing `dependencies` in
+`generator/pyproject.toml`, regenerate it from the repo root with the
+command recorded in its header.
+
 ## Permissions
 
 This action declares no permissions. The caller workflow is responsible for
