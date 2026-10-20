@@ -644,6 +644,16 @@ jobs:
             fi
           fi
 
+          # ---------- Check 2b: top-level linked-versions ----------
+          # release-please reads linked groups only from `plugins`
+          # ({"type": "linked-versions", ...}); a top-level `linked-versions`
+          # key links nothing. `x-` keys are free-form notes (target
+          # versioning's records among them) and pass silently.
+          if [[ -n "${PACKAGES:-}" ]] && jq -e 'type == "object" and has("linked-versions")' "$CONFIG_PATH" >/dev/null 2>&1; then
+            warn "top-level linked-versions in $CONFIG_PATH is ignored — release-please reads linked groups only from plugins"
+            fixhint "move each group into plugins as {\"type\": \"linked-versions\", \"groupName\": ..., \"components\": [...]} (conditional-linked-versions for versioning target), then drop the top-level key"
+          fi
+
           # ---------- Check 3: single-segment component names ----------
           # publish.yml's '*/v*' trigger misses nested tags, so a '/' in a
           # component fails -- except in a Go-only repo (GO_ONLY): there is no
@@ -1179,6 +1189,164 @@ jobs:
             done
             if [[ $EXTRA_SEEN -eq 0 ]]; then
               info "no extra-files entries in $CONFIG_PATH"
+            fi
+          fi
+
+          # ---------- Check 5e: stale release-as ----------
+          # `release-as` (a package's own, else the top-level default) makes
+          # release-please propose exactly that version on every run. Once
+          # that release is cut the pin is stale: release-please proposes the
+          # same version again, or a lower one. Stale = not above the
+          # package's manifest version (SemVer precedence), or its tag exists
+          # in the checkout (`<component><tag-separator>v<version>`, honouring
+          # include-component-in-tag / include-v-in-tag; not checked for a
+          # package without `component`). versioning target refuses
+          # release-as outright (check 4b).
+          SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          # semver_cmp A B: -1 / 0 / 1 by SemVer precedence (build ignored)
+          semver_cmp() {
+            local a="${1%%+*}" b="${2%%+*}" c ap="" bp="" i n x y
+            local -a pa pb
+            c=$(core_cmp "$a" "$b")
+            if [[ "$c" != "0" ]]; then echo "$c"; return; fi
+            [[ "$a" == *-* ]] && ap="${a#*-}"
+            [[ "$b" == *-* ]] && bp="${b#*-}"
+            if [[ -z "$ap" && -z "$bp" ]]; then echo 0; return; fi
+            if [[ -z "$ap" ]]; then echo 1; return; fi
+            if [[ -z "$bp" ]]; then echo -1; return; fi
+            IFS=. read -r -a pa <<<"$ap"
+            IFS=. read -r -a pb <<<"$bp"
+            n=${#pa[@]}
+            (( ${#pb[@]} > n )) && n=${#pb[@]}
+            for (( i = 0; i < n; i++ )); do
+              x="${pa[$i]-}"
+              y="${pb[$i]-}"
+              if [[ -z "$x" ]]; then echo -1; return; fi
+              if [[ -z "$y" ]]; then echo 1; return; fi
+              if [[ "$x" =~ ^[0-9]+$ && "$y" =~ ^[0-9]+$ ]]; then
+                if (( 10#$x < 10#$y )); then echo -1; return; fi
+                if (( 10#$x > 10#$y )); then echo 1; return; fi
+              elif [[ "$x" =~ ^[0-9]+$ ]]; then echo -1; return
+              elif [[ "$y" =~ ^[0-9]+$ ]]; then echo 1; return
+              elif [[ "$x" < "$y" ]]; then echo -1; return
+              elif [[ "$x" > "$y" ]]; then echo 1; return
+              fi
+            done
+            echo 0
+          }
+          # release_tag <package> <version>: the tag release-please cuts for it
+          # (empty when the package has no component and the tag needs one)
+          release_tag() {
+            jq -r --arg p "$1" --arg v "$2" '
+              def opt($k; $d): if (.packages[$p] | has($k)) then .packages[$p][$k] elif has($k) then .[$k] else $d end;
+              (.packages[$p].component // "") as $c
+              | (if opt("include-v-in-tag"; true) == false then "" else "v" end) as $vp
+              | if opt("include-component-in-tag"; true) == false then $vp + $v
+                elif $c == "" then empty
+                else $c + (opt("tag-separator"; "-") | tostring) + $vp + $v end
+            ' "$CONFIG_PATH" 2>/dev/null
+          }
+          if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            PINS=$(jq -r '.versioning as $top_versioning | (.["release-as"] // "") as $top
+              | (.packages // {}) | to_entries[]
+              | select((.value.versioning // $top_versioning) != "target")
+              | (if (.value | has("release-as")) then .value["release-as"] else $top end) as $ra
+              | select(($ra | type) == "string" and $ra != "")
+              | "\(.key)\t\($ra)"' "$CONFIG_PATH" 2>/dev/null)
+            if [[ -n "$PINS" ]]; then
+              {
+                echo ""
+                echo "### release-as pins"
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            while IFS=$'\t' read -r path ra; do
+              [[ -n "$path" && -n "$ra" ]] || continue
+              SEED=$(jq -r --arg p "$path" '.[$p] // empty' "$MANIFEST_PATH" 2>/dev/null)
+              REASONS=""
+              if [[ "$ra" =~ $SEMVER_RE && "$SEED" =~ $SEMVER_RE && "$(semver_cmp "$ra" "$SEED")" != "1" ]]; then
+                REASONS="not above the manifest's $SEED"
+              fi
+              TAG=$(release_tag "$path" "$ra")
+              if [[ -n "$TAG" ]] && git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+                REASONS="${REASONS:+$REASONS; }tag $TAG exists"
+              fi
+              if [[ -n "$REASONS" ]]; then
+                warn "package $path release-as '$ra' is stale ($REASONS) — release-please keeps proposing $ra until the pin is removed"
+                fixhint "remove release-as from package $path in $CONFIG_PATH once its release is cut"
+              else
+                ok "package $path: release-as '$ra' is above the manifest's ${SEED:-(no seed)}"
+              fi
+            done <<<"$PINS"
+          fi
+
+          # ---------- Check 5f: nested modules vs exclude-paths ----------
+          # release-please gives the root package `.` every commit, and any
+          # other package the commits under its path that no deeper package
+          # claims; `exclude-paths` (repo-root-relative; a package's own, else
+          # the top-level default) is the only way out. A nested directory
+          # that is a module of its own -- a go.mod, or (under the root) a
+          # configured package with its own manifest -- and is not excluded
+          # releases its parent on every commit made in it. A release-type
+          # simple package (an aggregate moving with everything below it) is
+          # not checked; .git, node_modules, vendor and testdata are skipped.
+          if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
+            {
+              echo ""
+              echo "### nested modules"
+            } >> "$GITHUB_STEP_SUMMARY"
+            GOMOD_DIRS=$(find . \( -name .git -o -name node_modules -o -name vendor -o -name testdata \) -prune \
+              -o -type f -name go.mod -print 2>/dev/null | sed -e 's|^\./||' -e 's|/go\.mod$||' | grep -vx 'go\.mod' | sort -u)
+            NESTED_SEEN=0
+            for path in $PACKAGES; do
+              RT=$(jq -r --arg p "$path" '.packages[$p]["release-type"] // .["release-type"] // empty' "$CONFIG_PATH")
+              [[ "$RT" == "simple" ]] && continue
+              EXCLUDES=$(jq -r --arg p "$path" '
+                (if (.packages[$p] | has("exclude-paths")) then .packages[$p]["exclude-paths"] else (.["exclude-paths"] // []) end)
+                | if type == "array" then .[] | strings | sub("^/+"; "") | sub("/+$"; "") else empty end' "$CONFIG_PATH" 2>/dev/null)
+              CANDIDATES=""
+              while IFS= read -r dir; do
+                [[ -n "$dir" && "$dir" != "$path" ]] || continue
+                if [[ "$path" != "." ]]; then
+                  [[ "$dir" == "$path"/* ]] || continue
+                  OWNER=""
+                  for q in $PACKAGES; do
+                    [[ "$q" != "." ]] || continue
+                    if [[ "$dir" == "$q" || "$dir" == "$q"/* ]] && (( ${#q} > ${#OWNER} )); then
+                      OWNER="$q"
+                    fi
+                  done
+                  [[ "$OWNER" == "$path" ]] || continue
+                fi
+                CANDIDATES="$CANDIDATES$dir"$'\t'"go.mod"$'\n'
+              done <<<"$GOMOD_DIRS"
+              if [[ "$path" == "." ]]; then
+                for q in $PACKAGES; do
+                  [[ "$q" != "." && ! -f "$q/go.mod" ]] || continue
+                  for m in package.json Cargo.toml pyproject.toml composer.json; do
+                    if [[ -f "$q/$m" ]]; then
+                      CANDIDATES="$CANDIDATES$q"$'\t'"$m"$'\n'
+                      break
+                    fi
+                  done
+                done
+              fi
+              while IFS=$'\t' read -r dir manifest; do
+                [[ -n "$dir" ]] || continue
+                EXCLUDED=0
+                while IFS= read -r e; do
+                  if [[ -n "$e" && ( "$dir" == "$e" || "$dir" == "$e"/* ) ]]; then
+                    EXCLUDED=1
+                    break
+                  fi
+                done <<<"$EXCLUDES"
+                [[ $EXCLUDED -eq 0 ]] || continue
+                NESTED_SEEN=$((NESTED_SEEN+1))
+                warn "package $path: nested module $dir (own $manifest) is not in its exclude-paths — commits under $dir also release package $path"
+                fixhint "add \"$dir\" to .packages.\"$path\".\"exclude-paths\" in $CONFIG_PATH"
+              done <<<"$(printf '%s' "$CANDIDATES" | sort -u)"
+            done
+            if [[ $NESTED_SEEN -eq 0 ]]; then
+              ok "no nested module releases its parent package"
             fi
           fi
 
