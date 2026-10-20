@@ -122,7 +122,6 @@ scripts/
   release-please-target/     release-please extension behind versioning-extension (+ tests)
 SKILL.md                     consumer-facing how-to
 DEVELOPING.md                collaborator-facing how-to
-VERSION                      current release-please-managed version
 ```
 
 ## Versioning
