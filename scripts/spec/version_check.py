@@ -234,9 +234,13 @@ class Repo:
         ``typed_files`` holds the paths a typed entry rewrites at its
         selector, ``generic_files`` those of every other entry (a string,
         ``generic``, or a type release-please rejects): the annotation is
-        their marker."""
+        their marker. A package with no ``extra-files`` of its own (unset
+        or null: release-please's ``??``) takes the top-level list, joined
+        with its own path."""
+        default = self.config.get("extra-files") or ()
         for pkg, cfg in self.packages.items():
-            for entry in cfg.get("extra-files", ()):
+            own = cfg.get("extra-files")
+            for entry in own if own is not None else default:
                 rel = entry if isinstance(entry, str) else entry.get("path", "")
                 if not rel:
                     continue

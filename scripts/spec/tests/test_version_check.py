@@ -415,6 +415,29 @@ class VersionCheckTests(unittest.TestCase):
             "ts/chart.yaml:2: annotated: release-please's YAML updater rewrites $.version "
             "and re-dumps the file without comments: this annotation is never rewritten"])
 
+    # --- top-level extra-files: every package's default ---------------------
+
+    def test_top_level_extra_files_apply_to_packages_without_their_own(self) -> None:
+        # release-please merges a package's options over the top level with
+        # `??`: unset or null inherits, an empty list does not.
+        self.write(".github/.release-please-manifest.json",
+                   json.dumps({"ts": "1.0.0-alpha.0", "py": "1.0.0-alpha.0", "go": "1.0.0-alpha.0"}))
+        self.write(".github/release-please-config.json", json.dumps({
+            "extra-files": ["VERSION.txt"], "packages": {
+                "ts": {"release-type": "node", "component": "a"},
+                "py": {"release-type": "python", "component": "b", "extra-files": None},
+                "go": {"release-type": "go", "component": "c", "extra-files": []}}}))
+        self.write("ts/VERSION.txt", "1.0.0-alpha.0 # x-release-please-version\n")
+        self.write("py/VERSION.txt", "plain\n")
+        self.write("go/VERSION.txt", "1.0.0-alpha.0 # x-release-please-version\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "go/VERSION.txt:0: configured: carries x-release-please-version but is not an "
+            "extra-files entry",
+            "py/VERSION.txt:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line"])
+
     def test_root_package_native_file_is_not_scanned(self) -> None:
         self.write(".github/.release-please-manifest.json", json.dumps({".": "1.0.0-alpha.0"}))
         self.write(".github/release-please-config.json", _config(

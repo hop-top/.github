@@ -433,6 +433,22 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
             "[WARN]  extra-files target sdk/ts/bare.json carries no x-release-please-version "
             "annotation and no version at $.version — release-please rewrites nothing in it"])
 
+    def test_top_level_extra_files_apply_to_packages_without_their_own(self) -> None:
+        # release-please merges a package's options over the top level with
+        # `??`: unset or null inherits (joined with each package's path), an
+        # empty list does not.
+        self.write(CONFIG, json.dumps({"extra-files": ["VERSION"], "packages": {
+            "sdk/ts": {"component": "ts"}, "sdk/py": {"component": "py", "extra-files": None},
+            "sdk/go": {"component": "go", "extra-files": []}}}))
+        self.write(MANIFEST, json.dumps({p: "1.0.0" for p in ("sdk/ts", "sdk/py", "sdk/go")}))
+        self.write("sdk/ts/VERSION", "1.0.0 # x-release-please-version\n")
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, "[OK]    package sdk/ts: extra-files entry 'VERSION' exists (sdk/ts/VERSION)")
+        self.assertEqual([x for x in lines if x.startswith("[BREAK]")], [
+            "[BREAK] package sdk/py lists extra-files entry 'VERSION' but sdk/py/VERSION does not exist"])
+        self.assertFalse([x for x in lines if "sdk/go" in x and "extra-files" in x], "\n".join(lines))
+
     def test_glob_entry_without_its_selector_is_reported_not_failed(self) -> None:
         # release-please builds an updater per match: with no match it
         # never reaches the missing selector. The preflight does not
