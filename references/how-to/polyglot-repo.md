@@ -115,15 +115,20 @@ group's `components`. The family links on every new major, and on a
 new minor while it is before 1.0; patches, and minors from 1.0, stay
 per member ([target versioning § Linked family](target-versioning.md#linked-family)).
 
-**Manifest seed**: on stock versioning, if the repo has — or is
-gaining — a `release-type: python` package, every component must be
-seeded at `0.1.0-alpha.0` and first tags land at `alpha.1`; pure
-go/ts repos leave `{}`. Rules and why: [bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please).
-With target versioning, a new linked member's first release must
-start on the family's line: set its `initial-version` there (the
-block message names the line; python and rust ignore
-`initial-version` and open at `0.1.0`, so seed the manifest on that
-line instead) —
+**Manifest seed**: seed only the new component. The others already
+have releases, and reseeding them rewinds them. `release-type:
+python` and `rust` ignore `initial-version` and open at stable
+`0.1.0` while their manifest key is absent; the other strategies
+honor it. On stock versioning, seed a python or rust tree at
+`0.1.0-alpha.0` (its first tag lands at `alpha.1`); a go, ts or php
+tree leaves its key absent and sets `initial-version`
+([bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please),
+[prerelease channel § Manifest presence vs `initial-version`](prerelease-channel.md#manifest-presence-vs-initial-version)).
+With target versioning, an unlinked python or rust tree likewise
+opens at stable `0.1.0` on `next` unless seeded on alpha. A new
+linked member's first release must start on the family's line: set
+its `initial-version` there (the block message names the line;
+python and rust: seed the manifest on that line instead) —
 [target versioning § Initial version of a linked member](target-versioning.md#initial-version-of-a-linked-member).
 
 ### 3. Add the `ecosystems` entry
@@ -162,7 +167,7 @@ Per-language overrides (`test-command`, `pypi-auth`, …):
 
 ### 4. Decide on a root umbrella package (optional)
 
-A `"."` package (`poly-cite`, `c12n-poly`) versions repo-level
+A `"."` package (`poly-cite`, `poly-c12n`) versions repo-level
 changes — README, specs, CI — with no registry target. `poly-xrr`
 and `poly-vstar` ship without one; `poly-cite` and `poly-c12n` have
 one. If you add it:
@@ -212,7 +217,7 @@ is what produces the close+retrigger churn in
 | `hop-top/<name>` mirror contains `docs/`, `ts/`, `py/` … | Go entry uses `dir: .` in the per-language layout | Set `dir: go`; the next tag pushes only the module |
 | `release-please-preflight` fails: `… has an extra-files block targeting pyproject.toml` | `extra-files` entry for `pyproject.toml` | Remove it: redundant, the python strategy already writes the file |
 | Sibling release PRs CONFLICTING after one merge | Shared manifest | Merge serially — [retrigger-release-please.md](retrigger-release-please.md) |
-| Python release PR proposes stable `0.1.0` | Empty manifest with a python package | Seed every component — [bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please) |
+| Python or rust release PR proposes stable `0.1.0` for the new tree | No manifest key for it: python and rust ignore `initial-version` | Seed that component only, on alpha (on the family's line if linked) — [§ 2 Manifest seed](#2-add-the-release-please-package) |
 | notice `no release yet: skipped` for the new tree (target versioning) | Its first `feat:` / `fix:` landed on `main` or `release/x.y` | Release it on `next` — [target versioning § Common issues](target-versioning.md#common-issues) |
 | `… has no release yet and its first release would be …, past the family's line …` (or `below …`, `not a prerelease`) | New linked member's first version is off the family's line | Set `initial-version` to the line the message names; python / rust: seed the manifest — [target versioning § Initial version of a linked member](target-versioning.md#initial-version-of-a-linked-member) |
 
