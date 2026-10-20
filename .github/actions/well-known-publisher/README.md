@@ -10,6 +10,7 @@ commit, GitHub Pages, or a Cloudflare Worker.
 |---------------|-----------------------------|-----------------------------------------------|
 | `config_path` | `.github/well-known.yaml`   | YAML driving the generation.                  |
 | `output_dir`  | _unset_                     | Where generated files are written; when omitted, the config's `output_dir` wins, falling back to `dist/.well-known`. |
+| `env_allowlist` | _empty_                   | Comma- or newline-separated env var names the config's `${{ env.NAME }}` placeholders may read. Empty means none. |
 
 ### `output_dir` precedence
 
@@ -96,8 +97,26 @@ def generate(sub_cfg: dict, out_dir: Path) -> GeneratorResult:
 
 Any string value may reference an environment variable using the
 GitHub-Actions-style placeholder `${{ env.NAME }}`. The loader substitutes
-each occurrence with `os.environ['NAME']` before schema validation and
-emits a workflow `::error::` annotation for any missing variable.
+each occurrence with `os.environ['NAME']` before schema validation.
+
+Only names listed in the `env_allowlist` input are read. The default is
+empty, so out of the box no placeholder interpolates and every reference
+fails the run. This keeps anything else in the job environment (for
+example `GITHUB_TOKEN` passed as env, or the runner's
+`ACTIONS_ID_TOKEN_REQUEST_TOKEN`) out of published files. List exactly the
+variables the config needs:
+
+```yaml
+- uses: hop-top/.github/.github/actions/well-known-publisher@v0
+  env:
+    SECURITY_CONTACT: mailto:security@example.com
+  with:
+    env_allowlist: SECURITY_CONTACT
+```
+
+A reference to a name outside the allowlist, or to an allowlisted
+variable that is unset, fails with an `::error::` annotation carrying the
+config file and the line of the key whose value holds the placeholder.
 
 ### Publishing a literal `${{ ... }}`
 

@@ -11,6 +11,7 @@ from well_known_publisher.loader import (
     Config,
     ConfigError,
     load,
+    parse_env_allowlist,
     parse_iso8601_duration,
     resolve_duration_to_timestamp,
 )
@@ -37,7 +38,7 @@ def test_valid_minimal_loads_with_defaults() -> None:
 def test_env_interpolation_substitutes_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OUT", "build/wk")
     monkeypatch.setenv("WHO", "world")
-    cfg = load(FIXTURES / "valid_with_env_interp.yaml")
+    cfg = load(FIXTURES / "valid_with_env_interp.yaml", env_allowlist={"OUT", "WHO"})
     assert cfg.output_dir == Path("build/wk")
     assert len(cfg.custom) == 1
     entry = cfg.custom[0]
@@ -51,7 +52,7 @@ def test_env_interpolation_missing_var_raises(
     monkeypatch.delenv("OUT", raising=False)
     monkeypatch.delenv("WHO", raising=False)
     with pytest.raises(ConfigError) as excinfo:
-        load(FIXTURES / "valid_with_env_interp.yaml")
+        load(FIXTURES / "valid_with_env_interp.yaml", env_allowlist={"OUT", "WHO"})
     # Both placeholders missing → two distinct errors collected.
     assert any("OUT" in e for e in excinfo.value.errors)
     assert any("WHO" in e for e in excinfo.value.errors)
@@ -130,7 +131,10 @@ def test_env_interp_substitutes_inside_custom_body(
 ) -> None:
     """Unescaped ``${{ env.X }}`` inside a custom body IS substituted."""
     monkeypatch.setenv("GITHUB_SHA", "abc123")
-    cfg = load(FIXTURES / "valid_env_interp_in_custom_body.yaml")
+    cfg = load(
+        FIXTURES / "valid_env_interp_in_custom_body.yaml",
+        env_allowlist={"GITHUB_SHA"},
+    )
     assert len(cfg.custom) == 1
     body = cfg.custom[0]["body"]
     assert "abc123" in body
@@ -168,7 +172,7 @@ def test_escaped_placeholder_is_emitted_literally(
 ) -> None:
     """``$${{ ... }}`` drops one ``$`` and skips interpolation."""
     monkeypatch.setenv("GITHUB_SHA", "abc123")
-    cfg = load(FIXTURES / "valid_escaped_placeholder.yaml")
+    cfg = load(FIXTURES / "valid_escaped_placeholder.yaml", env_allowlist={"GITHUB_SHA"})
     assert cfg.custom[0]["body"] == (
         "env: ${{ env.GITHUB_SHA }}\n"
         "expr: ${{ github.sha }}\n"
@@ -192,3 +196,76 @@ def test_escaped_placeholder_needs_no_env_var(
     )
     cfg = load(cfg_file)
     assert cfg.custom[0]["body"] == "x ${{ env.NOT_SET_ANYWHERE }} y"
+
+
+# ---------------------------------------------------------------------------
+# Env allowlist
+# ---------------------------------------------------------------------------
+
+
+def test_default_allowlist_interpolates_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no allowlist, every placeholder fails, even for set variables."""
+    monkeypatch.setenv("OUT", "build/wk")
+    monkeypatch.setenv("WHO", "world")
+    with pytest.raises(ConfigError) as excinfo:
+        load(FIXTURES / "valid_with_env_interp.yaml")
+    joined = " | ".join(excinfo.value.errors)
+    assert "OUT" in joined and "WHO" in joined
+    assert "allowlist" in joined
+    assert "build/wk" not in joined and "world" not in joined
+    assert "build/wk" not in capsys.readouterr().out
+
+
+def test_secret_outside_allowlist_never_published(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("SOME_TOKEN", "hunter2")
+    monkeypatch.setenv("WHO", "world")
+    cfg_file = tmp_path / "wk.yaml"
+    cfg_file.write_text(
+        "version: 1\n"
+        "resources: {}\n"
+        "custom:\n"
+        "  - path: .well-known/leak.txt\n"
+        "    body: 'token=${{ env.SOME_TOKEN }} who=${{ env.WHO }}'\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError) as excinfo:
+        load(cfg_file, env_allowlist={"WHO"})
+    assert len(excinfo.value.errors) == 1
+    assert "SOME_TOKEN" in excinfo.value.errors[0]
+    assert "hunter2" not in excinfo.value.errors[0]
+    assert "hunter2" not in capsys.readouterr().out
+
+
+def test_env_errors_carry_line_numbers(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``output_dir`` sits on line 2, the ``body`` key on line 7."""
+    monkeypatch.delenv("WHO", raising=False)
+    monkeypatch.setenv("OUT", "build/wk")
+    with pytest.raises(ConfigError):
+        load(FIXTURES / "valid_with_env_interp.yaml", env_allowlist={"WHO"})
+    lines = capsys.readouterr().out.splitlines()
+    out_err = [ln for ln in lines if "OUT" in ln]
+    who_err = [ln for ln in lines if "WHO" in ln]
+    assert out_err and "line=2" in out_err[0], lines
+    assert who_err and "line=7" in who_err[0], lines
+
+
+def test_parse_env_allowlist_accepts_commas_and_newlines() -> None:
+    assert parse_env_allowlist("A, B\nC_1\n\n  ,D ") == frozenset(
+        {"A", "B", "C_1", "D"}
+    )
+    assert parse_env_allowlist("") == frozenset()
+    assert parse_env_allowlist(None) == frozenset()
+
+
+@pytest.mark.parametrize("bad", ["BAD-NAME", "1ABC", "A.B", "${{ env.X }}"])
+def test_parse_env_allowlist_rejects_invalid_names(bad: str) -> None:
+    with pytest.raises(ValueError, match="env allowlist"):
+        parse_env_allowlist(f"OK,{bad}")

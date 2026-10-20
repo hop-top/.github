@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Iterable, Literal, Mapping, Sequence
 
 from jsonschema import Draft202012Validator
 from ruamel.yaml import YAML
@@ -67,6 +67,8 @@ class ConfigError(Exception):
 # ---------------------------------------------------------------------------
 
 _DEFAULT_OUTPUT_DIR = "dist/.well-known"
+_ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ALLOWLIST_SPLIT_RE = re.compile(r"[,\s]+")
 # ``$${{`` is the literal escape: it emits ``${{`` and the rest of the
 # expression is left untouched. Otherwise ``${{ env.NAME }}`` interpolates.
 _PLACEHOLDER_RE = re.compile(
@@ -195,38 +197,68 @@ def _line_for_path(data: Any, path: Sequence[Any]) -> int | None:
 # Env interpolation
 # ---------------------------------------------------------------------------
 
+def parse_env_allowlist(text: str | None) -> frozenset[str]:
+    """Parse a comma- and/or whitespace-separated list of env var names.
+
+    Raises ``ValueError`` for anything that is not a plain variable name.
+    """
+    names = [n for n in _ALLOWLIST_SPLIT_RE.split(text or "") if n]
+    bad = [n for n in names if not _ENV_NAME_RE.fullmatch(n)]
+    if bad:
+        raise ValueError(
+            "env allowlist entries must be plain variable names "
+            f"([A-Za-z_][A-Za-z0-9_]*); got: {', '.join(map(repr, bad))}"
+        )
+    return frozenset(names)
+
+
 def _interpolate(
     node: Any,
     *,
     errors: list[str],
     source_path: Path,
+    allowlist: frozenset[str],
+    root: Any,
+    path: tuple[Any, ...] = (),
 ) -> Any:
     """Walk the structure, substituting ${{ env.NAME }} placeholders.
 
-    ``$${{ ... }}`` is emitted as a literal ``${{ ... }}``. Missing env
-    vars emit ``::error::`` annotations and append to ``errors`` (caller
-    decides whether to raise).
+    Only names in ``allowlist`` are looked up; any other name is an error,
+    so nothing outside the caller's explicit list can reach a published
+    file. ``$${{ ... }}`` is emitted as a literal ``${{ ... }}``. Each
+    problem emits an ``::error::`` annotation carrying the line of the
+    key holding the value and is appended to ``errors`` (caller decides
+    whether to raise).
     """
     if isinstance(node, str):
+        def _fail(msg: str) -> None:
+            ann.error(msg, file=str(source_path), line=_line_for_path(root, path))
+            errors.append(msg)
+
         def _sub(m: re.Match[str]) -> str:
             if m.group("escaped"):
                 return m.group("escaped")
             name = m.group("name")
+            if name not in allowlist:
+                _fail(
+                    f"env var {name} is not in the env allowlist; add it to "
+                    "the action's env_allowlist input (CLI --env-allowlist) "
+                    "to publish its value"
+                )
+                return m.group(0)
             try:
                 return os.environ[name]
             except KeyError:
-                msg = f"missing env var referenced by config: {name}"
-                ann.error(msg, file=str(source_path))
-                errors.append(msg)
+                _fail(f"missing env var referenced by config: {name}")
                 return m.group(0)
 
         return _PLACEHOLDER_RE.sub(_sub, node)
+    kw = {"errors": errors, "source_path": source_path, "allowlist": allowlist,
+          "root": root}
     if isinstance(node, dict):
-        return {k: _interpolate(v, errors=errors, source_path=source_path)
-                for k, v in node.items()}
+        return {k: _interpolate(v, path=(*path, k), **kw) for k, v in node.items()}
     if isinstance(node, list):
-        return [_interpolate(v, errors=errors, source_path=source_path)
-                for v in node]
+        return [_interpolate(v, path=(*path, i), **kw) for i, v in enumerate(node)]
     return node
 
 
@@ -234,9 +266,14 @@ def _interpolate(
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def load(config_path: Path) -> Config:
-    """Load, validate and resolve the YAML config at ``config_path``."""
+def load(config_path: Path, *, env_allowlist: Iterable[str] = ()) -> Config:
+    """Load, validate and resolve the YAML config at ``config_path``.
+
+    ``env_allowlist`` names the only env vars ``${{ env.NAME }}`` may
+    read; the default (empty) makes every placeholder an error.
+    """
     config_path = Path(config_path)
+    allowlist = frozenset(env_allowlist)
     errors: list[str] = []
 
     # ---- read YAML ------------------------------------------------------
@@ -270,7 +307,13 @@ def load(config_path: Path) -> Config:
     # ---- env interpolation ---------------------------------------------
     # Done BEFORE schema validation so a placeholder like
     # ``deploy: ${{ env.MODE }}`` doesn't trip the enum check.
-    interpolated = _interpolate(raw, errors=errors, source_path=config_path)
+    interpolated = _interpolate(
+        raw,
+        errors=errors,
+        source_path=config_path,
+        allowlist=allowlist,
+        root=raw,
+    )
 
     # ---- schema validation ---------------------------------------------
     schema = _load_schema()

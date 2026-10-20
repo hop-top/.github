@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 
 from . import annotations as ann
-from .loader import Config, ConfigError, load
+from .loader import Config, ConfigError, load, parse_env_allowlist
 from .registry import GeneratorFn, GeneratorResult, discover
 
 
@@ -127,10 +127,19 @@ def main(argv: list[str] | None = None) -> int:
     # schema default) can win when the caller omits the flag. Precedence:
     # CLI flag > config value > schema/Config default (``dist/.well-known``).
     parser.add_argument("--output-dir", default=None, type=Path)
+    # Comma/newline-separated env var names ``${{ env.NAME }}`` may read.
+    # Empty (the default) means no placeholder interpolates.
+    parser.add_argument("--env-allowlist", default="")
     args = parser.parse_args(argv)
 
     try:
-        cfg = load(args.config)
+        allowlist = parse_env_allowlist(args.env_allowlist)
+    except ValueError as exc:
+        ann.error(str(exc))
+        return 2
+
+    try:
+        cfg = load(args.config, env_allowlist=allowlist)
     except ConfigError as exc:
         # Errors already surfaced as ::error:: annotations inside load().
         sys.stderr.write(str(exc) + "\n")
