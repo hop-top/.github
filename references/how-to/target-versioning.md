@@ -259,7 +259,7 @@ group's version instead (kit opening `0.6.0` makes a new kit-rs
 `0.6.0-alpha.0`, whatever its `initial-version`).
 
 1.0 opens only through `x-open-line`, so while the family is before 1.0
-(any member's stable or line at `0.x`):
+(the highest stable or line across its members is `0.x`):
 
 - a first release at `1.0.0` or later is **blocked** on `next`, that
   member alone (the others still release): set the member's
@@ -278,6 +278,14 @@ group's version instead (kit opening `0.6.0` makes a new kit-rs
   `main`); on `main`, when nothing else links, its own stable cut is
   **blocked**, that member alone. Opening its line for the family with
   `x-open-line` on `next` resolves both.
+
+What counts is the highest version across the members, each member's
+stable or line, whichever is higher: a 1.x family with one late `0.x`
+member is not before 1.0, and a family that opened 1.0 through
+`x-open-line` (lines at `1.0.0-alpha.N`, no stable from 1.0) is on the
+1.0 line, where a new member takes the group's version. A line from 1.0
+of a member with no stable does not count: it may be that member's
+initial version.
 
 Outside a group nothing changes: a package may start at any
 configured `initial-version`, `1.0.0` included.

@@ -320,7 +320,8 @@ function toRc(members, L) {
  * later line, blocks the group: no member gets a version.
  *
  * 1.0 opens only through x-open-line. While the family is before 1.0
- * (any member's stable or line at 0.x), a member's first release never
+ * (the highest stable or line across the members at 0.x; a line from 1.0
+ * with no stable does not count), a member's first release never
  * raises the target (it takes the group's version when the group links)
  * and, independent, is blocked at or past 1.0.0; a member with no stable
  * on a line from 1.0 (its initial version) neither links the family nor
@@ -332,14 +333,19 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   }));
   const on = onPrerelease(prereleaseBranch);
   const stableOf = m => maxV(m.lastStable, m.current && !m.current.pre ? m.current : undefined);
-  // The family is before 1.0 while any member's stable or line is: at the
-  // highest such line.
+  // A member's line counts for the family when it has a stable or the
+  // line is 0.x: a line from 1.0 with no stable may be its initial version.
+  const lineOf = m => (m.current && m.current.pre && (stableOf(m) || m.current.major === 0) ? core(m.current) : undefined);
+  // The family is before 1.0 while the highest stable or line across its
+  // members is 0.x (familyLine: the highest 0.x line).
+  const highest = M.reduce((a, m) => maxV(maxV(a, stableOf(m)), lineOf(m)), undefined);
+  const preOne = !!highest && highest.major === 0;
   const familyLine = M.reduce((a, m) => (m.current && m.current.major === 0 ? maxV(a, core(m.current)) : a), undefined);
   // A member with no stable on a line from 1.0 in a family before 1.0 has
   // that line from its initial version (config): a change or x-open-line
   // opening 1.0 links the family. It never links the family nor raises
   // its target.
-  const fromInitial = m => !!familyLine && !stableOf(m) && !!(m.current && m.current.pre) && m.current.major >= 1;
+  const fromInitial = m => preOne && !stableOf(m) && !!(m.current && m.current.pre) && m.current.major >= 1;
   // The released members below `line`: x-open-line `line` on them links
   // the family at it.
   const below = (line, except) => M.filter(x => x !== except && x.current && cmpCore(x.current, line) < 0).map(x => x.component).join(', ');
@@ -352,7 +358,7 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     // That member alone is blocked.
     const blockedMembers = {};
     for (const m of M) {
-      if (!familyLine || !m.proposed) continue;
+      if (!preOne || !m.proposed) continue;
       if (!m.current && m.proposed.major >= 1) {
         blockedMembers[m.component] = `${groupName}: ${m.component} has no release yet and its first release would be ${fmt(m.proposed)}, but the family is before 1.0 (at ${fmt(familyLine)}): set its initial-version to ${fmt(familyLine)}-alpha.0, the family's line, or open 1.0.0 for ${below(ONE, m)} with x-open-line on ${on}`;
       } else if (kind === 'stable' && fromInitial(m)) {

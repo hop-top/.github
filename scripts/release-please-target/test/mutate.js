@@ -191,7 +191,7 @@ const MUTATIONS = [
     file: 'lib/rules.js', from: 'let T = core(triggers.reduce((a, m) => maxV(a, m.proposed), undefined));', to: 'let T = core([...triggers, ...M.filter(m => !m.current)].reduce((a, m) => maxV(a, m.proposed), undefined));',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M58', what: 'a family from 1.0 counts as before 1.0 (its first releases and no-stable majors held to 1.0)',
-    file: 'lib/rules.js', from: '(m.current && m.current.major === 0 ? maxV(a, core(m.current)) : a)', to: '(m.current ? maxV(a, core(m.current)) : a)',
+    file: 'lib/rules.js', from: 'const preOne = !!highest && highest.major === 0;', to: 'const preOne = !!highest;',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M59', what: 'a linked member with no release yet gets no first-release proposal (its initial version goes unchecked)',
     file: 'lib/install.js', from: "if (latest || kind === 'prerelease') {", to: 'if (latest) {',
@@ -201,6 +201,12 @@ const MUTATIONS = [
     tests: ['test/scenarios.test.js']},
   {id: 'M61', what: 'a new pre-1.0 minor line at a patch (x-open-line 0.6.1 from 0.5.0) does not link on a stable branch',
     file: 'lib/rules.js', from: 'return V.major === 0 && ref.major === 0 && V.minor > ref.minor;', to: 'return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M62', what: 'before 1.0 means any member at 0.x (a 1.x family with a late 0.x member held to 1.0 rules)',
+    file: 'lib/rules.js', from: 'const preOne = !!highest && highest.major === 0;', to: 'const preOne = M.some(m => m.current && m.current.major === 0);',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M63', what: 'a no-stable member\'s line from 1.0 (its initial version) lifts the family out of before 1.0',
+    file: 'lib/rules.js', from: '(stableOf(m) || m.current.major === 0) ? core(m.current)', to: 'true ? core(m.current)',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
 ];
 

@@ -559,6 +559,34 @@ test('rule 4: a no-stable member on a line from 1.0 (its initial version) never 
   ]).versions, {kit: '1.0.0', 'kit-rs': '1.0.0'});
 });
 
+test('rule 4: before 1.0 means the highest stable or line across the members is 0.x', () => {
+  // a 1.x family with one late 0.x member is not before 1.0: kit-rs, no
+  // stable, previewing 3.0.0 is a linked major again (it raises the target)
+  assert.deepEqual(onNext([
+    {component: 'kit', current: '1.2.0', lastStable: '1.2.0', proposed: '2.0.0-alpha.0'},
+    {component: 'kit-go', current: '0.3.0-alpha.1'},
+    {component: 'kit-rs', current: '3.0.0-alpha.0'},
+  ]).versions, {kit: '3.0.0-alpha.1', 'kit-go': '3.0.0-alpha.1', 'kit-rs': '3.0.0-alpha.1'});
+  // ... and a first release at 1.0.0-alpha.0 there is no 1.0 to open
+  assert.deepEqual(onNext([
+    {component: 'kit', current: '1.2.0-alpha.3', lastStable: '1.1.0', proposed: '1.2.0-alpha.4'},
+    {component: 'kit-go', current: '0.3.0-alpha.1'},
+    {component: 'kit-new', proposed: '1.0.0-alpha.0'},
+  ]).blockedMembers, {});
+  // a family that opened 1.0 through x-open-line (lines 1.0.0-alpha.N, no
+  // stable from 1.0) is on the 1.0 line, a late 0.x member or not: a new
+  // member's first release at 1.0.0-alpha.0 opens, or takes the group version
+  const onOne = [
+    {component: 'kit', current: '1.0.0-alpha.2', lastStable: '0.9.0', proposed: '1.0.0-alpha.3'},
+    {component: 'kit-py', current: '1.0.0-alpha.2', lastStable: '0.9.0'},
+    {component: 'kit-go', current: '0.3.0-alpha.0'},
+  ];
+  assert.deepEqual(onNext([...onOne, {component: 'kit-new', proposed: '1.0.0-alpha.0'}]).blockedMembers, {});
+  // a no-stable member's own line from 1.0 does not lift a family before 1.0
+  const rs = onNext([{component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.6.0-alpha.0'}, {component: 'kit-rs', current: '1.0.0-alpha.1'}, {component: 'kit-php', current: '1.0.0-alpha.0'}]);
+  assert.match(rs.blocked[0], /^kit: kit-rs is already at 1\.0\.0-alpha\.1, past group target 0\.6\.0 /);
+});
+
 test('rule 4: a promotion that skips a channel blocks the group', () => {
   const g = group([KIT, {component: 'kit-rs', current: '0.6.0-alpha.4', promotion: promo('0.6.0', 'rc')}]);
   assert.equal(g.versions, undefined);
