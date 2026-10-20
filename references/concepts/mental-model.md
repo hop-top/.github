@@ -106,9 +106,12 @@ publish.yml:ecosystems.<KEY>
 mirror repo basename (org/<name>)
 ```
 
-If they drift, `publish-on-tag.yml`'s `ecosystems[<component>]`
-lookup fails with `Unknown component '<tag-prefix>'` at parse time,
-before any publish work happens.
+If the component and the key drift, `publish-on-tag.yml`'s
+`ecosystems[<component>]` lookup finds no entry for the tag's prefix,
+so the tag is skipped like an umbrella tag: a `::notice::`, every
+publish and mirror job skipped, a green run, nothing published
+([SKILL.md § Umbrella / meta-component
+tags](../../SKILL.md#umbrella--meta-component-tags)).
 
 ## Next steps
 
