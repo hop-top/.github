@@ -245,7 +245,7 @@ def _interpolate(
             if name not in allowlist:
                 _fail(
                     f"env var {name} is not in the env allowlist; add it to "
-                    "the action's env_allowlist input (CLI --env-allowlist) "
+                    "the action's env-allowlist input (CLI --env-allowlist) "
                     "to publish its value"
                 )
                 return m.group(0)

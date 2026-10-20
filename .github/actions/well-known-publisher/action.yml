@@ -7,17 +7,17 @@ description: |
 author: hop-top
 
 inputs:
-  config_path:
+  config-path:
     description: Path to the YAML config file driving generation.
     required: false
     default: .github/well-known.yaml
-  output_dir:
+  output-dir:
     description: |
       Directory where generated files are written. When omitted, the
       generator falls back to the config file's ``output_dir`` (or the
       schema default ``dist/.well-known`` when that is also unset).
     required: false
-  env_allowlist:
+  env-allowlist:
     description: |
       Comma- or newline-separated env var names the config's env
       placeholders (env.NAME in double braces) may read. Empty (the
@@ -73,9 +73,9 @@ runs:
       shell: bash
       env:
         WKP_PYTHON: ${{ steps.venv.outputs.python }}
-        WKP_CONFIG_PATH: ${{ inputs.config_path }}
-        WKP_OUTPUT_DIR: ${{ inputs.output_dir }}
-        WKP_ENV_ALLOWLIST: ${{ inputs.env_allowlist }}
+        WKP_CONFIG_PATH: ${{ inputs.config-path }}
+        WKP_OUTPUT_DIR: ${{ inputs.output-dir }}
+        WKP_ENV_ALLOWLIST: ${{ inputs.env-allowlist }}
       run: |
         args=( --config "${WKP_CONFIG_PATH}" --env-allowlist "${WKP_ENV_ALLOWLIST}" )
         if [ -n "${WKP_OUTPUT_DIR}" ]; then
