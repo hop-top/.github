@@ -187,7 +187,10 @@ When it links:
   with only a chore or config change) included; merging it tags every
   member;
 - every member moves to the group's target, the highest among the
-  members (a member already previewing a later target wins);
+  members (a member already previewing a later target wins); on the
+  stable branch the target is what the linking members cut, and another
+  member's own proposal (a patch of a member already stable) never
+  raises it;
 - each member keeps its own channel: a member already on the target
   line keeps its channel there, or takes its promotion recorded for
   that line; any other member starts the line on alpha;
@@ -220,7 +223,14 @@ When it links:
 - a member blocked on its own (an `x-open-line` below what its
   commits require, say) blocks the group;
 - a member that already released the target (or later) as stable
-  blocks the group: no member gets a PR.
+  blocks the group: no member gets a PR. On `main`: kit-py cut `0.5.0`
+  on its own earlier and has a fix since (`0.5.1`), the other members
+  at `0.5.0-rc.N` link at `0.5.0`; the run fails naming kit-py as
+  already stable at `0.5.0`;
+- a member on a channel outside alpha → beta → rc
+  (`0.5.0-experimental.3`, left from a stock setup) is not promoted by
+  a record: the block message says to move it onto alpha first, then
+  via beta to rc.
 
 ### Release-As footers
 
@@ -408,7 +418,7 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | `linked at x.y.0 …, but … is at …: a linked release is cut only when every member is at an rc` | a linked major (or minor before 1.0) reached `main` with a member not at rc (experimental ones included) | do what the message says on `next` (`promote kit-py via beta to rc …`), then merge again |
 | `x-channel … skips a channel from …` | a promotion two steps ahead (hand edit) | record the next channel only (`promote.js channel`) |
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
-| `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target | owner decision: re-seed the member or the group |
+| `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target (on `main`: cut on its own before the family linked) | owner decision: re-seed the member or the group |
 | `plugins has no "target-context"` | config lists target packages without the plugin | add it, first |
 | `prerelease-type '…': every line starts on alpha.0` | a channel set through `prerelease-type` | `alpha.0`; promote with `promote.js channel` |
 | `x-open-line … is below the required target …` | a change since needs more than the opened line | raise the line or remove it (`promote.js clear open-line`) |
