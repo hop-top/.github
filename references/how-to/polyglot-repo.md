@@ -145,12 +145,15 @@ Go in a polyglot repo is **mirror-only**: no `package`, no publish
 job — proxy.golang.org pulls from the mirror's tags. Two things
 matter:
 
-- `dir: go`, never `.`. A root-dir component takes
+- In this per-language layout (module under `go/`): `dir: go`,
+  never `.`. A root-dir component takes
   `mirror-subtree.yml`'s root-component path, which ships the whole
   tree minus `.github/workflows/` — `docs/`, `Makefile`, and every
   other language tree land on `hop-top/<name>`. `dir: go` takes the
   normal `git subtree split --prefix=go` path and the mirror gets
-  only the module.
+  only the module. A root-Go layout like `poly-kit` (the repo root
+  is the Go module, SDKs under `sdk/`) uses `dir: .` on purpose: its
+  bare-name mirror carries the whole tree.
 - The mirror repo is created by the first `<name>/v*` tag if it
   doesn't exist (`mirror-subtree.yml` runs `gh repo view || gh repo
   create`). Don't pre-seed it by hand — [SKILL.md § Bootstrap-mirror
@@ -208,7 +211,7 @@ is what produces the close+retrigger churn in
 | `Unknown component '<name>-ts'` at parse | Component, `ecosystems` key, or mirror basename drifted | Align all three to the identity table above |
 | Release PR opened for a tree that only has scaffolding | Scaffold landed as `feat:` | Land scaffolds as `build:` / `chore:`; close the PR, it regenerates on the first real `feat:` |
 | Umbrella PR opens on every `feat(<lang>):` | Root package missing that dir in `exclude-paths` | List every language dir and nested Go module |
-| `hop-top/<name>` mirror contains `docs/`, `ts/`, `py/` … | Go entry uses `dir: .` | Set `dir: go`; the next tag pushes only the module |
+| `hop-top/<name>` mirror contains `docs/`, `ts/`, `py/` … | Go entry uses `dir: .` in the per-language layout | Set `dir: go`; the next tag pushes only the module |
 | `pip install` fails on the release PR's `pyproject.toml` | `extra-files` entry for `pyproject.toml` | Remove it; the python strategy owns the file |
 | Sibling release PRs CONFLICTING after one merge | Shared manifest | Merge serially — [retrigger-release-please.md](retrigger-release-please.md) |
 | Python release PR proposes stable `0.1.0` | Empty manifest with a python package | Seed every component — [bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please) |

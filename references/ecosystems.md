@@ -31,7 +31,7 @@ ecosystems: |
 
 | Field | Required | Notes |
 |---|---|---|
-| `dir` | yes | Subdirectory in the repo (`.` for root). In a polyglot repo the Go entry must be `go`, not `.` — a root dir mirrors every other language tree too ([how-to/polyglot-repo.md § 3](how-to/polyglot-repo.md#3-add-the-ecosystems-entry)) |
+| `dir` | yes | Subdirectory in the repo (`.` for root). In a per-language polyglot layout (module under `go/`) the Go entry is `go`, not `.` — a root dir mirrors every other language tree too ([how-to/polyglot-repo.md § 3](how-to/polyglot-repo.md#3-add-the-ecosystems-entry)); a root-Go layout like `poly-kit` uses `.` on purpose |
 | `ecosystem` | yes | `ts` \| `py` \| `rs` \| `php` \| `go` \| `none` — picks the publish job. `go` and `none` have no publish job: Go releases through the mirror plus the module proxy, and `none` is a payload with no registry at all (a spec tree, say). Both still run the mirror job. `php` runs a Packagist notify after the mirror push, not a publish-from-source step. Prefer `none` over omitting the field: an absent `ecosystem` yields an empty output, which the mirror job's `!= ''` guard reads as an umbrella tag and skips |
 | `mirror` | yes | Full slug of the read-only mirror repo (e.g. `hop-top/kit-ts`) |
 | `package` | no | Registry package name (informational; required for php's Packagist notify) |
