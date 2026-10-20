@@ -33,15 +33,15 @@ Composite action that turns a single YAML config into files under
 
 | Name | Default | Description |
 | --- | --- | --- |
-| `config_path` | `.github/well-known.yaml` | YAML driving the generation. |
-| `output_dir` | _unset_ | Where files are written ([precedence](#output_dir-precedence)). |
-| `env_allowlist` | _empty_ | Env var names placeholders may read ([details](#environment-interpolation)). |
+| `config-path` | `.github/well-known.yaml` | YAML driving the generation. |
+| `output-dir` | _unset_ | Where files are written ([precedence](#output-directory-precedence)). |
+| `env-allowlist` | _empty_ | Env var names placeholders may read ([details](#environment-interpolation)). |
 
-### `output_dir` precedence
+### Output directory precedence
 
 The directory is resolved with the following precedence, highest first:
 
-1. The composite action input `output_dir` (CLI flag `--output-dir`).
+1. The composite action input `output-dir` (CLI flag `--output-dir`).
 2. The `output_dir` value declared in the YAML config file.
 3. The schema default `dist/.well-known`.
 
@@ -62,12 +62,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hop-top/.github/.github/actions/well-known-publisher@v0
         with:
-          config_path: .github/well-known.yaml
-          output_dir: dist/.well-known
+          config-path: .github/well-known.yaml
+          output-dir: dist/.well-known
 ```
 
-The action only generates files into `output_dir`; any deploy is a later
-step of the caller workflow.
+The action only generates files into the output directory; any deploy
+is a later step of the caller workflow.
 
 ## Config skeleton
 
@@ -84,9 +84,10 @@ custom:
 ```
 
 Each `custom[].path` starts with `.well-known/`; the file lands at
-`<output_dir>/<rest of the path>`. Segments must be non-empty, must not be
+`<output directory>/<rest of the path>`. Segments must be non-empty, must not be
 `.` or `..`, and must not contain backslashes or control characters, and
-the resolved target must stay inside `output_dir` (symlinks included).
+the resolved target must stay inside the output directory (symlinks
+included).
 An unsafe path fails the run before any `custom:` file is written.
 
 Per-resource keys under `resources:` are added by individual generator
@@ -130,7 +131,7 @@ Any string value may reference an environment variable using the
 GitHub-Actions-style placeholder `${{ env.NAME }}`. The loader substitutes
 each occurrence with `os.environ['NAME']` before schema validation.
 
-Only names listed in the `env_allowlist` input are read. The default is
+Only names listed in the `env-allowlist` input are read. The default is
 empty, so out of the box no placeholder interpolates and every reference
 fails the run. This keeps anything else in the job environment (for
 example `GITHUB_TOKEN` passed as env, or the runner's
@@ -142,7 +143,7 @@ variables the config needs:
   env:
     SECURITY_CONTACT: mailto:security@example.com
   with:
-    env_allowlist: SECURITY_CONTACT
+    env-allowlist: SECURITY_CONTACT
 ```
 
 A reference to a name outside the allowlist, or to an allowlisted

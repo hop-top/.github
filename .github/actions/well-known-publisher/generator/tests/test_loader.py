@@ -213,7 +213,7 @@ def test_default_allowlist_interpolates_nothing(
         load(FIXTURES / "valid_with_env_interp.yaml")
     joined = " | ".join(excinfo.value.errors)
     assert "OUT" in joined and "WHO" in joined
-    assert "allowlist" in joined
+    assert "env-allowlist input" in joined
     assert "build/wk" not in joined and "world" not in joined
     assert "build/wk" not in capsys.readouterr().out
 
