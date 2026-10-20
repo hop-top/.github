@@ -81,9 +81,17 @@ curl -s 'https://proxy.golang.org/<module>/@v/list' | sort -V
 # Pick a next version above the highest ghost
 ```
 
-Use a `Release-As: <next-base>-alpha.0` footer or manifest reseed
-to jump the base. See [how-to/prerelease-channel.md § Jump base
-while staying prerelease](prerelease-channel.md#jump-base-while-staying-prerelease).
+Jump the base past them:
+
+- **Target versioning**: on the prerelease branch,
+  `promote.js open-line <x.y.z> --package <path>` with a line above
+  every ghost; the run that sees it cuts `<x.y.z>-alpha.0`. See
+  [target versioning § Promote and open lines](target-versioning.md#promote-and-open-lines).
+- **Stock `versioning: "prerelease"`**: a `Release-As: <next-base>-alpha.0`
+  footer on a commit that touches the Go package (an empty commit
+  misses a package with `exclude-paths`, the root included), or a
+  manifest reseed. See [how-to/prerelease-channel.md § Jump base
+  while staying prerelease](prerelease-channel.md#jump-base-while-staying-prerelease).
 
 ## Next steps
 
