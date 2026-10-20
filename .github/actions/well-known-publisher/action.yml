@@ -16,6 +16,14 @@ inputs:
       generator falls back to the config file's ``output_dir`` (or the
       schema default ``dist/.well-known`` when that is also unset).
     required: false
+  env_allowlist:
+    description: |
+      Comma- or newline-separated env var names that the config's
+      env placeholders (env.NAME inside double braces) may read. Empty (the default) means no
+      placeholder interpolates: any reference fails the run, so values such
+      as tokens in the job environment cannot reach a published file.
+    required: false
+    default: ''
 
 outputs:
   files_written:
@@ -47,8 +55,9 @@ runs:
       env:
         WKP_CONFIG_PATH: ${{ inputs.config_path }}
         WKP_OUTPUT_DIR: ${{ inputs.output_dir }}
+        WKP_ENV_ALLOWLIST: ${{ inputs.env_allowlist }}
       run: |
-        args=( --config "${WKP_CONFIG_PATH}" )
+        args=( --config "${WKP_CONFIG_PATH}" --env-allowlist "${WKP_ENV_ALLOWLIST}" )
         if [ -n "${WKP_OUTPUT_DIR}" ]; then
           args+=( --output-dir "${WKP_OUTPUT_DIR}" )
         fi
