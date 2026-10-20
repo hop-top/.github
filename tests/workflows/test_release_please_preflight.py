@@ -308,6 +308,36 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
             "matches nothing — release-please rewrites nothing in it"])
 
     @unittest.skipUnless(HAS_TOML, "no TOML parser: the step reports a toml jsonpath as not evaluated")
+    def test_toml_value_that_is_not_a_string_fails(self) -> None:
+        # release-please's GenericToml throws on a number ("path not found
+        # in object") or a table / array / date ("value at path ... is not
+        # tagged"); a boolean it overwrites with the version.
+        self.configure({".": {"component": "kit", "extra-files": [
+            {"type": "toml", "path": "int.toml", "jsonpath": "$.version"},
+            {"type": "toml", "path": "table.toml", "jsonpath": "$.tool"},
+            {"type": "toml", "path": "flag.toml", "jsonpath": "$.flag"},
+            {"type": "toml", "path": "ok.toml", "jsonpath": "$.version"},
+            "meta.toml"]}})
+        self.write("int.toml", "version = 1\n")
+        self.write("table.toml", '[tool]\nx = "1"\n')
+        self.write("flag.toml", "flag = true\n")
+        self.write("ok.toml", 'version = "anything"\n')
+        self.write("meta.toml", "version = 1.5 # x-release-please-version\n")
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        breaks = [x for x in lines if x.startswith("[BREAK]")]
+        self.assertEqual(breaks, [
+            "[BREAK] extra-files target int.toml: $.version is 1, not a string — "
+            "release-please's TOML updater fails on it",
+            '[BREAK] extra-files target table.toml: $.tool is {"x": "1"}, not a string — '
+            "release-please's TOML updater fails on it",
+            "[BREAK] extra-files target flag.toml: $.flag is true, not a string — "
+            "release-please overwrites it with the version",
+            "[BREAK] extra-files target meta.toml: $.version is 1.5, not a string — "
+            "release-please's TOML updater fails on it"])
+        self.assertLine(lines, "[OK]    extra-files target ok.toml: $.version = anything")
+
+    @unittest.skipUnless(HAS_TOML, "no TOML parser: the step reports a toml jsonpath as not evaluated")
     def test_toml_target_that_does_not_parse_warns(self) -> None:
         self.configure({".": {"component": "kit", "extra-files": [
             {"type": "toml", "path": "tool.toml", "jsonpath": "$.version"}]}})

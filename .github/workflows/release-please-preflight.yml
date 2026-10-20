@@ -474,7 +474,8 @@ jobs:
           # extra_file_probe <json|yaml|toml|xml-root> <file> <selector>: reads
           # the value release-please's typed updater would rewrite. Prints
           # `ok\t<value>`, `missing`, `notversion\t<value>` (not a string, or
-          # for json not a version string -- both skipped by release-please),
+          # for json not a version string: skipped by release-please's json
+          # and yaml updaters, fatal to its toml one but for a boolean),
           # `parse\t<error>`, or `skip\t<reason>` (a jsonpath beyond
           # `$.a.b` / `['a']` / `[n]`, or no parser for the format here).
           # xml-root is release-please's `/*/version`: a `version` child of the
@@ -547,9 +548,9 @@ jobs:
           if not found:
               out("missing")
           for value in found:
-              if kind == "toml" or (isinstance(value, str) and (kind != "json" or VERSION.search(value))):
+              if isinstance(value, str) and (kind != "json" or VERSION.search(value)):
                   out("ok", value)
-          out("notversion", json.dumps(found[0]))
+          out("notversion", json.dumps(found[0], default=str))
           PY
           }
 
@@ -1062,13 +1063,15 @@ jobs:
           # Then each entry is checked by the rule of the updater
           # release-please picks for it (Strategy#extraFileUpdates):
           #   - `type` json / yaml / toml: its `jsonpath` must reach the value
-          #     (json: a version string; yaml: a string). No jsonpath, or a
-          #     json file that does not parse, fails release-please's run;
-          #     a path matching nothing is skipped by it (a warning here).
+          #     (json: a version string; yaml, toml: a string). No jsonpath, a
+          #     json file that does not parse, or a toml value that is not a
+          #     string, fails release-please's run; a path matching nothing
+          #     is skipped by it (a warning here).
           #   - `type` xml (needs `xpath`) / pom: existence only.
           #   - a string entry ending in .json / .yaml / .yml / .toml / .xml:
           #     release-please rewrites `$.version` (`/*/version`), then any
-          #     annotation; a .json one that does not parse fails its run.
+          #     annotation; a .json one that does not parse, or a .toml one
+          #     whose `$.version` is not a string, fails its run.
           #   - `type` generic, and any other string entry: the
           #     x-release-please-<scope> annotation the generic updater
           #     rewrites (the pyproject.toml case belongs to check 5b).
@@ -1147,6 +1150,21 @@ jobs:
                   if [[ "$PSTATE" == "parse" && "$PROBE_KIND" == "json" ]]; then
                     fail "extra-files target $target is not valid JSON ($PVALUE) — release-please fails parsing it"
                     fixhint "make $target plain JSON, or use {\"type\": \"generic\"} with an x-release-please-version annotation for a template"
+                    continue
+                  fi
+                  # GenericToml replaces a string (or a boolean) in place and
+                  # throws on anything else: a number, table, array or date.
+                  if [[ "$PSTATE" == "notversion" && "$PROBE_KIND" == "toml" ]]; then
+                    if [[ "$PVALUE" == true || "$PVALUE" == false ]]; then
+                      fail "extra-files target $target: $PROBE_SEL is $PVALUE, not a string — release-please overwrites it with the version"
+                    else
+                      fail "extra-files target $target: $PROBE_SEL is $PVALUE, not a string — release-please's TOML updater fails on it"
+                    fi
+                    if [[ "$kind" == "string" ]]; then
+                      fixhint "make $PROBE_SEL in $target the version string, or use {\"type\": \"generic\"} with an x-release-please-version annotation"
+                    else
+                      fixhint "point the entry's jsonpath at the version string in $target in $CONFIG_PATH"
+                    fi
                     continue
                   fi
                   if [[ "$kind" != "string" ]]; then
