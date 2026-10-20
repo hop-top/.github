@@ -137,7 +137,7 @@ const MUTATIONS = [
     file: 'lib/promote.js', from: 'if (explicit.has(p)) problems.push(', to: 'if (false) problems.push(',
     tests: ['test/promote.test.js']},
   {id: 'M40', what: 'linked stable block tells an alpha member to go straight to rc (skipping beta)',
-    file: 'lib/rules.js', from: ": channelOf(m.current.pre) === 'alpha' ? 'via beta to rc' : 'to rc');", to: ": 'to rc');",
+    file: 'lib/rules.js', from: "if (ch === 'alpha') return ['promote', 'via beta to rc'];", to: "if (ch === 'alpha') return ['promote', 'to rc'];",
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M41', what: 'a line moved past a target released meanwhile (main hotfix) keeps counting',
     file: 'lib/rules.js', from: "    const v = bumpStable(S, summary);\n    return decision(atChannel(v, FIRST), 'line',", to: "    const v = bumpStable(S, summary);\n    return decision({...v, pre: bumpCounter(C.pre)}, 'line',",
@@ -159,6 +159,12 @@ const MUTATIONS = [
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M47', what: 'a minor from 1.0 links the family on a stable branch',
     file: 'lib/rules.js', from: 'return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;', to: 'return V.patch === 0 && cmpCore(V, ref) > 0;',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M48', what: 'a linked stable cut takes its target from every member (a stable member\'s patch raises it, the already-stable member goes unnamed)',
+    file: 'lib/rules.js', from: 'const L = triggers.reduce((a, m) => maxV(a, m.proposed), undefined);', to: 'const L = M.reduce((a, m) => maxV(a, m.proposed), undefined);',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M49', what: 'linked stable block tells an experimental member to go to rc (experimental is no pipeline channel)',
+    file: 'lib/rules.js', from: "    if (rank(ch)) return ['promote', 'to rc'];\n", to: "    return ['promote', 'to rc'];\n",
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
 ];
 
