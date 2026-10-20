@@ -23,7 +23,9 @@ name: release-please-on-push (reusable)
 #   - release-bot App token (release PRs authored by release-bot[bot]:
 #     they trigger downstream workflows, and sidestep the CODEOWNERS
 #     self-approval block on the manifest). GITHUB_TOKEN stays
-#     read-only.
+#     read-only. Minted from RELEASE_BOT_APP_ID through
+#     create-github-app-token's `client-id` input (its `app-id` input
+#     is deprecated): the action accepts an App ID or a Client ID there.
 #   - Config check: a missing / malformed config or manifest fails with
 #     the path named instead of release-please's generic error. A repo
 #     with NEITHER file (wired, not yet adopted — e.g. fresh from
@@ -107,7 +109,7 @@ on:
     secrets:
       RELEASE_BOT_APP_ID:
         required: true
-        description: GitHub App ID of the hop-top release-bot (see references/secrets.md)
+        description: GitHub App ID of the hop-top release-bot (see references/secrets.md); passed to create-github-app-token's client-id, which accepts an App ID or a Client ID
       RELEASE_BOT_PRIVATE_KEY:
         required: true
         description: Private key paired with RELEASE_BOT_APP_ID
@@ -233,11 +235,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "release-please: config=$CONFIG_FILE manifest=$MANIFEST_FILE target-branch=$branch"
 
+      # `client-id` replaces the deprecated `app-id` input; the action takes
+      # an App ID there too (either one is the issuer of the JWT it signs),
+      # so callers keep passing RELEASE_BOT_APP_ID.
       - uses: actions/create-github-app-token@v3
         if: steps.config.outputs.skip != 'true'
         id: app-token
         with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          client-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
 
       - uses: googleapis/release-please-action@v5
