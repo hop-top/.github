@@ -97,7 +97,7 @@ updates immediately on unmark; the legacy
 ## Packagist credentials missing: clean skip, green run
 
 A php tag pipeline whose caller hasn't wired `PACKAGIST_USERNAME` /
-`PACKAGIST_TOKEN` still publishes the mirror; the `publish-php` step
+`PACKAGIST_TOKEN` still publishes the mirror; the `publish-php` job
 emits a `::notice::` and `exit 0` instead of failing. Workflow run
 stays green, Packagist polling eventually picks up the new tag on
 its own schedule (hours, not minutes).

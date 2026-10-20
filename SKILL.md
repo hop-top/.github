@@ -210,7 +210,8 @@ Bootstrap shapes:
 2. **Pre-registration mirror**: if you must seed `main` before the
    first tag (e.g. to register the repo on Packagist or claim a
    crates.io name), push a `git subtree split` of the source
-   directory so the registry sees the real manifest. Any seed works
+   directory (root component: the HEAD tree minus `.github/workflows/`)
+   so the registry sees the real manifest. Any seed works
    for the push itself, but the first tag replaces it: a
    hand-written `README.md`, placeholder commit or license-only seed
    does not survive.

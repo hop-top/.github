@@ -285,7 +285,7 @@ jobs:
           # a php-tag pipeline still publishes the mirror; missing
           # PACKAGIST_* means "don't notify Packagist." A red workflow on
           # a missing-secret config error obscures the real outcome.
-          # Hard-fail belongs in the preflight check, not here.
+          # Nothing hard-fails on missing Packagist secrets (preflight has no such check).
           if [ -z "${PACKAGIST_USERNAME:-}" ] || [ -z "${PACKAGIST_TOKEN:-}" ]; then
             echo "::notice::PACKAGIST_USERNAME and/or PACKAGIST_TOKEN not provided; skipping Packagist notify"
             exit 0
