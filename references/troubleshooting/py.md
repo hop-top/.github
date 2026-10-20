@@ -76,7 +76,7 @@ parties. Prefix the install slug:
 1. Rename `[project].name` to `hop-top-<name>` in `pyproject.toml`.
 2. Update `package:` in `publish.yml`'s `ecosystems` block.
 3. Update `package-name` in `release-please-config.json`.
-4. Keep `[tool.hatch.build.targets.wheel].packages` at the clean import name (`["uri"]`, or `["src/uri"]` for a src layout). hatchling can't infer the package once the slug and the import name differ — without this line the wheel ships empty.
+4. Keep `[tool.hatch.build.targets.wheel].packages` at the clean import name (`["uri"]`, or `["src/uri"]` for a src layout). hatchling can't infer the package once the slug and the import name differ — without this line the build fails with `ValueError: Unable to determine which files to ship inside the wheel`.
 
 See [concepts/install-model.md § py: package naming](../concepts/install-model.md#py-package-naming-install-slug-vs-import-name) for the full pattern, and [`__version__` never bumps](#__version__-never-bumps-when-the-slug-differs-from-the-import-name) below for the runtime-version consequence.
 
@@ -271,7 +271,7 @@ README, say) *is* an `extra-files` entry, on a line annotated
 | `403 You're not allowed to upload to project '<name>'` | Bare name owned by third party | Prefix to `hop-top-<name>` |
 | `uv pip install -e .`: `not a workspace member` | Stale `[tool.uv.sources]` after rename | Update all four references |
 | `__version__` in `__init__.py` stuck after a release | Slug ≠ import name, so the python strategy never finds the file | `importlib.metadata.version("hop-top-<name>")`. See [`__version__` never bumps](#__version__-never-bumps-when-the-slug-differs-from-the-import-name). |
-| Wheel builds but contains no package | `[tool.hatch.build.targets.wheel].packages` missing after prefixing the slug | Set it to the import dir (`["src/<name>"]`) |
+| Build fails: `ValueError: Unable to determine which files to ship inside the wheel` | `[tool.hatch.build.targets.wheel].packages` missing after prefixing the slug | Set it to the import dir (`["src/<name>"]`) |
 | Version on PyPI is `0.2.0a1` not `0.2.0-alpha.1` | PEP 440 normalization | Cosmetic; pip accepts both |
 | `invalid-token-bad-audience` | OIDC config mismatch | Re-verify org/repo/workflow/environment |
 | Environment binding fails | `pypi` environment doesn't exist | `gh api -X PUT repos/<org>/<repo>/environments/pypi` |
