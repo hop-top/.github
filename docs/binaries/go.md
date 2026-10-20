@@ -92,9 +92,8 @@ job also fires on the ts tag because `startsWith` alone doesn't
 respect the `/` segment boundary).
 
 **Either pattern needs `RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY`
-forwarded explicitly** — they are NOT part of `publish-on-tag.yml`'s
-required secrets (that one only needs them if a `go` ecosystem entry
-exists, and even then only for the optional vanity-URL notify), so
+forwarded explicitly** — `publish-on-tag.yml` declares neither (it
+needs no release-bot token for any ecosystem, `go` included), so
 adding a `goreleaser` job to an existing `publish.yml` without also
 adding these two secrets fails at YAML validation time
 (`Secret RELEASE_BOT_APP_ID is required, but not provided`) — before
