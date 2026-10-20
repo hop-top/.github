@@ -1,8 +1,11 @@
 name: roll-major-tag
 
-# When a version tag (vMAJOR.MINOR.PATCH[...]) is pushed, force-move
+# When a stable version tag (vMAJOR.MINOR.PATCH) is pushed, force-move
 # the matching major tag (vMAJOR) to the same commit. Consumers
 # pin `@v0` / `@v1` etc. and auto-receive non-breaking updates.
+# A tag with a prerelease suffix or build metadata (v0.15.0-rc.1,
+# v0.15.0+build.1) still triggers a run, which leaves vMAJOR where it
+# is with a notice: `@v0` callers never run a prerelease.
 #
 # Manually trigger via workflow_dispatch with `version` input to
 # bootstrap or backfill (e.g. dispatch with version=v0.1.0).
@@ -14,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Existing version tag to roll the major tag for (e.g. v0.1.0)"
+        description: "Existing stable version tag to roll the major tag for (e.g. v0.1.0)"
         type: string
         required: true
 
@@ -49,12 +52,19 @@ jobs:
             exit 1
           fi
           MAJOR="${BASH_REMATCH[1]}"
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::tag '$TAG' is not a stable vMAJOR.MINOR.PATCH (prerelease or build metadata): v$MAJOR stays where it is"
+            echo "roll=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "roll=true" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "major=v$MAJOR" >> "$GITHUB_OUTPUT"
           echo "Resolved: tag=$TAG, major=v$MAJOR"
 
       - name: Resolve commit SHA for the version tag
         id: sha
+        if: steps.ver.outputs.roll == 'true'
         env:
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
@@ -68,6 +78,7 @@ jobs:
           echo "Commit SHA for $TAG: $SHA"
 
       - name: Force-update major tag
+        if: steps.ver.outputs.roll == 'true'
         env:
           MAJOR: ${{ steps.ver.outputs.major }}
           SHA: ${{ steps.sha.outputs.sha }}

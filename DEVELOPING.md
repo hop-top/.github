@@ -244,11 +244,11 @@ Post-1.0, `feat!:` bumps major.
 
 ### Want a prerelease for a specific cut?
 
-Don't tag one here. `roll-major-tag.yml` moves the major tag on every
-`vX.Y.Z*` tag, suffix included, so `v0.15.0-rc.0` would move `v0`, and
-every `@v0` caller, onto the rc. And with release-please's default
-versioning (this config sets no `versioning`), releases after an rc
-keep the suffix and bump the core (`0.15.0-rc.0` + `fix` →
+Don't tag one here. `roll-major-tag.yml` moves the major tag on a
+stable `vX.Y.Z` tag only (`v0.15.0-rc.0` leaves `v0`, and every `@v0`
+caller, where they are, with a notice), but with release-please's
+default versioning (this config sets no `versioning`), releases after
+an rc keep the suffix and bump the core (`0.15.0-rc.0` + `fix` →
 `0.15.1-rc.0`) until a stable `Release-As` footer. Try a change from
 a caller pinned to the commit SHA or `@main` instead
 ([pinning](references/pinning.md)).
