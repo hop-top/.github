@@ -544,3 +544,35 @@ test.after(() => {
     console.log(`| ${row.s.id} | ${row.s.label} | ${cell(ext)} | ${cell(row.stock)} |`);
   }
 });
+
+// Chains: a block's advice followed through next, promotion and main.
+
+test('(chain) past the target: the advised x-open-line links the family on next; main holds it until every member is at an rc, then one group cut', async () => {
+  // k11: kit (stable 0.5.0) + feat opens 0.6.0 while kit-rs, no stable, previews 0.6.1-alpha.0
+  const {'kit-rs': _, ...stable} = Object.fromEntries(FAMILY.map(c => [c, '0.5.0']));
+  const r = repo().commit('chore: initial').release({...stable, qmochi: '0.5.0'});
+  r.checkout('-b', 'next').release({'kit-rs': '0.6.1-alpha.0'}).commit('feat(cli): new', ['kit']);
+  // the advice: open 0.6.1 for the members below it
+  const open = config({records: Object.fromEntries(['kit', 'kit-php', 'kit-py', 'kit-ts'].map(c => [c, {'x-open-line': '0.6.1'}]))});
+  const n = await propose(r, 'next', open);
+  assert.deepEqual(n.titles, [GROUP_NEXT], n.notes.join('\n'));
+  assert.deepEqual([...n.prs[0].versions].sort(), all('0.6.1-alpha.1').sort());
+  await land(r, 'next', config(), n.prs[0].pr);
+  // kit, kit-py, kit-ts promoted to rc; the experimental SDKs still on alpha
+  r.release({kit: '0.6.1-rc.0', 'kit-py': '0.6.1-rc.0', 'kit-ts': '0.6.1-rc.0'});
+  const merge = () => r.checkout('main').git('merge', '-q', '--no-ff', 'next', '-m', "Merge branch 'next'");
+  merge();
+  const held = await propose(r, 'main', config());
+  assert.deepEqual(held.titles, [], held.notes.join('\n'));
+  assert.deepEqual([...new Set(held.blocked.map(b => b.component))].sort(), [...FAMILY].sort());
+  for (const b of held.blocked) {
+    assert.match(b.reason, /^kit: linked at 0\.6\.1 by .*but kit-php is at 0\.6\.1-alpha\.1, kit-rs is at 0\.6\.1-alpha\.1: a linked release is cut only when every member is at an rc of 0\.6\.1 \(promote kit-php, kit-rs via beta to rc on next first\)$/);
+  }
+  // every member at an rc: one group PR at 0.6.1, merging it tags all five
+  r.checkout('next').release({'kit-php': '0.6.1-rc.0', 'kit-rs': '0.6.1-rc.0'});
+  merge();
+  const cut = await propose(r, 'main', config());
+  assert.deepEqual(cut.titles, [GROUP_MAIN], cut.notes.join('\n'));
+  assert.deepEqual([...cut.prs[0].versions].sort(), all('0.6.1').sort());
+  assert.deepEqual((await land(r, 'main', config(), cut.prs[0].pr)).sort(), FAMILY.map(c => `${c}/v0.6.1`).sort());
+});

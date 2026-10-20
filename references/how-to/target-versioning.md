@@ -141,7 +141,7 @@ holding a promotion that outlives its line.
 | Manifest stable, only fixes since (no `feat`, nothing breaking) | patch: `0.6.0` + `fix` → `0.6.1`, `1.2.0` + `fix` → `1.2.1` |
 | Manifest stable, a `feat` or breaking change since | **blocked**: it would ship unpreviewed; land it on `next` |
 | Manifest at an alpha or beta (an SDK in the [experimental support tier](#experimental-support-tier), a package still previewing) | **skipped** with a notice: no PR, no failure |
-| A linked family member's rc cut opens a new major, or a new minor before 1.0 (`1.0.0-rc.1`, `0.6.0-rc.2` from 0.5.0 or no stable) | the whole family in one group PR at that version once every member is at an rc of it; until then every member is **blocked** (see [Linked family](#linked-family)) |
+| A linked family member's rc cut opens a new major, or a new minor before 1.0 whatever its patch (`1.0.0-rc.1`, `0.6.0-rc.2` from 0.5.0 or no stable, `0.6.1-rc.0` from 0.5.0) | the whole family in one group PR at that version once every member is at an rc of it; until then every member is **blocked** (see [Linked family](#linked-family)) |
 | No release yet (no manifest entry, no tag: a package added since) | **skipped** with a notice, never opened at its `initial-version`: that opens it on `next` |
 | A linked family member with no stable at an rc of a line from 1.0 (its `initial-version`, `1.0.0-rc.0`) while the family is before 1.0 | **blocked**: 1.0 opens for the family only through `x-open-line` (see [its initial version](#initial-version-of-a-linked-member)) |
 
@@ -177,7 +177,8 @@ proposal opens a new major (always), or a new minor line while the
 family is before 1.0 (major 0), on the prerelease branch and on the
 stable branch alike. On the stable branch the cut is measured against
 the member's last stable (with none, a `0.y.0` or `x.0.0` cut links):
-`1.0.0` from 0.9.x, `0.6.0` from 0.5.x or from no stable. From 1.0 a
+`1.0.0` from 0.9.x, `0.6.0` from 0.5.x or from no stable, and `0.6.1`
+from 0.5.x (a minor line opened at a patch by `x-open-line`). From 1.0 a
 new minor is independent, and a patch never links (a `0.5.1` hotfix
 on `main` is cut for that member alone). A member opening a line
 through a record (promotion or `x-open-line`) links the same way.
@@ -244,7 +245,10 @@ When it links:
   while kit-rs previews `2.3.0-alpha.0`): the run fails naming kit-rs
   as past group target `0.6.0` (`2.0.0`), on either branch. Opening
   kit-rs's line for the members below it with `x-open-line` links the
-  family there.
+  family there, on `main` too: with `x-open-line 0.6.1` the family
+  moves to `0.6.1-alpha.1` on `next`, and `main` holds every member
+  until all five are at `0.6.1-rc.N`, then cuts `0.6.1` in one group
+  PR.
 
 #### Initial version of a linked member
 

@@ -152,13 +152,13 @@ const MUTATIONS = [
     file: 'lib/rules.js', from: "if (kind === 'maintenance') {\n    return skipped('unreleased',", to: "if (false) {\n    return skipped('unreleased',",
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M45', what: 'a pre-1.0 minor does not link on a stable branch (each member cut from its own rc)',
-    file: 'lib/rules.js', from: '    return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;', to: '    return false;',
+    file: 'lib/rules.js', from: '    return V.major === 0 && ref.major === 0 && V.minor > ref.minor;', to: '    return false;',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M46', what: 'a pre-1.0 patch (a hotfix) links the family on a stable branch',
-    file: 'lib/rules.js', from: 'return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;', to: 'return V.major === 0 && cmpCore(V, ref) > 0;',
+    file: 'lib/rules.js', from: 'return V.major === 0 && ref.major === 0 && V.minor > ref.minor;', to: 'return V.major === 0 && cmpCore(V, ref) > 0;',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M47', what: 'a minor from 1.0 links the family on a stable branch',
-    file: 'lib/rules.js', from: 'return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;', to: 'return V.patch === 0 && cmpCore(V, ref) > 0;',
+    file: 'lib/rules.js', from: 'return V.major === 0 && ref.major === 0 && V.minor > ref.minor;', to: 'return V.major === ref.major && V.minor > ref.minor;',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
   {id: 'M48', what: 'a linked stable cut takes its target from every member (a stable member\'s patch raises it, the already-stable member goes unnamed)',
     file: 'lib/rules.js', from: 'const L = triggers.reduce((a, m) => maxV(a, m.proposed), undefined);', to: 'const L = M.reduce((a, m) => maxV(a, m.proposed), undefined);',
@@ -199,6 +199,9 @@ const MUTATIONS = [
   {id: 'M60', what: 'a member blocked on its own while the group is independent still releases',
     file: 'lib/install.js', from: '          out[m.p] = blockedStrategy(m.s);\n        }\n        return out;', to: '        }\n        return out;',
     tests: ['test/scenarios.test.js']},
+  {id: 'M61', what: 'a new pre-1.0 minor line at a patch (x-open-line 0.6.1 from 0.5.0) does not link on a stable branch',
+    file: 'lib/rules.js', from: 'return V.major === 0 && ref.major === 0 && V.minor > ref.minor;', to: 'return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
 ];
 
 function copy() {
