@@ -26,12 +26,19 @@ Rules, each with its own message and a non-zero exit on any finding:
    annotated file missing from the config, is a half-wired mechanism. A
    typed entry (``type`` json, yaml, toml, xml or pom) is rewritten at
    its ``jsonpath`` / ``xpath`` -- the selector is the marker -- and
-   needs no annotation.
+   needs no annotation. Neither does a plain ``*.json`` / ``*.yaml`` /
+   ``*.yml`` / ``*.toml`` / ``*.xml`` entry with a version at
+   ``$.version`` (``/*/version`` for XML), which release-please rewrites
+   before any annotation. That value is read the way the preflight reads
+   it: JSON a version string, YAML / TOML a string, XML a ``version``
+   child of the root element; without a YAML / TOML parser it is not
+   evaluated and the entry passes (a note on stderr says so).
 3. ``literal``    -- outside the manifest, changelogs, lockfiles, the
-   natively rewritten files, the typed ``extra-files`` targets and the
-   ``--allow`` globs, no un-annotated line contains a literal equal to
-   a manifest value, or a literal in the prerelease channel shape
-   (``X.Y.Z-alpha.N`` or the PEP 440 ``X.Y.ZaN``).
+   natively rewritten files, the typed ``extra-files`` targets, the
+   plain entries marked by their default path and the ``--allow`` globs,
+   no un-annotated line contains a literal equal to a manifest value, or
+   a literal in the prerelease channel shape (``X.Y.Z-alpha.N`` or the
+   PEP 440 ``X.Y.ZaN``).
 4. ``spec-path``  -- every ``<root>/vX.Y`` path, and every corpus-walker
    spelling of one (a quoted ``vX.Y`` token joined to a quoted
    ``conformance``), names a version whose ``<root>/vX.Y`` key is in
@@ -55,7 +62,8 @@ file for rules 3-5 only. Only ``git ls-files`` output is scanned.
 Output: one ``path:line: <rule>: <detail>`` per finding, then
 ``version-check: <n> finding(s)`` on stderr and exit 1; or
 ``version-check: ok (<n> annotated, <m> files scanned)`` and exit 0.
-Standard library only.
+Standard library only; tomli and PyYAML are used when importable (the
+preflight's parsers), never required.
 """
 
 from __future__ import annotations
@@ -102,6 +110,14 @@ LOCKFILES = ("Cargo.lock", "composer.lock", "pnpm-lock.yaml", "uv.lock")
 # extra-files types release-please rewrites at a selector (jsonpath /
 # xpath; pom's own), not through the annotation (Strategy#extraFileUpdates).
 TYPED_EXTRA_FILES = ("json", "yaml", "toml", "xml", "pom")
+# A plain-string entry with one of these suffixes is rewritten at a default
+# path first (release-please's CompositeUpdater), then through the annotation.
+STRUCTURED_SUFFIXES = {".json": "json", ".yaml": "yaml", ".yml": "yaml",
+                       ".toml": "toml", ".xml": "xml"}
+DEFAULT_PATHS = {"json": "$.version", "yaml": "$.version", "toml": "$.version",
+                 "xml": "/*/version"}
+# The preflight's test for a JSON version string (searched, not anchored).
+JSON_VERSION_RE = re.compile(r"\d+\.\d+\.\d+(-[\w.]+)?(\+[-\w.]+)?")
 
 
 def package_file(pkg: str, rel: str) -> str:
@@ -114,6 +130,54 @@ def package_file(pkg: str, rel: str) -> str:
     if pkg in ("", ".") or rel.startswith("/"):
         return rel.lstrip("/")
     return f"{pkg.rstrip('/')}/{rel}"
+
+
+def default_path_value(file: pathlib.Path, kind: str) -> tuple[str, str]:
+    """The value at a plain-string entry's default path, read the way the
+    preflight's ``extra_file_probe`` reads it.
+
+    Returns ``("ok", value)``; ``("missing", "")``; ``("notversion",
+    value)`` -- not a string (JSON: not a version string); ``("parse",
+    error)``; or ``("skip", reason)`` when no parser for the format is
+    importable.
+    """
+    if not file.is_file():
+        return "missing", ""
+    try:
+        if kind == "json":
+            with file.open(encoding="utf-8") as handle:
+                docs = [json.load(handle)]
+        elif kind == "toml":
+            try:
+                import tomllib
+            except ImportError:
+                try:
+                    import tomli as tomllib
+                except ImportError:
+                    return "skip", "no TOML parser"
+            with file.open("rb") as handle:
+                docs = [tomllib.load(handle)]
+        elif kind == "yaml":
+            try:
+                import yaml
+            except ImportError:
+                return "skip", "no YAML parser"
+            with file.open(encoding="utf-8") as handle:
+                docs = list(yaml.safe_load_all(handle))
+        else:
+            import xml.etree.ElementTree as ET
+            root = ET.parse(file).getroot()
+            hit = next((c for c in root if c.tag == "version"), None)
+            return ("missing", "") if hit is None else ("ok", (hit.text or "").strip())
+    except Exception as err:  # every parser's own error type
+        return "parse", str(err) or type(err).__name__
+    found = [doc["version"] for doc in docs if isinstance(doc, dict) and "version" in doc]
+    if not found:
+        return "missing", ""
+    for value in found:
+        if isinstance(value, str) and (kind != "json" or JSON_VERSION_RE.search(value)):
+            return "ok", value
+    return "notversion", json.dumps(found[0], default=str)
 
 
 def spec_path_re(root: str) -> re.Pattern[str]:
@@ -151,7 +215,14 @@ class Repo:
         self.extra_files: dict[str, str] = {}
         self.typed_files: set[str] = set()
         self.generic_files: set[str] = set()
+        # plain-string entries with a structured suffix: path -> format
+        self.structured_files: dict[str, str] = {}
         self._index_extra_files()
+        # path -> why its default path does not mark it (rule 2's detail)
+        self.unmarked: dict[str, str] = {}
+        self.notes: list[str] = []
+        # files marked by their default path, or not evaluable there
+        self.default_marked: set[str] = self._default_marked()
         self.allow = allow
         self.forbid = forbid
         # root -> compiled path regex, for every spec package root.
@@ -220,6 +291,31 @@ class Repo:
                     self.typed_files.add(path)
                 else:
                     self.generic_files.add(path)
+                if isinstance(entry, str):
+                    kind = STRUCTURED_SUFFIXES.get(pathlib.PurePosixPath(rel).suffix)
+                    if kind:
+                        self.structured_files[path] = kind
+
+    def _default_marked(self) -> set[str]:
+        """The plain structured entries their default path marks: a value
+        there, or no parser to tell (the preflight lets those pass)."""
+        marked: set[str] = set()
+        for path, kind in sorted(self.structured_files.items()):
+            sel = DEFAULT_PATHS[kind]
+            state, value = default_path_value(self.root / path, kind)
+            if state == "ok":
+                marked.add(path)
+            elif state == "skip":
+                marked.add(path)
+                self.notes.append(f"{path}: {sel} not evaluated ({value}); "
+                                  "the entry passes without an annotation")
+            elif state == "parse":
+                self.unmarked[path] = f"no version at {sel} (not valid {kind})"
+            elif state == "notversion":
+                self.unmarked[path] = f"no version at {sel} ({sel} is {value})"
+            else:
+                self.unmarked[path] = f"no version at {sel}"
+        return marked
 
     def configured_extra_files(self) -> set[str]:
         """The entries that must carry the annotation."""
@@ -281,13 +377,16 @@ def rule_annotated(repo: Repo, path: str, n: int, line: str) -> list[Finding]:
 def rule_configured(repo: Repo, annotated: set[str]) -> list[Finding]:
     """Rule 2: annotated files and generic extra-files entries are one set.
 
-    A typed entry's selector is its marker: it needs no annotation.
+    A typed entry's selector is its marker, a plain structured entry's
+    default path can be: neither needs an annotation then.
     """
     out: list[Finding] = []
     configured = repo.configured_extra_files()
-    for path in sorted(configured - annotated):
+    for path in sorted(configured - annotated - repo.default_marked):
+        why = repo.unmarked.get(path)
         out.append(Finding(path, 0, "configured",
-                           f"listed in extra-files but carries no {ANNOTATION} line"))
+                           f"listed in extra-files but carries no {ANNOTATION} line"
+                           + (f" and {why}" if why else "")))
     for path in sorted(annotated - configured - repo.typed_files):
         out.append(Finding(path, 0, "configured",
                            f"carries {ANNOTATION} but is not an extra-files entry"))
@@ -374,8 +473,9 @@ def check(repo: Repo) -> tuple[list[Finding], int, int]:
             continue
         scanned += 1
         in_package = repo.package_of(path) is not None
-        # A typed target's version sits at its selector, un-annotated.
-        typed = path in repo.typed_files
+        # A typed target's version sits at its selector, a marked plain
+        # structured one's at its default path: un-annotated.
+        typed = path in repo.typed_files or path in repo.default_marked
         for n, line in enumerate(lines, 1):
             if ANNOTATION in line:
                 if not in_package and not VERSION_RE.search(line):
@@ -428,6 +528,8 @@ def main(argv: list[str] | None = None) -> int:
         allow=tuple(args.allow), forbid=tuple(forbid),
     )
     findings, annotated, scanned = check(repo)
+    for note in repo.notes:
+        print(f"version-check: {note}", file=sys.stderr)
     for f in findings:
         print(f)
     if findings:

@@ -102,7 +102,9 @@ The `version-check` reusable workflow guards the pair on every pull
 request: an annotated literal must equal the manifest, a string or
 `generic` `extra-files` entry must carry the annotation and vice versa
 (a typed `json` / `yaml` / `toml` / `xml` / `pom` entry needs none: its
-`jsonpath` / `xpath` is the marker), and an un-annotated line must not
+`jsonpath` / `xpath` is the marker; nor does a plain `*.json` / `*.yaml` /
+`*.toml` / `*.xml` entry with a version at `$.version`, `/*/version` for
+XML), and an un-annotated line must not
 carry a release version at all. The
 preflight rejects an `extra-files` entry that points at no file. See
 [how-to/spec-versioning.md](../how-to/spec-versioning.md).

@@ -246,8 +246,8 @@ manifest and each package's natively rewritten file are skipped.
 | Rule | Fails when |
 |---|---|
 | `annotated` | an `x-release-please-version` line sits outside every package path, holds more or fewer than one version literal (SemVer or PEP 440), or its literal differs from the package's manifest version |
-| `configured` | a file is a string or `generic` `extra-files` entry but carries no annotation, or carries one but is not an `extra-files` entry; a typed `json` / `yaml` / `toml` / `xml` / `pom` entry needs no annotation (its `jsonpath` / `xpath` is the marker) |
-| `literal` | an un-annotated line carries a literal equal to a manifest version, or a literal in the prerelease channel shape (`X.Y.Z-alpha.N`, PEP 440 `X.Y.ZaN`) — outside the skipped files, typed `extra-files` targets and the `allow` globs |
+| `configured` | a file is a string or `generic` `extra-files` entry but carries no annotation, or carries one but is not an `extra-files` entry; a typed `json` / `yaml` / `toml` / `xml` / `pom` entry needs no annotation (its `jsonpath` / `xpath` is the marker), nor does a plain `*.json` / `*.yaml` / `*.toml` / `*.xml` entry with a version at `$.version` (`/*/version` for XML; read as the preflight reads it, passed unread without a YAML / TOML parser) |
+| `literal` | an un-annotated line carries a literal equal to a manifest version, or a literal in the prerelease channel shape (`X.Y.Z-alpha.N`, PEP 440 `X.Y.ZaN`) — outside the skipped files, `extra-files` targets marked by a selector or default path, and the `allow` globs |
 | `spec-path` | a `<root>/vX.Y` path (or a corpus walker's `"vX.Y"` … `"conformance"` spelling) names a version with no `<root>/vX.Y` manifest key; inert when the config has no spec package |
 | `forbidden` | an un-annotated line matches a `forbid-literal` regex |
 
