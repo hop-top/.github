@@ -91,6 +91,11 @@ ones. Chain a publish job in the caller:
 Releasing from several integration branches (e.g. `main` and `next`)?
 List them under `push.branches`; each run targets its own branch.
 
+Recommended: [target versioning](how-to/target-versioning.md) —
+`versioning-extension: true`, `push.branches: [main, next, 'release/*']`,
+every package on `"versioning": "target"`. Each new line starts at `alpha.0`,
+`main` cuts stable from an rc, and no version is pinned by hand.
+
 ### 2. Add `publish.yml`
 
 ```yaml
@@ -131,7 +136,9 @@ jobs:
 
 Standard release-please files at `.github/release-please-config.json`
 and `.github/.release-please-manifest.json`. See [bootstrap-checklist.md](../docs/bootstrap-checklist.md)
-for the recommended shape.
+for the recommended shape, and [target versioning § Config](how-to/target-versioning.md#config)
+for a target-versioning config. A root `.` package lists every nested
+package and nested Go module in its `exclude-paths`.
 
 On single-component repos, set
 `"pull-request-title-pattern": "chore(release): ${component} ${version}"`
