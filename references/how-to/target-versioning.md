@@ -273,11 +273,20 @@ drops it from the commits of every target package and logs
       "prerelease": true,
       "prerelease-type": "alpha.0",
       "versioning": "target",
-      "bump-minor-pre-major": true
+      "bump-minor-pre-major": true,
+      "exclude-paths": ["sdk", "extensions/mcp"]
     }
   }
 }
 ```
+
+The SDK members (`kit-php`, `kit-py`, ...) are packages under `sdk/`,
+each configured like `.`. The root package lists every nested package
+and every nested Go module (`extensions/mcp`, with its own `go.mod`)
+in `exclude-paths`: release-please gives the root every commit its
+`exclude-paths` does not drop, so without them a fix in an SDK would
+also release kit
+([bootstrap § 5](../../docs/bootstrap-checklist.md#5-configure-release-please)).
 
 `target-context` must come before every `conditional-linked-versions`.
 Its options, all optional:
@@ -379,9 +388,12 @@ From `versioning: "prerelease"` with `Release-As` cuts:
    `"target"`, `prerelease-type: "alpha.0"`, drop `release-as`. Add
    `{"type": "target-context"}` first in `plugins`; replace
    `linked-versions` (or any hand-kept group list) with
-   `conditional-linked-versions`. A package already past alpha on its
-   current line keeps counting on its channel; record the promotion
-   (`promote.js channel beta --package …`) so the config says so.
+   `conditional-linked-versions`. A top-level `"linked-versions"` key
+   never linked anything (release-please reads groups only from
+   `plugins[]`): drop it and list the group in `plugins`. A package
+   already past alpha on its current line keeps counting on its
+   channel; record the promotion (`promote.js channel beta --package …`)
+   so the config says so.
 3. **Leave old `Release-As` footers alone.** They are ignored from now
    on (the log names each one); history needs no rewrite. Stop
    writing new ones.

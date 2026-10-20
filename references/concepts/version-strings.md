@@ -127,8 +127,13 @@ install` with `Invalid version string`**.
 Use `0.4.0-alpha.N` for the prerelease counter in `composer.json`
 (and the release-please manifest for the php package). The other
 ecosystems can keep `experimental.N` if you prefer — but the php
-package needs `alpha.N`. This bit T-0183; see commit
+package needs `alpha.N`. This bit poly-kit; see commit
 [`0b76224d`](https://github.com/hop-top/poly-kit/commit/0b76224d).
+
+[Target versioning](../how-to/target-versioning.md) only ever produces
+`alpha.N`, `beta.N` and `rc.N` (every line starts on alpha, promotions
+move to beta then rc), all inside Composer's list (it matches `RC`
+case-insensitively).
 
 See [troubleshooting/php.md § Composer rejects experimental.N](../troubleshooting/php.md#composer-rejects-experimentaln-pre-release-identifiers).
 

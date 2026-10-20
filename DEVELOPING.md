@@ -244,10 +244,18 @@ Post-1.0, `feat!:` bumps major.
 
 ### Want a prerelease for a specific cut?
 
-Use `Release-As: X.Y.Z-rc.0` on the commit body. The next standing
-PR will propose that exact version. Cut stable via `Release-As: X.Y.Z`
-(no suffix). See the `custom-release-please` skill for full
-prerelease modes.
+Don't tag one here. `roll-major-tag.yml` moves the major tag on every
+`vX.Y.Z*` tag, suffix included, so `v0.15.0-rc.0` would move `v0`, and
+every `@v0` caller, onto the rc. And with release-please's default
+versioning (this config sets no `versioning`), releases after an rc
+keep the suffix and bump the core (`0.15.0-rc.0` + `fix` →
+`0.15.1-rc.0`) until a stable `Release-As` footer. Try a change from
+a caller pinned to the commit SHA or `@main` instead
+([pinning](references/pinning.md)).
+
+Forcing a stable version is a `Release-As: X.Y.Z` footer on a commit
+to `main`: the single root package (no `exclude-paths`) sees every
+commit.
 
 ## Common mistakes
 

@@ -73,8 +73,11 @@ gh workflow run release-please.yml --repo <org>/<repo>
 #### 3. Verify a fresh PR was opened
 
 ```bash
-gh pr list --repo <org>/<repo> --label 'autorelease: pending' --state open
+gh pr list --repo <org>/<repo> --label '<label from your config>' --state open
 ```
+
+(The label is the config's `label`, `status:release-pending` in the
+examples here; release-please's default is `autorelease: pending`.)
 
 **Watch for spurious duplicate PRs.** After closing a conflicting PR
 for a component that's *already released* (no new commits since),
@@ -117,6 +120,18 @@ release-please runs on the resulting merge to main:
 ```bash
 git commit --allow-empty -m "chore: re-trigger release-please"
 ```
+
+The commit only triggers the run; it releases nothing by itself. Its
+type is hidden from the changelog, and an empty commit never reaches a
+package with `exclude-paths` (a root package that excludes its nested
+packages). Do not add a `Release-As:` footer to it to force a version:
+see [prerelease channel § What a pin reaches](prerelease-channel.md#what-a-pin-reaches).
+
+With target versioning (`versioning-extension: true`) the caller
+template declares `workflow_dispatch`, and each run also closes an open
+release PR it no longer proposes when another PR carries its components
+or its package is blocked or skipped
+([target versioning § GitHub releases and release PRs](target-versioning.md#github-releases-and-release-prs)).
 
 ## Common issues
 
