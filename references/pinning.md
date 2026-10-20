@@ -33,8 +33,9 @@ uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0  # use this
 Tags follow plain semver: `v0.1.0`, `v0.2.0`, `v1.0.0`. The rolling
 majors (`v0`, `v1`, …) are maintained automatically by this repo's
 [`roll-major-tag.yml`](../.github/workflows/roll-major-tag.yml)
-workflow — when `v0.X.Y` is pushed, `roll-major-tag` force-moves
-`v0` to the same commit.
+workflow — when a stable `v0.X.Y` is pushed, `roll-major-tag`
+force-moves `v0` to the same commit. A tag with a prerelease suffix
+or build metadata (`v0.15.0-rc.1`) leaves `v0` where it is.
 
 When the maintainers cut `v1.0.0` (breaking), `v0` stays at the
 last `v0.X.Y`. Consumers opt into v1 by editing their `publish.yml`.
