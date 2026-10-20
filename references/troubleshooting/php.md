@@ -109,8 +109,11 @@ version only after the next poll cycle.
 
 Root cause: missing-secret config error, not a publish failure.
 "No credentials" means "don't notify Packagist," not "fail the
-release." Hard-fail on missing creds belongs in the preflight
-check, not the publish path.
+release." Nothing hard-fails on missing Packagist credentials: the
+preflight does not check for them (its Packagist probe only warns
+when the package is not registered yet), and `publish-php` skips
+with the notice above. The notice is the only signal, so look for it
+in the run's annotations when a new version is slow to show up.
 
 Resolution: if you wanted Packagist notified immediately, add the
 secrets to the consumer `publish.yml` `secrets:` block (see
