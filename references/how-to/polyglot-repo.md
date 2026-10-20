@@ -208,7 +208,7 @@ is what produces the close+retrigger churn in
 
 | Problem | Cause | Fix |
 |---|---|---|
-| `Unknown component '<name>-ts'` at parse | Component, `ecosystems` key, or mirror basename drifted | Align all three to the identity table above |
+| Publish run green, nothing published: `::notice::Component '<name>-ts' has no ecosystem entry; skipping publish` | Component and `ecosystems` key drifted, so the tag is skipped like an umbrella | Align component, `ecosystems` key and mirror basename to the identity table above, then re-publish the tag — [retrigger-failed-publish.md](retrigger-failed-publish.md) |
 | Release PR opened for a tree that only has scaffolding | Scaffold landed as `feat:` | Land scaffolds as `build:` / `chore:`; close the PR, it regenerates on the first real `feat:` |
 | Umbrella PR opens on every `feat(<lang>):` | Root package missing that dir in `exclude-paths` | List every language dir and nested Go module |
 | `hop-top/<name>` mirror contains `docs/`, `ts/`, `py/` … | Go entry uses `dir: .` in the per-language layout | Set `dir: go`; the next tag pushes only the module |
