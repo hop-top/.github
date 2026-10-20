@@ -119,10 +119,9 @@ version is ever pinned. The example below is the stock
 
 **No root `.` package, unless it's an aggregate with no registry target.** Every component listed here must also exist in the caller's `publish.yml` `ecosystems:` map (next step) — a tag release-please cuts for a component not in that map publishes nothing: the publish run logs `::notice::Component '<component>' has no ecosystem entry; skipping publish` and finishes green. If you need a Go module at the repo root, give it the bare-name component (`my-pkg`) and place its sources under `go/` (matching the per-language layout) or extend the ecosystems map to include the root component name.
 
-If you DO want a root `.` package purely to version-bump an
-umbrella release across all components (e.g. `release-type: simple`,
-no registry, just a tag + changelog marking "this batch of
-components released together") — give it `exclude-paths` listing
+If you DO want a root `.` package purely to version repo-level
+changes — README, specs, CI (e.g. `release-type: simple`, no
+registry, just a tag + changelog) — give it `exclude-paths` listing
 every language dir and every nested Go module (rule below the config;
 polyglot shape in [how-to/polyglot-repo.md § Root umbrella
 package](../references/how-to/polyglot-repo.md#4-decide-on-a-root-umbrella-package-optional))
