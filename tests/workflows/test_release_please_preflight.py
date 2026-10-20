@@ -861,10 +861,39 @@ class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
         self.assertEqual(self.warns(lines), [
             "[WARN]  package .: nested module tools (own go.mod) is not in its "
             "exclude-paths — commits under tools also release package ."])
+        # No git checkout here: the file tree stands in for the tracked files.
+        self.assertLine(lines, "[INFO]  not a git checkout — nested modules are looked up on "
+                               "disk, untracked files included")
         # top-level exclude-paths is every package's default
         self.setup_repo({"exclude-paths": ["tools"],
                          "packages": {".": {"component": "kit", "release-type": "go", **self.PRE}}})
         self.assertEqual(self.warns(self.run_step()[1]), [])
+
+    def test_nested_modules_are_looked_up_among_tracked_files(self) -> None:
+        # release-please splits commits: an ignored or untracked go.mod (a
+        # scratch checkout, a build cache) is no module of the repository.
+        self.git("init", "-q")
+        self.gomod(".", "tools", "scratch/mod", "internal/testdata/m")
+        self.write(".gitignore", "scratch/\n")
+        self.setup_repo({"packages": {".": {"component": "kit", "release-type": "go", **self.PRE},
+                                      "sdk/ts": {"component": "kit-ts", "release-type": "node",
+                                                 **self.PRE}}})
+        self.git("add", "-A")
+        self.gomod("untracked")
+        self.write("sdk/ts/package.json", '{"name": "x", "version": "0.5.0-alpha.3"}\n')
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  package .: nested module tools (own go.mod) is not in its "
+            "exclude-paths — commits under tools also release package ."])
+        self.assertNoLine(lines, "[INFO]  not a git checkout")
+        # Once tracked, the nested package's manifest counts.
+        self.git("add", "sdk/ts/package.json")
+        self.assertEqual(self.warns(self.run_step()[1]), [
+            "[WARN]  package .: nested module sdk/ts (own package.json) is not in its "
+            "exclude-paths — commits under sdk/ts also release package .",
+            "[WARN]  package .: nested module tools (own go.mod) is not in its "
+            "exclude-paths — commits under tools also release package ."])
 
     def test_nested_module_under_another_package(self) -> None:
         # tlc's plugins/*: their commits land on `plugins`, the deepest package.

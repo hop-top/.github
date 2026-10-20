@@ -1316,14 +1316,27 @@ jobs:
           # configured package with its own manifest -- and is not excluded
           # releases its parent on every commit made in it. A release-type
           # simple package (an aggregate moving with everything below it) is
-          # not checked; .git, node_modules, vendor and testdata are skipped.
+          # not checked; node_modules, vendor and testdata are skipped.
+          # Only tracked files count (`git ls-files`): release-please splits
+          # commits, which never touch an untracked or ignored file. Outside
+          # a git checkout the file tree stands in for them (an [INFO] line
+          # says so).
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             {
               echo ""
               echo "### nested modules"
             } >> "$GITHUB_STEP_SUMMARY"
-            GOMOD_DIRS=$(find . \( -name .git -o -name node_modules -o -name vendor -o -name testdata \) -prune \
-              -o -type f -name go.mod -print 2>/dev/null | sed -e 's|^\./||' -e 's|/go\.mod$||' | grep -vx 'go\.mod' | sort -u)
+            MODULE_FILES_RE='(^|/)(go\.mod|package\.json|Cargo\.toml|pyproject\.toml|composer\.json)$'
+            if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+              MODULE_FILES=$(git ls-files -z 2>/dev/null | tr '\0' '\n' | grep -E "$MODULE_FILES_RE")
+            else
+              info "not a git checkout — nested modules are looked up on disk, untracked files included"
+              MODULE_FILES=$(find . -name .git -prune -o -type f -print 2>/dev/null | sed -e 's|^\./||' | grep -E "$MODULE_FILES_RE")
+            fi
+            MODULE_FILES=$(printf '%s\n' "$MODULE_FILES" | grep -Ev '(^|/)(node_modules|vendor|testdata)/')
+            # has_module_file <path>: a tracked (or, outside git, existing) file
+            has_module_file() { printf '%s\n' "$MODULE_FILES" | grep -qxF "$1"; }
+            GOMOD_DIRS=$(printf '%s\n' "$MODULE_FILES" | grep -E '(^|/)go\.mod$' | sed -e 's|/go\.mod$||' | grep -vx 'go\.mod' | sort -u)
             NESTED_SEEN=0
             for path in $PACKAGES; do
               RT=$(jq -r --arg p "$path" '.packages[$p]["release-type"] // .["release-type"] // empty' "$CONFIG_PATH")
@@ -1349,9 +1362,9 @@ jobs:
               done <<<"$GOMOD_DIRS"
               if [[ "$path" == "." ]]; then
                 for q in $PACKAGES; do
-                  [[ "$q" != "." && ! -f "$q/go.mod" ]] || continue
+                  [[ "$q" != "." ]] && ! has_module_file "$q/go.mod" || continue
                   for m in package.json Cargo.toml pyproject.toml composer.json; do
-                    if [[ -f "$q/$m" ]]; then
+                    if has_module_file "$q/$m"; then
                       CANDIDATES="$CANDIDATES$q"$'\t'"$m"$'\n'
                       break
                     fi
