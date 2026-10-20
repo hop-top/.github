@@ -8,8 +8,8 @@ means two coordinated edits:
    ``#/$defs/<name>``.
 
 This test exercises both halves end-to-end against the bundled schema so
-the 10 future generator agents have a documentation-by-example of what a
-valid extension looks like, and so the contract cannot drift silently.
+contributors have a worked example of a valid extension, and so the
+contract cannot drift silently.
 """
 
 from __future__ import annotations
@@ -100,9 +100,9 @@ def test_extension_sub_config_validation_propagates() -> None:
 def test_pristine_schema_is_not_mutated_between_tests() -> None:
     """Sanity: deep-copying the schema before edits keeps the file pristine.
 
-    Future contributors: ``copy.deepcopy`` (or per-test ``_load_schema``) is
-    REQUIRED — mutating the dict returned by ``json.load`` once would
-    leak into other tests because module-level caches do not isolate it.
+    ``copy.deepcopy`` (or per-test ``_load_schema``) is REQUIRED — mutating
+    the dict returned by ``json.load`` once would leak into other tests
+    because module-level caches do not isolate it.
     """
     a = _load_schema()
     b = _load_schema()

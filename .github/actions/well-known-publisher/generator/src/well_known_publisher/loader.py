@@ -1,19 +1,22 @@
-"""YAML config loader: parse, validate, resolve defaults, interpolate env.
+"""YAML config loader: parse, interpolate env, validate, resolve defaults.
 
 Responsibilities (in order):
 
 1. Read YAML via ``ruamel.yaml`` in round-trip mode (preserves comments,
    ordering, and line numbers via ``CommentedMap.lc``).
-2. Validate against the JSON Schema bundled with the action; surface each
+2. Substitute ``${{ env.NAME }}`` placeholders for allowlisted names with
+   ``os.environ['NAME']``; ``$${{`` emits a literal ``${{``.
+3. Validate against the JSON Schema bundled with the action; surface each
    error with the offending source line when available.
-3. Resolve defaults (``output_dir``, ``deploy``).
-4. Resolve any ISO 8601 duration strings tagged in the schema into absolute
-   timestamps (used by the security.txt ``Expires:`` field, among others).
-5. Substitute ``${{ env.FOO }}`` placeholders with ``os.environ['FOO']``.
+4. Resolve defaults (``output_dir``) and project into :class:`Config`.
 
 Every schema or env error becomes a GitHub workflow annotation AND is
 collected into a ``ConfigError`` raised after the full pass — single
 failure is rare so we surface them all in one shot.
+
+The ISO 8601 duration helpers below are standalone utilities for resource
+generators (e.g. a relative security.txt ``Expires:``); :func:`load` does
+not call them.
 """
 
 from __future__ import annotations
@@ -121,7 +124,7 @@ def _load_schema() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# ISO 8601 duration helper (also used by future security.txt generator)
+# ISO 8601 duration helpers (for resource generators, e.g. security.txt)
 # ---------------------------------------------------------------------------
 
 def parse_iso8601_duration(value: str) -> timedelta:

@@ -34,6 +34,7 @@ For non-brew users:
 make lint           # actionlint on all workflows
 make test-scripts   # unit tests for scripts/spec
 make test-workflows # tests for the workflows' inline check scripts
+make test-well-known # well-known publisher generator (pytest; Python >= 3.11)
 make test-release-please-target   # rules, contract, simulation, runner (Node)
 make mutate-release-please-target # each reintroduced defect must turn them red
 ```
@@ -59,6 +60,11 @@ CI runs the same on every PR.
   with its lockfile. Same delivery as `scripts/spec/`: the workflow
   checks this repo out at its own commit and runs `bin/run.js` from
   there. See [release-please-target](#release-please-target)
+- `.github/actions/well-known-publisher/` — experimental composite
+  action (YAML config to `/.well-known/*` files; no resource
+  generators yet). Python package in `generator/`, deps hash-pinned in
+  `generator/requirements.txt`; tests run with `make test-well-known`.
+  See [Adding a well-known publisher resource](#adding-a-well-known-publisher-resource)
 - `tests/workflows/` — tests that lift a workflow step's `run:`
   block out of its `.yml` and run it with bash against a fixture
   repository (`release-please-preflight`'s checks). Standard library
@@ -221,16 +227,18 @@ Example: adding Java/Maven publishing.
 
 ## Adding a well-known publisher resource
 
-The well-known publisher is a composite action whose generators
-register via a Python decorator. To add a new generator, see its
-README — recap below.
+The well-known publisher is an experimental composite action: it
+loads and validates the config and writes `custom:` entries, but no
+resource generator exists yet and its interface may still change (see
+its README). Generators register via a Python decorator. To add one,
+see its README — recap below.
 
 1. Add `.github/actions/well-known-publisher/generator/src/well_known_publisher/resources/<name>.py`
    with an `@register('<name>')`-decorated function returning
    `GeneratorResult`.
 2. Append a `$defs/<name>` schema entry to
    `.github/actions/well-known-publisher/schema/well-known.schema.json`.
-3. Append a `properties.resources.<name>` reference
+3. Append a `properties.resources.properties.<name>` reference
    (`{"$ref": "#/$defs/<name>"}`) in the same schema.
 
 Schema uses strict `additionalProperties: false` at every level —
@@ -238,7 +246,13 @@ typos in resource keys fail loudly. Don't relax it.
 
 Tests: pytest fixtures live under
 `.github/actions/well-known-publisher/generator/tests/fixtures/`.
-Add a fixture per resource.
+Add a fixture per resource. `make test-well-known` builds a venv
+under `build/` (Python >= 3.11; e.g. `PYTHON=python3.12`) and runs
+the suite; CI runs the same target.
+
+Runtime dependencies are pinned with hashes in `generator/requirements.txt`.
+After changing `dependencies` in `generator/pyproject.toml`, regenerate
+it with the `uv pip compile` command recorded in its header.
 
 Canonical extension reference:
 [`.github/actions/well-known-publisher/README.md`](.github/actions/well-known-publisher/README.md).
@@ -306,4 +320,5 @@ commit.
 - [ ] If `scripts/spec/` changed, `make test-scripts` green
 - [ ] If a tested workflow step changed, `make test-workflows` green
 - [ ] If `scripts/release-please-target/` changed, `make test-release-please-target` and `make mutate-release-please-target` green
+- [ ] If `.github/actions/well-known-publisher/` changed, `make test-well-known` green
 - [ ] If new ecosystem added, SKILL.md ecosystems section updated
