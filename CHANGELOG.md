@@ -13,6 +13,11 @@
 * **release-please-target:** action-equivalent runner ([2c30bdc](https://github.com/hop-top/.github/commit/2c30bdcc8865013485bc44d2cbdccf37d8fc049a))
 * **release-please-target:** line-scoped channel promotions, open lines, per-member channels when linked ([1600812](https://github.com/hop-top/.github/commit/1600812c894586597783018df2a68f883d4dd0ab))
 * **release-please-target:** target versioning rules ([cdaa946](https://github.com/hop-top/.github/commit/cdaa946cc43dd6a418a03b346a91e09793d830f1))
+* **well-known:** $${{ escape publishes a literal ${{ ([ecbe3ae](https://github.com/hop-top/.github/commit/ecbe3aeb1ffdee86019ac7eb7c09e8f1e8252dbc))
+* **well-known:** JSON Schema 2020-12 stub with custom escape hatch ([d762964](https://github.com/hop-top/.github/commit/d7629647b3107ed34d27641f11fa068f7198005a))
+* **well-known:** composite action skeleton + python package layout ([e0b1209](https://github.com/hop-top/.github/commit/e0b1209d8bf552fc60390a891e07343f6ffa7cf6))
+* **well-known:** config loader with schema, env interp and durations ([aa90b9e](https://github.com/hop-top/.github/commit/aa90b9ec535a732ebdd0496d413880caafe73c27))
+* **well-known:** interpolate only allowlisted env vars ([23f8439](https://github.com/hop-top/.github/commit/23f8439bd361697067084286f9b38b025626ec01))
 * **workflows:** opt-in target versioning in `release-please-on-push` ([67088f3](https://github.com/hop-top/.github/commit/67088f3f9ed0b260b29d97e06f2ea455544c09c0))
 
 
@@ -59,6 +64,11 @@
 * **version-check:** match XML xpath names per namespace ([9f20158](https://github.com/hop-top/.github/commit/9f20158bcdcebfd946b903dcecce27ae32c92a03))
 * **version-check:** type YAML scalars as js-yaml 4.3.2 does ([443d0e8](https://github.com/hop-top/.github/commit/443d0e85f2cde7dfb83127183271a722ba06143b))
 * **version-check:** typed extra-files need no annotation ([3691b3b](https://github.com/hop-top/.github/commit/3691b3b7eaeb53c49ede876ee5b58d1546d33b0a))
+* **well-known:** keep custom paths inside the output dir ([dd46d99](https://github.com/hop-top/.github/commit/dd46d99249c01a3eb2a9e1bbe05d3b45a5f27c40))
+* **well-known:** percent-encode workflow command annotations ([954c2bc](https://github.com/hop-top/.github/commit/954c2bc8c93b99854d2f8159066798c35b28acbd))
+* **well-known:** run the generator in a private, hash-pinned venv ([e6e088c](https://github.com/hop-top/.github/commit/e6e088c2dd933b49bae314f2b788531fdeb89d86))
+* **well-known:** run venv and pip with python -P ([f33436d](https://github.com/hop-top/.github/commit/f33436d5122b662c4faf2fe23abe1b6482d3102d))
+* **well-known:** source line numbers and output dir precedence ([ea4c717](https://github.com/hop-top/.github/commit/ea4c717ed608ced4db2c628435f119e18b378cd6))
 * **workflows:** mint release-bot token via client-id ([054d9cb](https://github.com/hop-top/.github/commit/054d9cb1f9aaa372b681e9cf21e4d4ec4f1b5c1f))
 
 
