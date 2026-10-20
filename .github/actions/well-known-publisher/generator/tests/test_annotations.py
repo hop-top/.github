@@ -29,3 +29,24 @@ def test_notice_plain() -> None:
     buf = io.StringIO()
     ann.notice("fyi", stream=buf)
     assert buf.getvalue() == "::notice::fyi\n"
+
+
+def test_message_escapes_percent_cr_lf() -> None:
+    """GitHub's workflow-command data encoding: % -> %25, CR -> %0D, LF -> %0A."""
+    buf = io.StringIO()
+    ann.error("100% sure\r\nnext", stream=buf)
+    assert buf.getvalue() == "::error::100%25 sure%0D%0Anext\n"
+
+
+def test_message_newline_cannot_inject_a_command() -> None:
+    buf = io.StringIO()
+    ann.warning("bad value\n::add-mask::x\n::stop-commands::tok", stream=buf)
+    out = buf.getvalue()
+    assert out.count("\n") == 1
+    assert out.startswith("::warning::bad value%0A::add-mask::x%0A")
+
+
+def test_properties_escape_comma_colon_percent_and_newlines() -> None:
+    buf = io.StringIO()
+    ann.error("m", file="dir,x/a:b%c\nd.yaml", stream=buf)
+    assert buf.getvalue() == "::error file=dir%2Cx/a%3Ab%25c%0Ad.yaml::m\n"
