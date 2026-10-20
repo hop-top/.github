@@ -29,10 +29,12 @@ Rules, each with its own message and a non-zero exit on any finding:
    needs no annotation. Neither does a plain ``*.json`` / ``*.yaml`` /
    ``*.yml`` / ``*.toml`` / ``*.xml`` entry with a version at
    ``$.version`` (``/*/version`` for XML), which release-please rewrites
-   alongside the annotation. That value is read the way the preflight
-   reads it: JSON a version string, YAML / TOML a string, XML a
-   ``version`` child of the root element; without a TOML parser it is
-   not evaluated and the entry passes (a note on stderr says so). An
+   alongside the annotation. That value counts when release-please's
+   updater would rewrite it: JSON a string holding a version, YAML a
+   string as js-yaml types it, TOML a string (a boolean, which it would
+   overwrite, does not count), XML a ``version`` child of the root
+   element in no namespace; without a TOML parser it is not evaluated
+   and the entry passes (a note on stderr says so). An
    annotation release-please never rewrites fails as ``annotated``: one
    in a typed-only target, or in a plain YAML entry whose ``$.version``
    the YAML updater rewrites (it re-dumps the file without comments).

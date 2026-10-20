@@ -14,10 +14,12 @@ Paths are the simple ones the preflight evaluates (``$.a.b``, ``['a']``,
 ``[n]``; for XML ``/a/b``, ``//a/b``, ``*`` and ``*[local-name()="x"]``
 steps, a plain name matching an element in no namespace only, as in
 release-please's XPath 1.0); ``selector_lines`` returns None for
-anything else. YAML is read
-with PyYAML's BaseLoader (no implicit tags) and its plain scalars typed
-by YAML 1.2's core schema, as release-please's js-yaml types them;
-without PyYAML, ``HAVE_YAML`` is false and YAML is not read. TOML values
+anything else. YAML is read with PyYAML's BaseLoader (no implicit tags);
+its plain scalars are typed by the implicit resolvers of js-yaml 4.3.2's
+default schema -- the js-yaml release-please 17.11.2 resolves: null,
+bool, int, float, timestamp -- except that a number too large for a
+double is not modelled. Without PyYAML, ``HAVE_YAML`` is false and YAML
+is not read. TOML values
 need tomllib (or tomli); their lines are found by a key scanner.
 Standard library otherwise.
 """
@@ -67,18 +69,28 @@ def parse_jsonpath(sel: str) -> Steps | None:
 
 
 # --------------------------------------------------------------------
-# YAML (PyYAML nodes, js-yaml's core schema)
+# YAML (PyYAML nodes, js-yaml 4.3.2's typing)
 # --------------------------------------------------------------------
 
-# Plain scalars js-yaml's default schema (YAML 1.2 core, plus timestamps)
-# reads as something other than a string.
-_YAML_NOT_STRING = re.compile(
-    r"^(~|null|Null|NULL|true|True|TRUE|false|False|FALSE"
-    r"|[-+]?(0|[1-9][0-9_]*)|0b[01_]+|0o[0-7_]+|0x[0-9a-fA-F_]+"
-    r"|[-+]?(\.[0-9]+|[0-9][0-9_]*)(\.[0-9_]*)?([eE][-+]?[0-9]+)?"
-    r"|[-+]?\.(inf|Inf|INF)|\.(nan|NaN|NAN)"
-    r"|\d{4}-\d\d?-\d\d?([Tt ].*)?)?$")
+# js-yaml 4.3.2's implicit resolvers (lib/type/*.js): a plain scalar any of
+# them claims is not a string. Huge numbers (Infinity in JS) not modelled.
+_YAML_NULL = ("", "~", "null", "Null", "NULL")
+_YAML_BOOL = ("true", "True", "TRUE", "false", "False", "FALSE")
+_YAML_INT = re.compile(r"[-+]?(?:0b[01]+|0x[0-9a-fA-F]+|0o[0-7]+|[0-9]+)")
+_YAML_FLOAT = re.compile(r"[-+]?[0-9]+(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?"
+                         r"|\.[0-9]+(?:[eE][-+]?[0-9]+)?"
+                         r"|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN)")
+_YAML_TIMESTAMP = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    r"|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt]|[ \t]+)[0-9]{1,2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9]{1,2}(?::[0-9]{2})?))?")
 _YAML_STR_TAG = "tag:yaml.org,2002:str"
+
+
+def _yaml_plain_is_string(value: str) -> bool:
+    if value in _YAML_NULL or value in _YAML_BOOL:
+        return False
+    return not any(r.fullmatch(value) for r in (_YAML_INT, _YAML_FLOAT, _YAML_TIMESTAMP))
 
 
 class YamlHit:
@@ -98,7 +110,7 @@ def _yaml_is_string(node, text: str) -> bool:
         return False  # an explicit !!int, !!bool, ...
     if node.style or text[node.start_mark.index:][:1] == "!":
         return True  # quoted, block, or an explicit !!str
-    return not _YAML_NOT_STRING.match(node.value)
+    return _yaml_plain_is_string(node.value)
 
 
 def yaml_lookup(text: str, steps: Steps) -> list[YamlHit]:
