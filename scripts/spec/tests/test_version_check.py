@@ -400,7 +400,7 @@ class VersionCheckTests(unittest.TestCase):
             "ts/Cargo.toml:4", "ts/app.xml:3", "ts/chart.yaml:2", "ts/plain.toml:3",
             "ts/plain.xml:4", "ts/plain.yaml:3", "ts/pom.xml:4")])
 
-    # --- YAML through PyYAML (BaseLoader nodes, js-yaml's core schema) -------
+    # --- YAML through PyYAML (BaseLoader nodes, js-yaml 4.3.2's typing) -----
 
     def test_yaml_without_pyyaml_fails_its_yaml_targets_only(self) -> None:
         self.write(".github/release-please-config.json", _config({"ts": [
@@ -449,21 +449,24 @@ class VersionCheckTests(unittest.TestCase):
         self.assertEqual(r.stdout.splitlines(), [stale.format(x) for x in (
             "ts/multi.yaml:7", "ts/quoted.yaml:2")])
 
-    def test_yaml_scalars_are_typed_by_the_core_schema(self) -> None:
-        # js-yaml (release-please) reads YAML 1.2's core schema: yes / on
-        # are strings, true / 1 are not.
-        names = ("yes", "on", "quoted", "true", "int")
+    def test_yaml_scalars_are_typed_as_js_yaml_types_them(self) -> None:
+        # js-yaml 4.3.2 (release-please 17.11.2's): yes / on are strings,
+        # true / 1 / a YYYY-MM-DD date are not; no `_` in numbers, no sign
+        # on a leading-dot float, a two-digit month and day in a date.
+        cases = {"yes": "yes", "on": "on", "quoted": '"1"', "under": "1_000",
+                 "signed": "+.5", "short": "2024-1-1",
+                 "true": "true", "int": "1", "date": "2024-01-01"}
         self.write(".github/release-please-config.json", _config({"ts": [
-            f"{n}.yaml" for n in names]}))
-        for name, value in zip(names, ("yes", "on", '"1"', "true", "1")):
+            f"{n}.yaml" for n in cases]}))
+        for name, value in cases.items():
             self.write(f"ts/{name}.yaml", f"version: {value}\n")
         r = self.run_check()
         self.assertEqual(r.returncode, 1)
+        unmarked = ("ts/{}.yaml:0: configured: listed in extra-files but carries no "
+                    "x-release-please-version line and no version at $.version ($.version is {})")
         self.assertEqual(r.stdout.splitlines(), [
-            "ts/int.yaml:0: configured: listed in extra-files but carries no "
-            "x-release-please-version line and no version at $.version ($.version is 1)",
-            "ts/true.yaml:0: configured: listed in extra-files but carries no "
-            "x-release-please-version line and no version at $.version ($.version is true)"])
+            unmarked.format("date", "2024-01-01"), unmarked.format("int", "1"),
+            unmarked.format("true", "true")])
 
     def test_namespaced_xml_matches_xpath_names_as_release_please_does(self) -> None:
         # release-please's xpath: a plain name step matches an element in no
