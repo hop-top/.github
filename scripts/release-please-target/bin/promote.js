@@ -47,6 +47,7 @@ function main(argv) {
     for (const p of r.problems) process.stderr.write(`refused: ${p}\n`);
     return 1;
   }
+  for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
   for (const n of r.notes) process.stdout.write(`${n}\n`);
   for (const c of r.changes) process.stdout.write(`${c}\n`);
   if (!r.changes.length) process.stdout.write('nothing to change\n');

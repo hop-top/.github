@@ -242,6 +242,12 @@ const MUTATIONS = [
   {id: 'M74', what: 'promote.js open-line --group tells a member with no release yet it takes the group version when the line does not link',
     file: 'lib/promote.js', from: '${links ? "it takes the group\'s version"', to: '${true ? "it takes the group\'s version"',
     tests: ['test/promote.test.js']},
+  {id: 'M75', what: 'promote.js channel promotes a linked member a linked gap behind its family without a word',
+    file: 'lib/promote.js', from: 'if (behind) warnings.push(behind);', to: '',
+    tests: ['test/promote.test.js']},
+  {id: 'M76', what: 'promote.js warns on any gap behind the family (a pre-1.0 patch, a minor from 1.0), not only a linked one',
+    file: 'lib/promote.js', from: "if (top && rules.startsLinkedLine({kind: 'prerelease', current: rules.fmt(line), proposed: rules.fmt(top)})) {", to: 'if (top && rules.cmpCore(top, line) > 0) {',
+    tests: ['test/promote.test.js']},
 ];
 
 function copy() {

@@ -476,7 +476,12 @@ member is already past the group's target on. For `open-line`, a group
 member with no release yet is left out too: when the line links the
 family (a new major, or a new minor before 1.0) the group's link gives
 it the version; otherwise (a patch line, a minor from 1.0) it opens at
-its `initial-version`, as the printed note says. Commit the change to
+its `initial-version`, as the printed note says. A `channel` step for a
+linked member whose line is a linked gap behind its family's (`0.3.0`
+while the family is on `0.6.0`, or a major behind) is recorded with a
+warning: the family's next link moves that member to the family's line
+on alpha, and a linked cut on the stable branch needs it at an rc of
+that line, so the promotion does not get it there. Commit the change to
 the prerelease branch:
 the run that push triggers cuts each package's release PR
 (`0.5.0-beta.0`, `1.0.0-alpha.0`) with no other commit.

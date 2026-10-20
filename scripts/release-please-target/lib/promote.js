@@ -44,6 +44,32 @@ function resolve(config, {packages = [], groups = []}) {
   return {paths: out, explicit, problems};
 }
 
+// The conditional-linked-versions families of each package path: path -> [[member paths]].
+function familiesOf(config) {
+  const pkgs = config.packages || {};
+  const byComponent = Object.fromEntries(Object.entries(pkgs).filter(([, c]) => c.component).map(([c, v]) => [v.component, c]));
+  const out = {};
+  for (const g of (config.plugins || []).filter(x => x && typeof x === 'object' && x.type === 'conditional-linked-versions')) {
+    const paths = (g.components || []).map(c => byComponent[c]).filter(Boolean);
+    for (const p of paths) (out[p] = out[p] || []).push(paths);
+  }
+  return out;
+}
+
+// A warning when member `p`, promoted on its line, sits a linked gap
+// behind its family's line (a pre-1.0 minor, or a major): promoting it
+// there does not reach the family's next linked release.
+function behindFamily(config, families, manifest, p, cur) {
+  const line = rules.core(cur);
+  for (const paths of families[p] || []) {
+    const top = paths.filter(x => manifest[x] !== undefined).map(x => rules.core(rules.parse(manifest[x]))).reduce((a, v) => (!a || rules.cmpCore(v, a) > 0 ? v : a), undefined);
+    if (top && rules.startsLinkedLine({kind: 'prerelease', current: rules.fmt(line), proposed: rules.fmt(top)})) {
+      return `${nameOf(config, p)}: line ${rules.fmt(line)} is a linked line behind the family's ${rules.fmt(top)}: the family's next link moves it to ${rules.fmt(top)} on alpha, and a linked cut on the stable branch needs it at an rc of ${rules.fmt(top)}`;
+    }
+  }
+  return undefined;
+}
+
 const nameOf = (config, p) => `${(config.packages[p] || {}).component || p} (${p})`;
 const rank = ch => rules.CHANNELS.indexOf(ch);
 const CUT = 'its release PR is cut on the next run on the prerelease branch';
@@ -87,8 +113,9 @@ function openLineEdit(config, p, cur, open, value) {
 /**
  * promote({configText, manifest, command, value, packages, groups})
  *   command  'channel' (value beta | rc) | 'open-line' (value x.y.z) | 'clear' (value channel | open-line | all)
- * -> {text, changes: [string], notes: [string], problems: [string]}; text is unchanged when
- *    problems is not empty; notes name the group members left as they are
+ * -> {text, changes: [string], notes: [string], warnings: [string], problems: [string]}; text is
+ *    unchanged when problems is not empty; notes name the group members left as they are;
+ *    warnings name linked members promoted a linked gap behind their family's line
  */
 function promote({configText, manifest, command, value, packages, groups}) {
   const config = parseConfig(configText);
@@ -104,8 +131,10 @@ function promote({configText, manifest, command, value, packages, groups}) {
   }
   if (command === 'clear' && !['channel', 'open-line', 'all'].includes(value)) problems.push(`clear: expected channel | open-line | all, got "${value}"`);
   if (!['channel', 'open-line', 'clear'].includes(command)) problems.push(`unknown command "${command}" (channel | open-line | clear)`);
-  if (problems.length) return {text: configText, changes: [], notes: [], problems};
+  if (problems.length) return {text: configText, changes: [], notes: [], warnings: [], problems};
 
+  const families = familiesOf(config);
+  const warnings = [];
   // Whether the line opened links the family, as the rules see a picked
   // member's proposal opening it: only then does a member with no release
   // yet take the group's version (else it opens at its initial-version).
@@ -146,9 +175,11 @@ function promote({configText, manifest, command, value, packages, groups}) {
     }
     text = setPackageKey(text, p, edit.key, edit.value);
     changes.push(edit.change);
+    const behind = command === 'channel' && behindFamily(config, families, manifest, p, cur);
+    if (behind) warnings.push(behind);
   }
-  if (problems.length) return {text: configText, changes: [], notes: [], problems};
-  return {text, changes, notes, problems};
+  if (problems.length) return {text: configText, changes: [], notes: [], warnings: [], problems};
+  return {text, changes, notes, warnings, problems};
 }
 
 module.exports = {promote, resolve};

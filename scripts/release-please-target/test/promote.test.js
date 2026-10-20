@@ -145,6 +145,31 @@ test('by group: a member already on, or already promoted to, the channel is left
   assert.match(named.err, /^refused: kit \(\.\): already promoted to beta for 0\.5\.0/m);
 });
 
+test('channel: a linked member a linked gap behind the family\'s line is promoted with a warning', () => {
+  // the family on 0.6.0, kit-php still on 0.3.0 (a pre-1.0 minor behind: it links)
+  const fam = {...KIT_MANIFEST, '.': '0.6.0-alpha.1', 'sdk/py': '0.6.0-alpha.0', 'sdk/ts': '0.6.0-alpha.0', 'sdk/experimental/rs': '0.6.0-alpha.0', 'sdk/experimental/php': '0.3.0-alpha.2'};
+  const w = workspace(KIT_CONFIG, fam);
+  const r = w.run('channel', 'beta', '--group', 'kit');
+  assert.equal(r.code, 0, r.err);
+  assert.deepEqual(JSON.parse(r.config).packages['sdk/experimental/php']['x-channel'], {line: '0.3.0', channel: 'beta'}, 'warned, not refused');
+  assert.equal(r.err, "warning: kit-php (sdk/experimental/php): line 0.3.0 is a linked line behind the family's 0.6.0: the family's next link moves it to 0.6.0 on alpha, and a linked cut on the stable branch needs it at an rc of 0.6.0\n");
+  // named with --package too
+  assert.match(workspace(KIT_CONFIG, fam).run('channel', 'beta', '--package', 'kit-php', '--dry-run').err, /^warning: kit-php \(sdk\/experimental\/php\): line 0\.3\.0 is a linked line behind the family's 0\.6\.0/);
+  // a major behind, from 1.0
+  const major = workspace(KIT_CONFIG, {...fam, '.': '2.1.0-alpha.0', 'sdk/experimental/php': '1.4.0-alpha.0'});
+  assert.match(major.run('channel', 'beta', '--package', 'kit-php', '--dry-run').err, /^warning: kit-php \(sdk\/experimental\/php\): line 1\.4\.0 is a linked line behind the family's 2\.1\.0/);
+  // no warning for a gap that does not link: a pre-1.0 patch, a minor from 1.0, or none
+  for (const [kit, php] of [['0.6.1-alpha.0', '0.6.0-alpha.2'], ['1.3.0-alpha.0', '1.2.0-alpha.2'], ['0.5.0-alpha.26', '0.5.0-alpha.2']]) {
+    const quiet = workspace(KIT_CONFIG, {...KIT_MANIFEST, '.': kit, 'sdk/experimental/php': php});
+    const q = quiet.run('channel', 'beta', '--package', 'kit-php', '--dry-run');
+    assert.equal(q.code, 0, q.err);
+    assert.equal(q.err, '', `${kit} / ${php}`);
+  }
+  // a package in no group is never warned
+  const solo = workspace(KIT_CONFIG, {...KIT_MANIFEST, 'incubator/qmochi': '0.1.0-alpha.0', '.': '0.6.0-alpha.0'});
+  assert.equal(solo.run('channel', 'beta', '--package', 'qmochi', '--dry-run').err, '');
+});
+
 test('one step at a time, never backwards, only open lines', () => {
   const w = workspace();
   assert.equal(w.run('channel', 'beta', '--package', 'kit').code, 0);
