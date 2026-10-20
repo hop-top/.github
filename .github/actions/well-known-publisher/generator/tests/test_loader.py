@@ -128,12 +128,7 @@ def test_schema_error_annotation_includes_line_number(
 def test_env_interp_substitutes_inside_custom_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Lock in: env interp DOES rewrite ``${{ env.X }}`` inside custom bodies.
-
-    There is no literal-escape mechanism today (see README WARNING). This
-    test pins that behaviour so a future change is forced to update the
-    docs alongside the code.
-    """
+    """Unescaped ``${{ env.X }}`` inside a custom body IS substituted."""
     monkeypatch.setenv("GITHUB_SHA", "abc123")
     cfg = load(FIXTURES / "valid_env_interp_in_custom_body.yaml")
     assert len(cfg.custom) == 1
@@ -166,3 +161,34 @@ def test_version_two_rejected_by_schema() -> None:
     # ``const`` violations from jsonschema mention either "const" or the
     # expected value (1).
     assert "1" in joined or "const" in joined.lower()
+
+
+def test_escaped_placeholder_is_emitted_literally(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``$${{ ... }}`` drops one ``$`` and skips interpolation."""
+    monkeypatch.setenv("GITHUB_SHA", "abc123")
+    cfg = load(FIXTURES / "valid_escaped_placeholder.yaml")
+    assert cfg.custom[0]["body"] == (
+        "env: ${{ env.GITHUB_SHA }}\n"
+        "expr: ${{ github.sha }}\n"
+        "both: ${{ env.GITHUB_SHA }} vs abc123\n"
+    )
+
+
+def test_escaped_placeholder_needs_no_env_var(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An escaped placeholder never looks the variable up."""
+    monkeypatch.delenv("NOT_SET_ANYWHERE", raising=False)
+    cfg_file = tmp_path / "wk.yaml"
+    cfg_file.write_text(
+        "version: 1\n"
+        "resources: {}\n"
+        "custom:\n"
+        "  - path: .well-known/a.txt\n"
+        "    body: 'x $${{ env.NOT_SET_ANYWHERE }} y'\n",
+        encoding="utf-8",
+    )
+    cfg = load(cfg_file)
+    assert cfg.custom[0]["body"] == "x ${{ env.NOT_SET_ANYWHERE }} y"

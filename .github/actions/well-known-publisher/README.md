@@ -97,19 +97,25 @@ def generate(sub_cfg: dict, out_dir: Path) -> GeneratorResult:
 Any string value may reference an environment variable using the
 GitHub-Actions-style placeholder `${{ env.NAME }}`. The loader substitutes
 each occurrence with `os.environ['NAME']` before schema validation and
-emits a workflow `::error::` annotation (with the offending line number)
-for any missing variable.
+emits a workflow `::error::` annotation for any missing variable.
 
-> **WARNING — no literal escape.** Substitution is unconditional in every
-> string value, including `custom.body`. A `custom:` entry whose body
-> documents `${{ env.GITHUB_SHA }}` (or any other GitHub Actions
-> expression) will be **silently rewritten** at generate time. There is
-> no built-in escape today. To publish the literal token, sidestep the
-> regex — write the dollar sign with its Unicode escape (`$`) inside
-> a JSON-encoded YAML string, split the placeholder across a YAML
-> concatenation, or generate the file from a real resource module instead
-> of `custom:`. Do not rely on this action to round-trip the
-> documentation as-is.
+### Publishing a literal `${{ ... }}`
+
+Write `$${{` where the published file needs `${{`. The loader drops one
+`$` and leaves the rest of the expression untouched:
+
+```yaml
+custom:
+  - path: .well-known/ci-howto.txt
+    body: |
+      sha: $${{ env.GITHUB_SHA }}
+      ref: $${{ github.ref }}
+```
+
+publishes `sha: ${{ env.GITHUB_SHA }}` and `ref: ${{ github.ref }}`. Only
+`${{ env.NAME }}` placeholders interpolate, so other expressions such as
+`${{ github.ref }}` come out as written with or without the escape. Each
+`$${{` loses exactly one `$` (`$$${{` publishes `$${{`).
 
 ## Schema validation
 
