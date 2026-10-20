@@ -51,7 +51,7 @@ on:
     secrets:
       RELEASE_BOT_APP_ID:
         required: true
-        description: GitHub App ID of the hop-top release-bot (see references/secrets.md)
+        description: GitHub App ID of the hop-top release-bot (see references/secrets.md); passed to create-github-app-token's client-id, which accepts an App ID or a Client ID
       RELEASE_BOT_PRIVATE_KEY:
         required: true
         description: Private key paired with RELEASE_BOT_APP_ID
@@ -66,10 +66,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/create-github-app-token@v1
+      # `client-id` replaces the deprecated `app-id` input; the action takes
+      # an App ID there too (either one is the issuer of the JWT it signs),
+      # so callers keep passing RELEASE_BOT_APP_ID.
+      - uses: actions/create-github-app-token@v3
         id: app-token
         with:
-          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          client-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
 
       - uses: actions/checkout@v4
