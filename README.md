@@ -161,8 +161,16 @@ Consuming repos pin to a rolling major (recommended):
 uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0
 ```
 
-Auto-updates on each non-breaking release. Pin `@v0.1.0` to freeze
-exactly, `@main` to follow everything (breaking changes welcome).
+`@v0` follows every stable release of the 0.x line. Before 1.0 a
+breaking change (`feat!`) ships as a minor (`bump-minor-pre-major`),
+so it moves `v0` too; only 1.0.0 and later open a new major tag. A
+prerelease tag (`v0.15.0-rc.1`) never moves a rolling tag. Pin
+`@v0.1.0` (or a commit SHA) to freeze exactly, `@main` to follow
+everything (breaking changes welcome).
+
+`roll-major-tag.yml` also runs by hand (`workflow_dispatch`, input
+`version`, e.g. `v0.1.0`) to create a missing `vMAJOR` or point it at
+an existing stable tag.
 
 See [`SKILL.md`](SKILL.md) for the full pinning options and
 [`DEVELOPING.md`](DEVELOPING.md) for the release flow.
