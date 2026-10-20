@@ -1077,9 +1077,13 @@ jobs:
           #     silent): a failure here; an empty `xpath` throws like a
           #     missing one.
           #   - a string entry ending in .json / .yaml / .yml / .toml / .xml:
-          #     release-please rewrites `$.version` (`/*/version`), then any
-          #     annotation; a .json one that does not parse, or a .toml one
-          #     whose `$.version` is not a string, fails its run.
+          #     release-please rewrites `$.version` (`/*/version`) and the
+          #     annotations, except that a YAML file rewritten at `$.version`
+          #     is re-dumped without comments (its annotations never update:
+          #     the version-check guard fails them; this check reads the
+          #     annotations only when `$.version` holds no version). A .json
+          #     one that does not parse, or a .toml one whose `$.version` is
+          #     not a string, fails its run.
           #   - `type` generic, and any other string entry: the
           #     x-release-please-<scope> annotation the generic updater
           #     rewrites (the pyproject.toml case belongs to check 5b).

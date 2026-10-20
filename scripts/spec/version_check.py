@@ -29,16 +29,21 @@ Rules, each with its own message and a non-zero exit on any finding:
    needs no annotation. Neither does a plain ``*.json`` / ``*.yaml`` /
    ``*.yml`` / ``*.toml`` / ``*.xml`` entry with a version at
    ``$.version`` (``/*/version`` for XML), which release-please rewrites
-   before any annotation. That value is read the way the preflight reads
-   it: JSON a version string, YAML / TOML a string, XML a ``version``
-   child of the root element; without a YAML / TOML parser it is not
-   evaluated and the entry passes (a note on stderr says so).
+   alongside the annotation. That value is read the way the preflight
+   reads it: JSON a version string, YAML / TOML a string, XML a
+   ``version`` child of the root element; without a TOML parser it is
+   not evaluated and the entry passes (a note on stderr says so). An
+   annotation release-please never rewrites fails as ``annotated``: one
+   in a typed-only target, or in a plain YAML entry whose ``$.version``
+   the YAML updater rewrites (it re-dumps the file without comments).
 3. ``literal``    -- outside the manifest, changelogs, lockfiles, the
-   natively rewritten files, the typed ``extra-files`` targets, the
-   plain entries marked by their default path and the ``--allow`` globs,
-   no un-annotated line contains a literal equal to a manifest value, or
-   a literal in the prerelease channel shape (``X.Y.Z-alpha.N`` or the
-   PEP 440 ``X.Y.ZaN``).
+   natively rewritten files and the ``--allow`` globs, no un-annotated
+   line contains a literal equal to a manifest value, or a literal in
+   the prerelease channel shape (``X.Y.Z-alpha.N`` or the PEP 440
+   ``X.Y.ZaN``). In an ``extra-files`` target only the line(s) holding
+   the value a selector (or a marking default path) names are exempt:
+   release-please rewrites those and nothing else. A selector this check
+   cannot place exempts nothing (a note on stderr says so).
 4. ``spec-path``  -- every ``<root>/vX.Y`` path, and every corpus-walker
    spelling of one (a quoted ``vX.Y`` token joined to a quoted
    ``conformance``), names a version whose ``<root>/vX.Y`` key is in
@@ -62,8 +67,8 @@ file for rules 3-5 only. Only ``git ls-files`` output is scanned.
 Output: one ``path:line: <rule>: <detail>`` per finding, then
 ``version-check: <n> finding(s)`` on stderr and exit 1; or
 ``version-check: ok (<n> annotated, <m> files scanned)`` and exit 0.
-Standard library only; tomli and PyYAML are used when importable (the
-preflight's parsers), never required.
+Standard library only (``extra_files.py`` beside it); tomli is used
+when importable, for TOML on Python < 3.11.
 """
 
 from __future__ import annotations
@@ -75,6 +80,8 @@ import pathlib
 import re
 import subprocess
 import sys
+
+from extra_files import DEFAULT_PATHS, STRUCTURED_SUFFIXES, default_path_value, selector_lines
 
 ANNOTATION = "x-release-please-version"
 DEFAULT_MANIFEST = ".github/.release-please-manifest.json"
@@ -110,14 +117,6 @@ LOCKFILES = ("Cargo.lock", "composer.lock", "pnpm-lock.yaml", "uv.lock")
 # extra-files types release-please rewrites at a selector (jsonpath /
 # xpath; pom's own), not through the annotation (Strategy#extraFileUpdates).
 TYPED_EXTRA_FILES = ("json", "yaml", "toml", "xml", "pom")
-# A plain-string entry with one of these suffixes is rewritten at a default
-# path first (release-please's CompositeUpdater), then through the annotation.
-STRUCTURED_SUFFIXES = {".json": "json", ".yaml": "yaml", ".yml": "yaml",
-                       ".toml": "toml", ".xml": "xml"}
-DEFAULT_PATHS = {"json": "$.version", "yaml": "$.version", "toml": "$.version",
-                 "xml": "/*/version"}
-# The preflight's test for a JSON version string (searched, not anchored).
-JSON_VERSION_RE = re.compile(r"\d+\.\d+\.\d+(-[\w.]+)?(\+[-\w.]+)?")
 
 
 def package_file(pkg: str, rel: str) -> str:
@@ -130,54 +129,6 @@ def package_file(pkg: str, rel: str) -> str:
     if pkg in ("", ".") or rel.startswith("/"):
         return rel.lstrip("/")
     return f"{pkg.rstrip('/')}/{rel}"
-
-
-def default_path_value(file: pathlib.Path, kind: str) -> tuple[str, str]:
-    """The value at a plain-string entry's default path, read the way the
-    preflight's ``extra_file_probe`` reads it.
-
-    Returns ``("ok", value)``; ``("missing", "")``; ``("notversion",
-    value)`` -- not a string (JSON: not a version string); ``("parse",
-    error)``; or ``("skip", reason)`` when no parser for the format is
-    importable.
-    """
-    if not file.is_file():
-        return "missing", ""
-    try:
-        if kind == "json":
-            with file.open(encoding="utf-8") as handle:
-                docs = [json.load(handle)]
-        elif kind == "toml":
-            try:
-                import tomllib
-            except ImportError:
-                try:
-                    import tomli as tomllib
-                except ImportError:
-                    return "skip", "no TOML parser"
-            with file.open("rb") as handle:
-                docs = [tomllib.load(handle)]
-        elif kind == "yaml":
-            try:
-                import yaml
-            except ImportError:
-                return "skip", "no YAML parser"
-            with file.open(encoding="utf-8") as handle:
-                docs = list(yaml.safe_load_all(handle))
-        else:
-            import xml.etree.ElementTree as ET
-            root = ET.parse(file).getroot()
-            hit = next((c for c in root if c.tag == "version"), None)
-            return ("missing", "") if hit is None else ("ok", (hit.text or "").strip())
-    except Exception as err:  # every parser's own error type
-        return "parse", str(err) or type(err).__name__
-    found = [doc["version"] for doc in docs if isinstance(doc, dict) and "version" in doc]
-    if not found:
-        return "missing", ""
-    for value in found:
-        if isinstance(value, str) and (kind != "json" or JSON_VERSION_RE.search(value)):
-            return "ok", value
-    return "notversion", json.dumps(found[0], default=str)
 
 
 def spec_path_re(root: str) -> re.Pattern[str]:
@@ -215,11 +166,15 @@ class Repo:
         self.extra_files: dict[str, str] = {}
         self.typed_files: set[str] = set()
         self.generic_files: set[str] = set()
+        # path -> (format, selector) of every typed entry listing it
+        self.selectors: dict[str, list[tuple[str, str | None]]] = {}
         # plain-string entries with a structured suffix: path -> format
         self.structured_files: dict[str, str] = {}
         self._index_extra_files()
         # path -> why its default path does not mark it (rule 2's detail)
         self.unmarked: dict[str, str] = {}
+        # path -> state of its default path (extra_files.default_path_value)
+        self.default_state: dict[str, str] = {}
         self.notes: list[str] = []
         # files marked by their default path, or not evaluable there
         self.default_marked: set[str] = self._default_marked()
@@ -289,6 +244,9 @@ class Repo:
                 self.extra_files.setdefault(path, pkg)
                 if isinstance(entry, dict) and entry.get("type") in TYPED_EXTRA_FILES:
                     self.typed_files.add(path)
+                    kind = entry["type"]
+                    sel = entry.get("xpath" if kind == "xml" else "jsonpath")
+                    self.selectors.setdefault(path, []).append((kind, sel))
                 else:
                     self.generic_files.add(path)
                 if isinstance(entry, str):
@@ -303,6 +261,7 @@ class Repo:
         for path, kind in sorted(self.structured_files.items()):
             sel = DEFAULT_PATHS[kind]
             state, value = default_path_value(self.root / path, kind)
+            self.default_state[path] = state
             if state == "ok":
                 marked.add(path)
             elif state == "skip":
@@ -316,6 +275,23 @@ class Repo:
             else:
                 self.unmarked[path] = f"no version at {sel}"
         return marked
+
+    def rewritten_lines(self, path: str, text: str) -> set[int]:
+        """The lines release-please rewrites at a selector: every typed
+        entry's, and the default path of a marked plain structured one."""
+        targets = list(self.selectors.get(path, ()))
+        if path in self.default_marked:
+            kind = self.structured_files[path]
+            targets.append((kind, DEFAULT_PATHS[kind]))
+        lines: set[int] = set()
+        for kind, sel in targets:
+            found = selector_lines(text, kind, sel)
+            if found is None:
+                self.notes.append(f"{path}: {kind} selector {sel} not placed; "
+                                  "rule 3 reads every line")
+                continue
+            lines |= found
+        return lines
 
     def configured_extra_files(self) -> set[str]:
         """The entries that must carry the annotation."""
@@ -371,6 +347,19 @@ def rule_annotated(repo: Repo, path: str, n: int, line: str) -> list[Finding]:
     if literals[0] != want:
         return [Finding(path, n, "annotated",
                         f"{literals[0]} != manifest[{pkg}] = {want}")]
+    return []
+
+
+def rule_unrewritten(repo: Repo, path: str, n: int) -> list[Finding]:
+    """Rule 1, cont.: an annotation release-please never rewrites."""
+    if path in repo.typed_files and path not in repo.generic_files:
+        return [Finding(path, n, "annotated",
+                        "a typed extra-files target only: release-please rewrites its "
+                        "selector, never this annotation")]
+    if repo.structured_files.get(path) == "yaml" and repo.default_state.get(path) == "ok":
+        return [Finding(path, n, "annotated",
+                        "release-please's YAML updater rewrites $.version and re-dumps the "
+                        "file without comments: this annotation is never rewritten")]
     return []
 
 
@@ -473,18 +462,17 @@ def check(repo: Repo) -> tuple[list[Finding], int, int]:
             continue
         scanned += 1
         in_package = repo.package_of(path) is not None
-        # A typed target's version sits at its selector, a marked plain
-        # structured one's at its default path: un-annotated.
-        typed = path in repo.typed_files or path in repo.default_marked
+        # Release-please rewrites these lines at a selector: un-annotated.
+        rewritten = repo.rewritten_lines(path, "\n".join(lines))
         for n, line in enumerate(lines, 1):
             if ANNOTATION in line:
                 if not in_package and not VERSION_RE.search(line):
                     continue  # prose naming the annotation, nothing to rewrite
                 annotated_files.add(path)
                 annotated_lines += 1
-                findings += rule_annotated(repo, path, n, line)
+                findings += rule_unrewritten(repo, path, n) or rule_annotated(repo, path, n, line)
                 continue
-            if not typed:
+            if n not in rewritten:
                 findings += rule_literal(repo, path, n, line)
             findings += rule_spec_path(repo, path, n, line, known)
             findings += rule_forbidden(repo, path, n, line)

@@ -104,7 +104,8 @@ request: an annotated literal must equal the manifest, a string or
 (a typed `json` / `yaml` / `toml` / `xml` / `pom` entry needs none: its
 `jsonpath` / `xpath` is the marker; nor does a plain `*.json` / `*.yaml` /
 `*.toml` / `*.xml` entry with a version at `$.version`, `/*/version` for
-XML), and an un-annotated line must not
+XML, though a YAML one rewritten there loses its comments, annotations
+included), and an un-annotated line must not
 carry a release version at all. The
 preflight rejects an `extra-files` entry that points at no file. See
 [how-to/spec-versioning.md](../how-to/spec-versioning.md).

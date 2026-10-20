@@ -312,8 +312,9 @@ class VersionCheckTests(unittest.TestCase):
         self.assertEqual(r.stdout.splitlines(), want)
 
     def test_structured_string_entry_without_a_parser_is_not_evaluated(self) -> None:
-        # The preflight's rule: no YAML / TOML parser, the default path is
-        # not evaluated and the entry passes; a note says so.
+        # The preflight's rule: no TOML parser, the default path is not
+        # evaluated and the entry passes; a note says so. YAML is read
+        # without PyYAML (block style, release-please's core schema).
         hide = Path(tempfile.mkdtemp(prefix="vc-noparser-"))
         self.addCleanup(shutil.rmtree, hide, True)
         for mod in ("yaml", "tomllib", "tomli"):
@@ -325,9 +326,94 @@ class VersionCheckTests(unittest.TestCase):
         self.assertIn("version-check: ok (0 annotated,", r.stdout)
         self.assertEqual(sorted(x for x in r.stderr.splitlines() if "not evaluated" in x), [
             "version-check: engine/meta.toml: $.version not evaluated (no TOML parser); "
-            "the entry passes without an annotation",
-            "version-check: ts/chart.yaml: $.version not evaluated (no YAML parser); "
             "the entry passes without an annotation"])
+
+    # --- only the selector's line escapes rule 3 ------------------------------
+
+    def test_plain_yaml_stale_sibling_still_fails(self) -> None:
+        # release-please rewrites `$.version` only; appVersion stays stale.
+        self.write(".github/release-please-config.json", _config({"ts": ["Chart.yaml"]}))
+        self.write("ts/Chart.yaml", 'apiVersion: v2\nname: x\nversion: 1.0.0-alpha.0\n'
+                                    'appVersion: "1.0.0-alpha.0"\n')
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "ts/Chart.yaml:4: literal: 1.0.0-alpha.0 equals a manifest version and is not "
+            "annotated with x-release-please-version"])
+
+    def test_typed_json_sibling_still_fails(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": [
+            {"type": "json", "path": "meta.json", "jsonpath": "$.kit.version"}]}))
+        self.write("ts/meta.json", '{\n  "kit": {\n    "version": "1.0.0-alpha.0"\n  },\n'
+                                   '  "compat": "1.0.0-alpha.0",\n  "next": "2.0.0-alpha.3"\n}\n')
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "ts/meta.json:5: literal: 1.0.0-alpha.0 equals a manifest version and is not "
+            "annotated with x-release-please-version",
+            "ts/meta.json:6: literal: 2.0.0-alpha.3 is a hard-coded prerelease version"])
+
+    def test_each_format_exempts_only_its_selector_line(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": [
+            {"type": "toml", "path": "Cargo.toml", "jsonpath": "$.package.version"},
+            {"type": "yaml", "path": "chart.yaml", "jsonpath": "$.appVersion"},
+            {"type": "xml", "path": "app.xml", "xpath": "//app/version"},
+            {"type": "pom", "path": "pom.xml"},
+            "plain.xml", "plain.toml", "plain.yaml"]}))
+        self.write("ts/Cargo.toml", '[package]\nversion = "1.0.0-alpha.0"\n[dependencies]\n'
+                                    'foo = { version = "1.0.0-alpha.0" }\n')
+        self.write("ts/chart.yaml", "appVersion: 1.0.0-alpha.0\nversion: 1.0.0-alpha.0\n")
+        self.write("ts/app.xml", "<app>\n  <version>1.0.0-alpha.0</version>\n"
+                                 "  <compat>1.0.0-alpha.0</compat>\n</app>\n")
+        self.write("ts/pom.xml", '<project xmlns="http://maven.apache.org/POM/4.0.0">\n'
+                                 "  <version>1.0.0-alpha.0</version>\n  <dependencies>\n"
+                                 "    <dependency><version>1.0.0-alpha.0</version></dependency>\n"
+                                 "  </dependencies>\n</project>\n")
+        self.write("ts/plain.xml", "<app>\n  <version>1.0.0-alpha.0</version>\n"
+                                   "  <dep>\n    <version>1.0.0-alpha.0</version>\n  </dep>\n</app>\n")
+        self.write("ts/plain.toml", 'version = "1.0.0-alpha.0"\n[tool]\nversion = "1.0.0-alpha.0"\n')
+        self.write("ts/plain.yaml", "version: 1.0.0-alpha.0\nnested:\n  version: 1.0.0-alpha.0\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        stale = ("{}: literal: 1.0.0-alpha.0 equals a manifest version and is not annotated "
+                 "with x-release-please-version")
+        self.assertEqual(r.stdout.splitlines(), [stale.format(x) for x in (
+            "ts/Cargo.toml:4", "ts/app.xml:3", "ts/chart.yaml:2", "ts/plain.toml:3",
+            "ts/plain.xml:4", "ts/plain.yaml:3", "ts/pom.xml:4")])
+
+    # --- annotations release-please never rewrites ---------------------------
+
+    def test_annotation_in_a_typed_only_target_fails(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": [
+            {"type": "toml", "path": "Cargo.toml", "jsonpath": "$.package.version"},
+            {"type": "toml", "path": "both.toml", "jsonpath": "$.package.version"},
+            "both.toml"]}))
+        body = ('[package]\nversion = "1.0.0-alpha.0"\n'
+                'foo = "1.0.0-alpha.0" # x-release-please-version\n')
+        self.write("ts/Cargo.toml", body)
+        # Also a plain entry: the generic updater runs on it.
+        self.write("ts/both.toml", body)
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "ts/Cargo.toml:3: annotated: a typed extra-files target only: release-please "
+            "rewrites its selector, never this annotation"])
+
+    def test_annotation_in_a_yaml_entry_rewritten_at_its_default_path_fails(self) -> None:
+        # release-please's YAML updater re-dumps the file once it rewrites
+        # $.version, dropping every comment before the annotation step.
+        self.write(".github/release-please-config.json", _config({"ts": [
+            "chart.yaml", "noversion.yaml", "meta.toml"]}))
+        self.write("ts/chart.yaml", 'version: 1.0.0-alpha.0\n'
+                                    'appVersion: "1.0.0-alpha.0" # x-release-please-version\n')
+        self.write("ts/noversion.yaml", 'appVersion: "1.0.0-alpha.0" # x-release-please-version\n')
+        self.write("ts/meta.toml", 'version = "1.0.0-alpha.0"\n'
+                                   'pin = "1.0.0-alpha.0" # x-release-please-version\n')
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "ts/chart.yaml:2: annotated: release-please's YAML updater rewrites $.version "
+            "and re-dumps the file without comments: this annotation is never rewritten"])
 
     def test_root_package_native_file_is_not_scanned(self) -> None:
         self.write(".github/.release-please-manifest.json", json.dumps({".": "1.0.0-alpha.0"}))
