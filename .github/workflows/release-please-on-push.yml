@@ -22,7 +22,7 @@ name: release-please-on-push (reusable)
 #     the run itself — so a caller keeping its own guard stays safe.
 #   - release-bot App token (release PRs authored by release-bot[bot]:
 #     they trigger downstream workflows, and sidestep the CODEOWNERS
-#     self-approval block on the manifest). GITHUB_TOKEN stays
+#     self-approval block on the changelogs). GITHUB_TOKEN stays
 #     read-only. Minted from RELEASE_BOT_APP_ID through
 #     create-github-app-token's `client-id` input (its `app-id` input
 #     is deprecated): the action accepts an App ID or a Client ID there.

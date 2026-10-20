@@ -1,7 +1,8 @@
 # Generated — managed centrally; do not edit here.
 # Guardrail-minimal: only the release-please-managed changelogs, owned by the
 # release team. Config and manifest stay unowned — channel promotions are
-# human edits to the config. No `*` fallback — pairs with the
+# human edits to the config; a required check keeps the manifest
+# release-PR-only. No `*` fallback — pairs with the
 # production-branch-guardrail ruleset (0 required approvals + code-owner
 # review) so release PRs need explicit release-team approval while
 # everything else auto-merges freely.
