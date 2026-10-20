@@ -561,34 +561,51 @@ test.after(() => {
 
 // Chains: a block's advice followed through next, promotion and main.
 
-test('(chain) past the target: the advised x-open-line links the family on next; main holds it until every member is at an rc, then one group cut', async () => {
-  // k11: kit (stable 0.5.0) + feat opens 0.6.0 while kit-rs, no stable, previews 0.6.1-alpha.0
+// k11 (kit, stable 0.5.0, + feat opens 0.6.0 while kit-rs, no stable,
+// previews 0.6.1-alpha.0), then the advice: x-open-line 0.6.1 for the
+// group, which links the family at 0.6.1-alpha.1 on next. Left on next.
+async function pastTargetOpened() {
   const {'kit-rs': _, ...stable} = Object.fromEntries(FAMILY.map(c => [c, '0.5.0']));
   const r = repo().commit('chore: initial').release({...stable, qmochi: '0.5.0'});
   r.checkout('-b', 'next').release({'kit-rs': '0.6.1-alpha.0'}).commit('feat(cli): new', ['kit']);
-  // the advice: open 0.6.1 for the members below it
   const open = config({records: Object.fromEntries(['kit', 'kit-php', 'kit-py', 'kit-ts'].map(c => [c, {'x-open-line': '0.6.1'}]))});
   const n = await propose(r, 'next', open);
   assert.deepEqual(n.titles, [GROUP_NEXT], n.notes.join('\n'));
   assert.deepEqual([...n.prs[0].versions].sort(), all('0.6.1-alpha.1').sort());
   await land(r, 'next', config(), n.prs[0].pr);
-  // kit, kit-py, kit-ts promoted to rc; the experimental SDKs still on alpha
-  r.release({kit: '0.6.1-rc.0', 'kit-py': '0.6.1-rc.0', 'kit-ts': '0.6.1-rc.0'});
+  return r;
+}
+
+// Promote `first` to 0.6.1-rc.0 on next and merge into main: main holds
+// all five (`pending` named as not at an rc); then the rest, merged
+// again: one group cut at 0.6.1, merging it tags all five.
+async function holdThenCut(r, first, pending, how) {
+  const others = FAMILY.filter(c => !first.includes(c));
   const merge = () => r.checkout('main').git('merge', '-q', '--no-ff', 'next', '-m', "Merge branch 'next'");
+  r.checkout('next').release(Object.fromEntries(first.map(c => [c, '0.6.1-rc.0'])));
   merge();
   const held = await propose(r, 'main', config());
   assert.deepEqual(held.titles, [], held.notes.join('\n'));
   assert.deepEqual([...new Set(held.blocked.map(b => b.component))].sort(), [...FAMILY].sort());
+  const where = pending.map(c => `${c} is at 0\\.6\\.1-alpha\\.1`).join(', ');
   for (const b of held.blocked) {
-    assert.match(b.reason, /^kit: linked at 0\.6\.1 by .*but kit-php is at 0\.6\.1-alpha\.1, kit-rs is at 0\.6\.1-alpha\.1: a linked release is cut only when every member is at an rc of 0\.6\.1 \(promote kit-php, kit-rs via beta to rc on next first\)$/);
+    assert.match(b.reason, new RegExp(`^kit: linked at 0\\.6\\.1 by .*but ${where}: a linked release is cut only when every member is at an rc of 0\\.6\\.1 \\(promote ${how} via beta to rc on next first\\)$`));
   }
-  // every member at an rc: one group PR at 0.6.1, merging it tags all five
-  r.checkout('next').release({'kit-php': '0.6.1-rc.0', 'kit-rs': '0.6.1-rc.0'});
+  r.checkout('next').release(Object.fromEntries(others.map(c => [c, '0.6.1-rc.0'])));
   merge();
   const cut = await propose(r, 'main', config());
   assert.deepEqual(cut.titles, [GROUP_MAIN], cut.notes.join('\n'));
   assert.deepEqual([...cut.prs[0].versions].sort(), all('0.6.1').sort());
   assert.deepEqual((await land(r, 'main', config(), cut.prs[0].pr)).sort(), FAMILY.map(c => `${c}/v0.6.1`).sort());
+}
+
+test('(chain) past the target: the advised x-open-line links the family on next; main holds it until every member is at an rc, then one group cut', async () => {
+  // kit, kit-py, kit-ts promoted to rc first; the experimental SDKs still on alpha
+  await holdThenCut(await pastTargetOpened(), ['kit', 'kit-py', 'kit-ts'], ['kit-php', 'kit-rs'], 'kit-php, kit-rs');
+});
+
+test('(chain) as above, kit-rs (no stable) promoted to rc first: main holds the family (its 0.6.1 links from the family\'s stable 0.5.0), then one group cut', async () => {
+  await holdThenCut(await pastTargetOpened(), ['kit-rs'], ['kit', 'kit-php', 'kit-py', 'kit-ts'], 'kit, kit-php, kit-py, kit-ts');
 });
 
 test('(chain) a new member when the family\'s line is released: the advised initial-version is the next patch line; promoted and merged, it is cut alone and the family is not blocked', async () => {
