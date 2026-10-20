@@ -9,7 +9,7 @@ sequenceDiagram
     participant Mirror_repo as hop-top/kit-ts
 
     Tag->>Router: triggers on tags ['*/v*']
-    Router->>Parse: extract component, version; look up the ecosystems entry
+    Router->>Parse: extract component and version, then look up the ecosystems entry
     Parse-->>Router: component=kit-ts, dir=ts, ecosystem=ts, mirror=hop-top/kit-ts
 
     Router->>Publish: working-directory=ts

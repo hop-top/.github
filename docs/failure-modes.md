@@ -62,9 +62,9 @@ The `&&` is interpreted by pnpm's script runner, not by the GitHub Actions shell
 **Fix**: cut a new tag at a commit that contains the workflow, OR force-update the existing tag to such a commit:
 
 ```bash
-git push --delete origin refs/tags/py/v0.2.0-alpha.0
-git tag -f py/v0.2.0-alpha.0 <commit-with-publish.yml>
-git push origin refs/tags/py/v0.2.0-alpha.0
+git push --delete origin refs/tags/my-pkg-py/v0.2.0-alpha.0
+git tag -f my-pkg-py/v0.2.0-alpha.0 <commit-with-publish.yml>
+git push origin refs/tags/my-pkg-py/v0.2.0-alpha.0
 ```
 
 Re-pushing the tag fires a fresh tag-push event → publish runs against the new tag SHA.
@@ -143,7 +143,7 @@ ecosystems: |
 
 ## PyPI version doesn't match git tag (PEP 440 normalization)
 
-**Symptom**: git tag `py/v0.2.0-alpha.1` → PyPI ships `hop-top-uri@0.2.0a1`. Tag string and registry version don't match. Consumers see two different version notations across ecosystems.
+**Symptom**: git tag `uri-py/v0.2.0-alpha.1` → PyPI ships `hop-top-uri@0.2.0a1`. Tag string and registry version don't match. Consumers see two different version notations across ecosystems.
 
 **Root cause**: PyPI requires PEP 440 canonical form. `0.2.0-alpha.1` is normalized through `packaging.version.Version(...)`:
 
@@ -157,7 +157,7 @@ Result: `0.2.0a1`. Other ecosystems (npm, cargo, composer) accept the dotted for
 **Fix (cosmetic, by choice)**:
 
 - Accept the mismatch. `pip install pkg==0.2.0-alpha.1` actually works because pip normalizes the spec too. The version string just *displays* differently.
-- Or: pick a release-please versioning scheme that emits PEP 440-form tags (`py/v0.2.0a1` instead of `py/v0.2.0-alpha.1`). Then npm/cargo/composer carry the PEP 440 form too. Cleaner but breaks the "dotted prerelease" convention used elsewhere.
+- Or: pick a release-please versioning scheme that emits PEP 440-form tags (`uri-py/v0.2.0a1` instead of `uri-py/v0.2.0-alpha.1`). Then npm/cargo/composer carry the PEP 440 form too. Cleaner but breaks the "dotted prerelease" convention used elsewhere.
 
 We accept the mismatch in hop-top repos. Document for consumers who notice.
 
