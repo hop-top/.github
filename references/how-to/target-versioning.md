@@ -186,11 +186,12 @@ When it links:
 - one release PR for the whole group, members without commits (or
   with only a chore or config change) included; merging it tags every
   member;
-- every member moves to the group's target, the highest among the
-  members (a member already previewing a later target wins); on the
-  stable branch the target is what the linking members cut, and another
-  member's own proposal (a patch of a member already stable) never
-  raises it;
+- every member moves to the group's target: the highest line the
+  linking members open, or, on the prerelease branch, a later linked
+  line a member already previews (kit opening `0.6.0` while kit-rs
+  previews `0.7.0-alpha.2` links at `0.7.0`). A member's own patch,
+  proposed or previewed (`0.6.1-alpha.N` after its own `0.6.0`), never
+  raises it, on either branch;
 - each member keeps its own channel: a member already on the target
   line keeps its channel there, or takes its promotion recorded for
   that line; any other member starts the line on alpha;
@@ -226,7 +227,11 @@ When it links:
   blocks the group: no member gets a PR. On `main`: kit-py cut `0.5.0`
   on its own earlier and has a fix since (`0.5.1`), the other members
   at `0.5.0-rc.N` link at `0.5.0`; the run fails naming kit-py as
-  already stable at `0.5.0`;
+  already stable at `0.5.0`. On `next` the same: kit (stable `0.5.0`)
+  opens `0.6.0` with a `feat` while kit-py, cut `0.6.0` on its own, has
+  a fix since (`0.6.1-alpha.0`) or already previews `0.6.1-alpha.2`;
+  the group links at `0.6.0`, not `0.6.1`, and the run fails naming
+  kit-py as already stable at `0.6.0`;
 - a member on a channel outside alpha → beta → rc
   (`0.5.0-experimental.3`, left from a stock setup) is not promoted by
   a record: the block message says to move it onto alpha first, then
@@ -430,7 +435,7 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | `linked at x.y.0 …, but … is at …: a linked release is cut only when every member is at an rc` | a linked major (or minor before 1.0) reached `main` with a member not at rc (experimental ones included) | do what the message says on `next` (`promote kit-py via beta to rc …`), then merge again |
 | `x-channel … skips a channel from …` | a promotion two steps ahead (hand edit) | record the next channel only (`promote.js channel`) |
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
-| `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target (on `main`: cut on its own before the family linked) | owner decision: re-seed the member or the group |
+| `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target (cut on its own before the family linked, on `next` or `main`) | owner decision: re-seed the member or the group |
 | `plugins has no "target-context"` | config lists target packages without the plugin | add it, first |
 | `prerelease-type '…': every line starts on alpha.0` | a channel set through `prerelease-type` | `alpha.0`; promote with `promote.js channel` |
 | `x-open-line … is below the required target …` | a change since needs more than the opened line | raise the line or remove it (`promote.js clear open-line`) |

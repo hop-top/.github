@@ -166,6 +166,12 @@ const MUTATIONS = [
   {id: 'M49', what: 'linked stable block tells an experimental member to go to rc (experimental is no pipeline channel)',
     file: 'lib/rules.js', from: "    if (rank(ch)) return ['promote', 'to rc'];\n", to: "    return ['promote', 'to rc'];\n",
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M50', what: 'a linked prerelease target takes every member\'s proposal (a member\'s own patch raises it, the already-stable member does not block)',
+    file: 'lib/rules.js', from: 'let T = core(triggers.reduce((a, m) => maxV(a, m.proposed), undefined));', to: 'let T = core(M.reduce((a, m) => maxV(a, m.proposed), undefined));',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M51', what: 'a member\'s live preview of its own patch line raises the linked prerelease target',
+    file: 'lib/rules.js', from: "startsLinkedLine({kind: 'stable', current: m.current, proposed: core(m.current), lastStable: m.lastStable});", to: 'true;',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
 ];
 
 function copy() {
