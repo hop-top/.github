@@ -67,7 +67,12 @@ class ConfigError(Exception):
 # ---------------------------------------------------------------------------
 
 _DEFAULT_OUTPUT_DIR = "dist/.well-known"
-_ENV_INTERP_RE = re.compile(r"\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+# ``$${{`` is the literal escape: it emits ``${{`` and the rest of the
+# expression is left untouched. Otherwise ``${{ env.NAME }}`` interpolates.
+_PLACEHOLDER_RE = re.compile(
+    r"\$(?P<escaped>\$\{\{)"
+    r"|\$\{\{\s*env\.(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\}\}"
+)
 _ISO8601_DURATION_RE = re.compile(
     r"""
     ^P
@@ -198,12 +203,15 @@ def _interpolate(
 ) -> Any:
     """Walk the structure, substituting ${{ env.NAME }} placeholders.
 
-    Missing env vars emit ``::error::`` annotations and append to
-    ``errors`` (caller decides whether to raise).
+    ``$${{ ... }}`` is emitted as a literal ``${{ ... }}``. Missing env
+    vars emit ``::error::`` annotations and append to ``errors`` (caller
+    decides whether to raise).
     """
     if isinstance(node, str):
         def _sub(m: re.Match[str]) -> str:
-            name = m.group(1)
+            if m.group("escaped"):
+                return m.group("escaped")
+            name = m.group("name")
             try:
                 return os.environ[name]
             except KeyError:
@@ -212,7 +220,7 @@ def _interpolate(
                 errors.append(msg)
                 return m.group(0)
 
-        return _ENV_INTERP_RE.sub(_sub, node)
+        return _PLACEHOLDER_RE.sub(_sub, node)
     if isinstance(node, dict):
         return {k: _interpolate(v, errors=errors, source_path=source_path)
                 for k, v in node.items()}

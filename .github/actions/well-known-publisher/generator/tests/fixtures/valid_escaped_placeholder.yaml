@@ -1,0 +1,8 @@
+version: 1
+resources: {}
+custom:
+  - path: .well-known/howto.txt
+    body: |
+      env: $${{ env.GITHUB_SHA }}
+      expr: $${{ github.sha }}
+      both: $${{ env.GITHUB_SHA }} vs ${{ env.GITHUB_SHA }}
