@@ -58,6 +58,15 @@ Commit the tree, its manifest, and the config edits below under
 standard config, so release-please opens no PR for the new
 component until its first `feat:` / `fix:`. You can finish the
 scaffold across several PRs without shipping a half-built alpha.
+The exception is a member of a linked group: a family link carries
+every member in the group PR at the group's version, scaffold or not
+([target versioning § Initial version of a linked
+member](target-versioning.md#initial-version-of-a-linked-member)).
+
+With target versioning, land that first `feat:` / `fix:` on `next`:
+`main` and `release/x.y` skip a package with no release yet, `next`
+opens it at its `initial-version` ([bootstrap-checklist §
+6](../../docs/bootstrap-checklist.md#6-cut-the-first-release)).
 
 Fresh repo with nothing to release at all: a `chore:`-only history
 produces zero release PRs — see [bootstrap-checklist § If your
@@ -74,26 +83,50 @@ commit type is `chore:`](../../docs/bootstrap-checklist.md#if-your-commit-type-i
     "package-name": "@hop-top/<name>", // registry slug
     "changelog-path": "CHANGELOG.md",
     "bump-minor-pre-major": true
-    // + the prerelease trio if the repo is in a channel —
-    //   see how-to/prerelease-channel.md
+    // + the repo's versioning keys (below)
   }
 }
 ```
 
-**No `extra-files`, for any of the four.** `node`, `python`, `rust`
-and `php` each update their own manifest natively (`package.json`,
-`pyproject.toml`, `Cargo.toml`, `composer.json`). An `extra-files`
+**No `extra-files` entry for the strategy's own manifest, for any
+of the four.** `node`, `python`, `rust` and `php` each update their
+own manifest natively (`package.json`, `pyproject.toml`,
+`Cargo.toml`, `composer.json`). An `extra-files`
 entry for that same file is redundant at best; for python it
 bypasses PEP 440 normalization and breaks `pip install` —
 [version-strings § Don't break the normalization](../concepts/version-strings.md#dont-break-the-normalization).
 The preflight rejects only the `pyproject.toml` case
 (`release-please-preflight.yml`, check 5b); keeping the other three
-out is on you.
+out is on you. Every *other* release-version literal in the tree (a
+`version.ts` constant, a pinned README example) is an annotated
+`extra-files` entry —
+[version-strings § Where `extra-files` is right](../concepts/version-strings.md#where-extra-files-is-right).
 
-**Manifest seed**: if the repo has — or is gaining — a
-`release-type: python` package, every component must be seeded at
-`0.1.0-alpha.0` and first tags land at `alpha.1`; pure go/ts repos
-leave `{}`. Rules and why: [bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please).
+**Versioning keys**: the ones the repo's other packages carry.
+[Target versioning](target-versioning.md#config) is the recommended
+path: `"prerelease": true`, `"prerelease-type": "alpha.0"`,
+`"versioning": "target"`. Nothing is pinned there: `main` cuts stable
+from an rc, channels and the 1.0 line move with `promote.js`, and
+`Release-As` footers are ignored. A repo still on stock versioning
+uses `"versioning": "prerelease"` instead
+([prerelease channel § The four-piece combo](prerelease-channel.md#the-four-piece-combo)).
+
+**Linked family**: if the repo groups its packages in a
+`conditional-linked-versions` plugin, add the new component to the
+group's `components`. The family links on every new major, and on a
+new minor while it is before 1.0; patches, and minors from 1.0, stay
+per member ([target versioning § Linked family](target-versioning.md#linked-family)).
+
+**Manifest seed**: on stock versioning, if the repo has — or is
+gaining — a `release-type: python` package, every component must be
+seeded at `0.1.0-alpha.0` and first tags land at `alpha.1`; pure
+go/ts repos leave `{}`. Rules and why: [bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please).
+With target versioning, a new linked member's first release must
+start on the family's line: set its `initial-version` there (the
+block message names the line; python and rust ignore
+`initial-version` and open at `0.1.0`, so seed the manifest on that
+line instead) —
+[target versioning § Initial version of a linked member](target-versioning.md#initial-version-of-a-linked-member).
 
 ### 3. Add the `ecosystems` entry
 
@@ -138,13 +171,14 @@ one. If you add it:
   "release-type": "simple",
   "component": "poly-<name>",
   "changelog-path": "CHANGELOG.md",
-  "exclude-paths": ["go", "ts", "py", "rs", "php"]   // every language dir
+  "exclude-paths": ["go", "ts", "py", "rs", "php"]   // every language dir + nested Go module
 }
 ```
 
-- `exclude-paths` must list **every** language dir, or a `feat(ts):`
+- `exclude-paths` must list **every** language dir and every nested
+  Go module (a directory with its own `go.mod`), or a `feat(ts):`
   commit bumps the umbrella too and you get two release PRs per
-  change.
+  change ([bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please)).
 - Its tag matches `publish.yml`'s `*/v*` trigger. `publish-on-tag`
   skips an unknown component with a `::notice::` and green-skipped
   jobs, so nothing breaks — but excluding it saves a no-op run:
@@ -173,15 +207,18 @@ is what produces the close+retrigger churn in
 |---|---|---|
 | `Unknown component '<name>-ts'` at parse | Component, `ecosystems` key, or mirror basename drifted | Align all three to the identity table above |
 | Release PR opened for a tree that only has scaffolding | Scaffold landed as `feat:` | Land scaffolds as `build:` / `chore:`; close the PR, it regenerates on the first real `feat:` |
-| Umbrella PR opens on every `feat(<lang>):` | Root package missing that dir in `exclude-paths` | List every language dir |
+| Umbrella PR opens on every `feat(<lang>):` | Root package missing that dir in `exclude-paths` | List every language dir and nested Go module |
 | `hop-top/<name>` mirror contains `docs/`, `ts/`, `py/` … | Go entry uses `dir: .` | Set `dir: go`; the next tag pushes only the module |
 | `pip install` fails on the release PR's `pyproject.toml` | `extra-files` entry for `pyproject.toml` | Remove it; the python strategy owns the file |
 | Sibling release PRs CONFLICTING after one merge | Shared manifest | Merge serially — [retrigger-release-please.md](retrigger-release-please.md) |
 | Python release PR proposes stable `0.1.0` | Empty manifest with a python package | Seed every component — [bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please) |
+| notice `no release yet: skipped` for the new tree (target versioning) | Its first `feat:` / `fix:` landed on `main` or `release/x.y` | Release it on `next` — [target versioning § Common issues](target-versioning.md#common-issues) |
+| `… has no release yet and its first release would be …, past the family's line …` (or `below …`, `not a prerelease`) | New linked member's first version is off the family's line | Set `initial-version` to the line the message names; python / rust: seed the manifest — [target versioning § Initial version of a linked member](target-versioning.md#initial-version-of-a-linked-member) |
 
 ## Next steps
 
 - [ecosystems.md](../ecosystems.md) — field-by-field `ecosystems` reference.
 - [troubleshooting/ts.md](../troubleshooting/ts.md), [py.md](../troubleshooting/py.md), [rs.md](../troubleshooting/rs.md), [php.md](../troubleshooting/php.md), [go.md](../troubleshooting/go.md) — first-publish gotchas per language.
-- [how-to/prerelease-channel.md](prerelease-channel.md) — the prerelease trio and manifest seeding.
+- [how-to/target-versioning.md](target-versioning.md) — the recommended versioning: lines, stable cuts from an rc, linked families, a new member's first version.
+- [how-to/prerelease-channel.md](prerelease-channel.md) — stock `versioning: "prerelease"`: the four-piece combo and manifest seeding.
 - [SKILL.md § First publish of a new package](../../SKILL.md#first-publish-of-a-new-package) — the local bootstrap publish each registry needs once.
