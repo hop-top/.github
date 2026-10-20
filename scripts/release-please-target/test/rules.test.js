@@ -458,7 +458,7 @@ test('rule 4: a stable-branch major links, only when every member is at an rc of
     {component: 'kit-ts', current: '2.0.0', lastStable: '2.0.0'},
   ], 'stable');
   assert.equal(b.versions, undefined);
-  assert.match(b.blocked[0], /kit-ts is already at 2\.0\.0/);
+  assert.match(b.blocked[0], /^kit: kit-ts already released 2\.0\.0 as stable, at or past group target 2\.0\.0 /);
 });
 
 test('rule 4: a stable-branch pre-1.0 minor links like a major: every member at an rc of it', () => {
@@ -511,6 +511,47 @@ test('rule 4: a stable-branch pre-1.0 minor links like a major: every member at 
   ]);
   assert.equal(m.linked, false);
   assert.match(m.reason, /independent/);
+});
+
+test('rule 4: a stable-branch link takes its target from the members that open it', () => {
+  const stable = members => resolveGroup({kind: 'stable', groupName: 'kit', prereleaseBranch: 'next', members});
+  // kit-py was cut 0.5.0 on its own and has a fix since (0.5.1); the rest
+  // link at 0.5.0: kit-py is named as already stable at it, not every
+  // member sent to an rc of kit-py's patch
+  for (const [rc, own, patch] of [['0.5.0-rc.1', '0.5.0', '0.5.1'], ['1.0.0-rc.1', '1.0.0', '1.0.1']]) {
+    const g = stable([
+      {component: 'kit', current: rc, proposed: own},
+      {component: 'kit-py', current: own, lastStable: own, proposed: patch},
+      {component: 'kit-ts', current: rc.replace(/\d+$/, '0'), proposed: own},
+    ]);
+    assert.equal(g.linked, true);
+    assert.equal(g.versions, undefined);
+    const esc = s => s.replace(/\./g, '\\.');
+    assert.match(g.blocked[0], new RegExp(`^kit: kit-py already released ${esc(own)} as stable, at or past group target ${esc(own)} \\(linked by kit@${esc(own)}, kit-ts@${esc(own)}\\)$`));
+    assert.doesNotMatch(g.blocked[0], new RegExp(esc(patch)));
+  }
+  // a member's own (unlinked) proposal never raises the linked target
+  assert.match(stable([
+    {component: 'kit', current: '0.6.0-rc.1', lastStable: '0.5.0', proposed: '0.6.0'},
+    {component: 'kit-py', current: '0.6.1-rc.0', lastStable: '0.6.0', proposed: '0.6.1'},
+  ]).blocked[0], /^kit: kit-py already released 0\.6\.0 as stable, at or past group target 0\.6\.0 /);
+
+  // a member already previewing a later line blocks too
+  assert.match(stable([
+    {component: 'kit', current: '0.6.0-rc.1', lastStable: '0.5.0', proposed: '0.6.0'},
+    {component: 'kit-py', current: '0.7.0-alpha.1', lastStable: '0.5.0'},
+  ]).blocked[0], /^kit: kit-py is already at 0\.7\.0-alpha\.1 >= 0\.6\.0 \(linked by kit@0\.6\.0\)$/);
+});
+
+test('rule 4: a member off the channel pipeline (experimental) is told to reach alpha first', () => {
+  const b = resolveGroup({kind: 'stable', groupName: 'kit', prereleaseBranch: 'next', members: [
+    {component: 'kit', current: '0.5.0-rc.1', proposed: '0.5.0'},
+    {component: 'kit-php', current: '0.5.0-experimental.3'},
+    {component: 'kit-py', current: '0.5.0-alpha.2'},
+  ]}).blocked[0];
+  assert.match(b, /but kit-php is at 0\.5\.0-experimental\.3, kit-py is at 0\.5\.0-alpha\.2: /);
+  assert.match(b, /\(move kit-php onto alpha first \(experimental is not a pipeline channel: graduate it with an alpha release\), then via beta to rc; promote kit-py via beta to rc on next first\)$/);
+  assert.doesNotMatch(b, /kit-php to rc/);
 });
 
 test('rule 4: different targets and last stables: the highest live line wins', () => {

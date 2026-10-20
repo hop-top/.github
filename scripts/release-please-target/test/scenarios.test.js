@@ -196,6 +196,13 @@ const SCENARIOS = [
     return {r: promoted(rcs, {qmochi: '0.5.0'}), branch: 'main', land: true};
   }, expect: [GROUP_MAIN], versions: all('0.5.0'), landed: FAMILY.map(c => `${c}/v0.5.0`), stock: []},
 
+  {id: 'p5', label: 'main, kit-py cut 0.5.0 on its own earlier, a fix since; the rest at 0.5.0-rc.N link at 0.5.0: kit-py named as already stable, no member is cut', build() {
+    const r = promoted({...Object.fromEntries(FAMILY.map(c => [c, '0.5.0-rc.0'])), kit: '0.5.0-rc.1'}, {qmochi: '0.5.0'});
+    r.release({'kit-py': '0.5.0'}).commit('fix(py): since', ['kit-py']);
+    return {r, branch: 'main'};
+  }, expect: [], blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-py already released 0\.5\.0 as stable, at or past group target 0\.5\.0 \(linked by kit@0\.5\.0, kit-php@0\.5\.0, kit-rs@0\.5\.0, kit-ts@0\.5\.0\)$/])),
+  stock: []},
+
   {id: 'p3', label: 'main, the kit family stable at 0.5.0, a fix on kit only: kit 0.5.1 alone (a pre-1.0 patch does not link)', build() {
     const r = repo().commit('chore: initial').release({...Object.fromEntries(FAMILY.map(c => [c, '0.5.0'])), qmochi: '0.5.0'});
     return {r: r.commit('fix(cli): hotfix', ['kit']), branch: 'main'};

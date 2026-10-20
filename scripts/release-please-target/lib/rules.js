@@ -281,13 +281,23 @@ function startsLinkedLine({kind, current, proposed, lastStable}) {
 
 // How the members not at an rc of L get there, as one instruction: on
 // L's line one channel at a time (alpha via beta); off it, to the line
-// first.
+// first. A channel outside alpha -> beta -> rc (experimental) is not
+// promoted: the member reaches alpha first.
 function toRc(members, L) {
-  const path = m => (!m.current || !m.current.pre || cmpCore(core(m.current), L) !== 0 ? `to an rc of ${fmt(L)}`
-    : channelOf(m.current.pre) === 'alpha' ? 'via beta to rc' : 'to rc');
-  const by = new Map();
-  for (const m of members) by.set(path(m), [...(by.get(path(m)) || []), m.component]);
-  return `promote ${[...by].map(([p, cs]) => `${cs.join(', ')} ${p}`).join(' and ')}`;
+  const step = m => {
+    if (!m.current || !m.current.pre || cmpCore(core(m.current), L) !== 0) return ['promote', `to an rc of ${fmt(L)}`];
+    const ch = channelOf(m.current.pre);
+    if (ch === 'alpha') return ['promote', 'via beta to rc'];
+    if (rank(ch)) return ['promote', 'to rc'];
+    return ['move', `onto alpha first (${ch} is not a pipeline channel: graduate it with an alpha release), then via beta to rc`];
+  };
+  const by = new Map(); // verb -> path -> components
+  for (const m of members) {
+    const [verb, p] = step(m);
+    const paths = by.get(verb) || new Map();
+    by.set(verb, paths.set(p, [...(paths.get(p) || []), m.component]));
+  }
+  return [...by].map(([verb, paths]) => `${verb} ${[...paths].map(([p, cs]) => `${cs.join(', ')} ${p}`).join(' and ')}`).join('; ');
 }
 
 /**
@@ -298,7 +308,9 @@ function toRc(members, L) {
  * Linked only when a member's proposal opens a linked line. Every member
  * then moves to the group's target, the highest among the members (their
  * proposals, and any member already previewing a later unreleased target).
- * On a stable branch every member gets that stable version, and every
+ * On a stable branch the target is the highest proposal of the members
+ * that open the linked line (another member's patch never raises it),
+ * every member gets that stable version, and every
  * member must be at an rc of it: one member still on alpha or beta (or
  * on no rc of the target), experimental ones included, blocks the
  * group, it never ships stable from anything but an rc. On a prerelease
@@ -320,13 +332,18 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     startsLinkedLine({kind, current: m.current, proposed: m.proposed, lastStable: m.lastStable}));
   if (!triggers.length) return {linked: false, reason: `${groupName}: no new major or pre-1.0 minor line: independent`, blocked: []};
   const by = triggers.map(t => `${t.component}@${fmt(t.proposed)}`).join(', ');
-  const L = M.reduce((a, m) => maxV(a, m.proposed), undefined);
   const fail = reason => ({linked: true, reason: `${groupName}: ${reason}`, blocked: [`${groupName}: ${reason}`]});
   const all = v => Object.fromEntries(M.map(m => [m.component, fmt(v)]));
 
   if (kind === 'stable') {
-    const at = M.find(m => (m.current && cmp(m.current, L) >= 0) || (m.lastStable && cmp(m.lastStable, L) >= 0));
-    if (at) return fail(`${at.component} is already at ${fmt(maxV(at.current, at.lastStable))} >= ${fmt(L)} (linked by ${by})`);
+    // The target is what the linking members cut: another member's own
+    // proposal (a patch of a member already stable) never raises it.
+    const L = triggers.reduce((a, m) => maxV(a, m.proposed), undefined);
+    const stableOf = m => maxV(m.lastStable, m.current && !m.current.pre ? m.current : undefined);
+    const done = M.find(m => stableOf(m) && cmp(stableOf(m), L) >= 0);
+    if (done) return fail(`${done.component} already released ${fmt(stableOf(done))} as stable, at or past group target ${fmt(L)} (linked by ${by})`);
+    const at = M.find(m => m.current && cmp(m.current, L) >= 0);
+    if (at) return fail(`${at.component} is already at ${fmt(at.current)} >= ${fmt(L)} (linked by ${by})`);
     const notRc = M.filter(m => !(m.current && channelOf(m.current.pre) === 'rc' && cmpCore(core(m.current), L) === 0));
     if (notRc.length) {
       const where = notRc.map(m => `${m.component} is at ${m.current ? fmt(m.current) : 'no release'}`).join(', ');
@@ -335,9 +352,9 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     return {linked: true, versions: all(L), reason: `${groupName}: linked at ${fmt(L)} by ${by}`, blocked: []};
   }
 
-  // Highest target first: the group's proposal, or a member already
+  // Highest target first: the members' proposals, or a member already
   // previewing a later (unreleased) target.
-  let T = core(L);
+  let T = core(M.reduce((a, m) => maxV(a, m.proposed), undefined));
   for (const m of M) {
     const live = m.current && m.current.pre && !(m.lastStable && cmpCore(m.lastStable, core(m.current)) >= 0);
     if (live && cmpCore(core(m.current), T) > 0) T = core(m.current);
