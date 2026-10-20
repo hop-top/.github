@@ -8,7 +8,9 @@
 Composite action that turns a single YAML config into files under
 `/.well-known/*`.
 
-**Works today**
+## Status
+
+### Works today
 
 - Loading the config: YAML parse, JSON Schema validation with
   line-numbered `::error::` annotations, allowlisted env interpolation
@@ -18,7 +20,7 @@ Composite action that turns a single YAML config into files under
 - The `files_written` and `manifest` outputs.
 - The generator registry that resource modules plug into.
 
-**Not yet**
+### Not yet
 
 - Resource generators: none exist, so `resources:` accepts no keys yet
   (security.txt, openid-configuration, assetlinks.json and friends are
@@ -29,11 +31,11 @@ Composite action that turns a single YAML config into files under
 
 ## Inputs
 
-| Name          | Default                     | Description                                   |
-|---------------|-----------------------------|-----------------------------------------------|
-| `config_path` | `.github/well-known.yaml`   | YAML driving the generation.                  |
-| `output_dir`  | _unset_                     | Where generated files are written; when omitted, the config's `output_dir` wins, falling back to `dist/.well-known`. |
-| `env_allowlist` | _empty_                   | Comma- or newline-separated env var names the config's `${{ env.NAME }}` placeholders may read. Empty means none. |
+| Name | Default | Description |
+| --- | --- | --- |
+| `config_path` | `.github/well-known.yaml` | YAML driving the generation. |
+| `output_dir` | _unset_ | Where files are written ([precedence](#output_dir-precedence)). |
+| `env_allowlist` | _empty_ | Env var names placeholders may read ([details](#environment-interpolation)). |
 
 ### `output_dir` precedence
 
@@ -45,10 +47,10 @@ The directory is resolved with the following precedence, highest first:
 
 ## Outputs
 
-| Name            | Shape                                                           |
-|-----------------|-----------------------------------------------------------------|
-| `files_written` | Newline-separated list of paths emitted.                        |
-| `manifest`      | JSON array `[{generator, files, warnings}, ...]`.               |
+| Name | Shape |
+| --- | --- |
+| `files_written` | Newline-separated list of paths emitted. |
+| `manifest` | JSON array `[{generator, files, warnings}, ...]`. |
 
 ## Usage stub
 
