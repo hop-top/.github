@@ -49,8 +49,8 @@ The directory is resolved with the following precedence, highest first:
 
 | Name | Shape |
 | --- | --- |
-| `files_written` | Newline-separated list of paths emitted. |
-| `manifest` | JSON array `[{generator, files, warnings}, ...]`. |
+| `files_written` | Newline-separated list of paths emitted: resource generators' files first, then the `custom:` ones. |
+| `manifest` | JSON array `[{generator, files, warnings}, ...]`: one entry per resource generator that ran, then, when `custom:` has entries, one `{"generator": "custom", "files": [...], "warnings": 0}` entry listing the files they wrote (no `custom` entry for an empty `custom:`). |
 
 ## Usage stub
 
@@ -146,9 +146,27 @@ variables the config needs:
     env-allowlist: SECURITY_CONTACT
 ```
 
+`env-allowlist` takes variable names separated by commas and/or
+whitespace, newlines included, so `A,B`, `A B` and one name per line in
+a block scalar are the same list:
+
+```yaml
+with:
+  env-allowlist: |
+    SECURITY_CONTACT
+    SUPPORT_URL
+```
+
+Each entry must be a plain variable name (`[A-Za-z_][A-Za-z0-9_]*`).
+Anything else (`not-a-name`, `NAME=value`, `*`, a pasted placeholder)
+fails the run with an `::error::` annotation and exit code 2 before the
+config is read, so nothing is written. An allowlisted name that no
+placeholder uses is harmless.
+
 A reference to a name outside the allowlist, or to an allowlisted
 variable that is unset, fails with an `::error::` annotation carrying the
 config file and the line of the key whose value holds the placeholder.
+The run exits 2 and writes no file, `custom:` entries included.
 
 ### Publishing a literal `${{ ... }}`
 
