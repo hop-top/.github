@@ -119,8 +119,8 @@ is always set from the calling workflow.
 
 Org-level secrets with `visibility: all` are **not** available to
 private repos on the free GitHub plan — they reach public repos
-only. Symptoms: release-please fails with
-`Error: Input required and not supplied: app-id`.
+only. Symptoms: the release-bot token step fails with
+`Error: The 'client-id' (or deprecated 'app-id') input must be set to a non-empty string. If using a secret or variable, ensure it is available in this workflow context.`
 
 Three fixes:
 
