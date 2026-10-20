@@ -1214,12 +1214,14 @@ jobs:
           # `release-as` (a package's own, else the top-level default) makes
           # release-please propose exactly that version on every run. Once
           # that release is cut the pin is stale: release-please proposes the
-          # same version again, or a lower one. Stale = not above the
-          # package's manifest version (SemVer precedence), or its tag exists
-          # in the checkout (`<component><tag-separator>v<version>`, honouring
+          # same version again, or a lower one. Stale = below the package's
+          # manifest version (SemVer precedence), or its tag exists in the
+          # checkout (`<component><tag-separator>v<version>`, honouring
           # include-component-in-tag / include-v-in-tag; not checked for a
-          # package without `component`). versioning target refuses
-          # release-as outright (check 4b).
+          # package without `component`). A pin equal to the manifest seed
+          # with no tag yet is a first-release pin (seed 0.1.0-alpha.0 pinned
+          # so the first tag is alpha.0), stale only once that tag exists.
+          # versioning target refuses release-as outright (check 4b).
           SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
           # semver_cmp A B: -1 / 0 / 1 by SemVer precedence (build ignored)
           semver_cmp() {
@@ -1281,8 +1283,12 @@ jobs:
               [[ -n "$path" && -n "$ra" ]] || continue
               SEED=$(jq -r --arg p "$path" '.[$p] // empty' "$MANIFEST_PATH" 2>/dev/null)
               REASONS=""
-              if [[ "$ra" =~ $SEMVER_RE && "$SEED" =~ $SEMVER_RE && "$(semver_cmp "$ra" "$SEED")" != "1" ]]; then
-                REASONS="not above the manifest's $SEED"
+              CMP=""
+              if [[ "$ra" =~ $SEMVER_RE && "$SEED" =~ $SEMVER_RE ]]; then
+                CMP=$(semver_cmp "$ra" "$SEED")
+              fi
+              if [[ "$CMP" == "-1" ]]; then
+                REASONS="below the manifest's $SEED"
               fi
               TAG=$(release_tag "$path" "$ra")
               if [[ -n "$TAG" ]] && git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
@@ -1291,6 +1297,10 @@ jobs:
               if [[ -n "$REASONS" ]]; then
                 warn "package $path release-as '$ra' is stale ($REASONS) — release-please keeps proposing $ra until the pin is removed"
                 fixhint "remove release-as from package $path in $CONFIG_PATH once its release is cut"
+              elif [[ "$CMP" == "0" && -z "$TAG" ]]; then
+                info "package $path: release-as '$ra' equals the manifest's seed; its tag is not checked (no component)"
+              elif [[ "$CMP" == "0" ]]; then
+                ok "package $path: release-as '$ra' equals the manifest's seed and tag $TAG does not exist yet — the first release"
               else
                 ok "package $path: release-as '$ra' is above the manifest's ${SEED:-(no seed)}"
               fi

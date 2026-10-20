@@ -905,9 +905,8 @@ class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
 
     # --- stale release-as -------------------------------------------------------
 
-    def test_release_as_not_above_the_manifest_is_stale(self) -> None:
+    def test_release_as_below_the_manifest_is_stale(self) -> None:
         cases = [  # (release-as, manifest, stale)
-            ("0.5.0-alpha.3", "0.5.0-alpha.3", True),
             ("0.4.0", "0.5.0-alpha.3", True),
             ("0.5.0-alpha.0", "0.5.0-alpha.3", True),
             ("0.5.0-rc.1", "0.5.0", True),
@@ -927,7 +926,7 @@ class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
             self.assertEqual(code, 0, "\n".join(lines))
             if stale:
                 self.assertEqual(self.warns(lines), [
-                    f"[WARN]  package sdk/ts release-as '{ra}' is stale (not above the manifest's "
+                    f"[WARN]  package sdk/ts release-as '{ra}' is stale (below the manifest's "
                     f"{seed}) — release-please keeps proposing {ra} until the pin is removed"], ra)
             else:
                 self.assertEqual(self.warns(lines), [], ra)
@@ -958,20 +957,51 @@ class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
         # both reasons on one line
         self.setup_repo({"packages": {"sdk/ts": {**pkg, "release-as": "0.7.0",
                                                  "include-component-in-tag": False}}},
-                        seeds={"sdk/ts": "0.7.0"})
+                        seeds={"sdk/ts": "0.7.1"})
         self.assertEqual(self.warns(self.run_step()[1]), [
-            "[WARN]  package sdk/ts release-as '0.7.0' is stale (not above the manifest's 0.7.0; "
+            "[WARN]  package sdk/ts release-as '0.7.0' is stale (below the manifest's 0.7.1; "
             "tag v0.7.0 exists) — release-please keeps proposing 0.7.0 until the pin is removed"])
 
+    def test_release_as_equal_to_the_seed_is_stale_only_once_tagged(self) -> None:
+        # A first-release pin: the seed 0.1.0-alpha.0 pinned so the first
+        # tag is alpha.0. It goes stale when that tag exists.
+        self.git("init", "-q")
+        self.git("commit", "-q", "--allow-empty", "-m", "init")
+        pkg = {"component": "kit-ts", "release-as": "0.1.0-alpha.0", **self.PRE}
+        self.setup_repo({"packages": {"sdk/ts": pkg}}, seeds={"sdk/ts": "0.1.0-alpha.0"})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [])
+        self.assertLine(lines, "[OK]    package sdk/ts: release-as '0.1.0-alpha.0' equals the "
+                               "manifest's seed and tag kit-ts-v0.1.0-alpha.0 does not exist yet "
+                               "— the first release")
+        # Strictly below the seed is stale with no tag at all.
+        self.setup_repo({"packages": {"sdk/ts": pkg}}, seeds={"sdk/ts": "0.1.0-alpha.1"})
+        self.assertEqual(self.warns(self.run_step()[1]), [
+            "[WARN]  package sdk/ts release-as '0.1.0-alpha.0' is stale (below the manifest's "
+            "0.1.0-alpha.1) — release-please keeps proposing 0.1.0-alpha.0 until the pin is removed"])
+        self.git("tag", "kit-ts-v0.1.0-alpha.0")
+        self.setup_repo({"packages": {"sdk/ts": pkg}}, seeds={"sdk/ts": "0.1.0-alpha.0"})
+        self.assertEqual(self.warns(self.run_step()[1]), [
+            "[WARN]  package sdk/ts release-as '0.1.0-alpha.0' is stale (tag kit-ts-v0.1.0-alpha.0 "
+            "exists) — release-please keeps proposing 0.1.0-alpha.0 until the pin is removed"])
+        # No component, so no tag to look for: reported, not warned.
+        self.setup_repo({"packages": {"sdk/ts": {k: v for k, v in pkg.items() if k != "component"}}},
+                        seeds={"sdk/ts": "0.1.0-alpha.0"})
+        code, lines = self.run_step()
+        self.assertNoLine(lines, "[WARN]  package sdk/ts release-as")
+        self.assertLine(lines, "[INFO]  package sdk/ts: release-as '0.1.0-alpha.0' equals the "
+                               "manifest's seed; its tag is not checked (no component)")
+
     def test_top_level_release_as_counts_and_target_packages_stay_with_check_4b(self) -> None:
-        self.setup_repo({"release-as": "0.5.0-alpha.3", "packages": {
+        self.setup_repo({"release-as": "0.5.0-alpha.1", "packages": {
             ".": {"component": "kit", **self.PRE},
             "sdk/ts": {"component": "kit-ts", **self.PRE, "release-as": "0.6.0-alpha.0"}}})
         code, lines = self.run_step()
         self.assertEqual(code, 0, "\n".join(lines))
         self.assertEqual(self.warns(lines), [
-            "[WARN]  package . release-as '0.5.0-alpha.3' is stale (not above the manifest's "
-            "0.5.0-alpha.3) — release-please keeps proposing 0.5.0-alpha.3 until the pin is removed"])
+            "[WARN]  package . release-as '0.5.0-alpha.1' is stale (below the manifest's "
+            "0.5.0-alpha.3) — release-please keeps proposing 0.5.0-alpha.1 until the pin is removed"])
         target = {**PreflightTargetVersioningTests.TARGET, "component": "kit", "release-as": "0.5.0-alpha.3"}
         self.setup_repo({"plugins": [{"type": "target-context"}], "packages": {".": target}})
         self.write(".github/workflows/release-please.yml", PreflightTargetVersioningTests.CALLER)
