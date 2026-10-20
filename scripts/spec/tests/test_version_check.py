@@ -357,6 +357,21 @@ class VersionCheckTests(unittest.TestCase):
             "annotated with x-release-please-version",
             "ts/meta.json:6: literal: 2.0.0-alpha.3 is a hard-coded prerelease version"])
 
+    def test_json_value_release_please_skips_is_not_exempt(self) -> None:
+        # release-please's JSON updater rewrites a string holding a version
+        # only; an object (or a number) at the path is left as it is.
+        self.write(".github/release-please-config.json", _config({"ts": [
+            {"type": "json", "path": "a.json", "jsonpath": "$.version"},
+            {"type": "json", "path": "b.json", "jsonpath": "$.version"}]}))
+        self.write("ts/a.json", '{\n  "version": {"current": "1.9.0-alpha.3"}\n}\n')
+        self.write("ts/b.json", '{\n  "version": {\n    "current": "1.0.0-alpha.0"\n  }\n}\n')
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "ts/a.json:2: literal: 1.9.0-alpha.3 is a hard-coded prerelease version",
+            "ts/b.json:3: literal: 1.0.0-alpha.0 equals a manifest version and is not "
+            "annotated with x-release-please-version"])
+
     def test_each_format_exempts_only_its_selector_line(self) -> None:
         self.write(".github/release-please-config.json", _config({"ts": [
             {"type": "toml", "path": "Cargo.toml", "jsonpath": "$.package.version"},
