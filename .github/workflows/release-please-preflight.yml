@@ -716,7 +716,7 @@ jobs:
                 [[ "$BUMP_MINOR" != "true" ]] && MISSING="$MISSING bump-minor-pre-major"
                 if [[ -n "$MISSING" ]]; then
                   fail "package $path is prerelease but missing:$MISSING"
-                  fixhint "all four pieces required — see SKILL.md \"Prerelease channel\""
+                  fixhint "all four pieces required — see references/how-to/prerelease-channel.md#the-four-piece-combo"
                 else
                   ok "package $path: prerelease four-piece combo complete"
                 fi
@@ -919,6 +919,13 @@ jobs:
           fi
 
           # ---------- Check 5: manifest seed shape vs prerelease config ----------
+          # A target package takes either shape (its branch decides), but a
+          # prerelease seed must be on alpha, beta or rc: the extension's runner
+          # refuses any other channel (a stock experimental.N, a numeric
+          # prerelease) on every branch, its rules knowing alpha -> beta -> rc
+          # only. TARGET_SEMVER_RE is the runner's version pattern
+          # (scripts/release-please-target/lib/rules.js).
+          TARGET_SEMVER_RE='^v?([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?(\+[0-9A-Za-z.-]+)?$'
           if [[ -f "$MANIFEST_PATH" && -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             {
               echo ""
@@ -937,7 +944,15 @@ jobs:
                 fi
                 VERSIONING=$(jq -r --arg p "$path" '.packages[$p].versioning // .versioning // empty' "$CONFIG_PATH")
                 if [[ "$VERSIONING" == "target" ]]; then
-                  ok "package $path: manifest seed '$SEED' (versioning target: the branch decides stable or prerelease)"
+                  PRE=""
+                  [[ "$SEED" =~ $TARGET_SEMVER_RE ]] && PRE="${BASH_REMATCH[5]}"
+                  CH="${PRE%%.*}"
+                  if [[ -n "$PRE" && "$(channel_rank "$CH")" == "0" ]]; then
+                    fail "package $path manifest version '$SEED' is on channel '$CH': target versioning supports alpha/beta/rc only"
+                    fixhint "seed the manifest on alpha when adopting, then promote via beta to rc (references/how-to/target-versioning.md#migrate)"
+                  else
+                    ok "package $path: manifest seed '$SEED' (versioning target: the branch decides stable or prerelease)"
+                  fi
                 elif [[ "$PRERELEASE" == "true" ]]; then
                   if [[ "$SEED" == *-* ]]; then
                     ok "package $path: manifest seed '$SEED' is prerelease-shaped"

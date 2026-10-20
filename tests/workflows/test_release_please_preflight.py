@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import shutil
 import site
 import subprocess
@@ -598,6 +599,8 @@ class PreflightPrereleaseOptionTests(PreflightFixture, unittest.TestCase):
         code, lines = self.run_step()
         self.assertEqual(code, 1, "\n".join(lines))
         self.assertLine(lines, self.MISSING.format("a", "bump-minor-pre-major"))
+        self.assertLine(lines, "[FIX]   all four pieces required — see "
+                               "references/how-to/prerelease-channel.md#the-four-piece-combo")
 
     def test_top_level_prerelease_type_applies_to_every_package(self) -> None:
         own = {k: v for k, v in self.COMBO.items() if k != "prerelease-type"}
@@ -625,6 +628,39 @@ class PreflightPrereleaseOptionTests(PreflightFixture, unittest.TestCase):
         self.assertLine(lines, "[INFO]  package c: stable channel (prerelease: false / unset)")
         self.assertLine(lines, "[OK]    package c: manifest seed '1.0.0' is stable-shaped")
         self.assertNoLine(lines, "[WARN]  package")
+
+
+class PreflightDocPointerTests(unittest.TestCase):
+    """The docs the preflight's messages point to exist: a repository path
+    (`references/....md`, `docs/....md`) names a file and, with an anchor,
+    one of its headings; `SKILL.md "Section"` names a SKILL.md heading."""
+
+    ROOT = WORKFLOW.parents[2]
+
+    @staticmethod
+    def slug(heading: str) -> str:
+        return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
+
+    def headings(self, path: Path) -> set[str]:
+        return {self.slug(m.group(1)) for m in
+                re.finditer(r"(?m)^#{1,6}\s+(.+?)\s*$", path.read_text(encoding="utf-8"))}
+
+    def test_doc_paths_and_anchors_exist(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        refs = set(re.findall(r"\b((?:references|docs)/[\w./-]+\.md)(?:#([\w-]+))?", text))
+        self.assertTrue(refs)
+        for path, anchor in sorted(refs):
+            with self.subTest(ref=f"{path}#{anchor}"):
+                self.assertTrue((self.ROOT / path).is_file(), path)
+                if anchor:
+                    self.assertIn(anchor, self.headings(self.ROOT / path))
+
+    def test_skill_sections_exist(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        skill = self.headings(self.ROOT / "SKILL.md")
+        for name in re.findall(r'SKILL\.md \\?"([^"\\]+)\\?"', text):
+            with self.subTest(section=name):
+                self.assertIn(self.slug(name), skill)
 
 
 class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
@@ -689,6 +725,43 @@ class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
         self.assertEqual(code, 0, "\n".join(lines))
         self.assertLine(lines, "[OK]    package .: manifest seed '0.6.0' (versioning target: "
                                "the branch decides stable or prerelease)")
+
+    def test_manifest_on_a_channel_outside_alpha_beta_rc_fails_on_every_branch(self) -> None:
+        # The runner refuses it before the pull request stage: its rules know
+        # alpha -> beta -> rc only. A numeric prerelease is no channel either.
+        seeds = {".": "0.5.0-experimental.3", "sdk/ts": "1.0.0-1", "incubator/qmochi": "0.2.0-alpha.1"}
+        self.setup_repo(self.kit(), seeds=seeds)
+        for branch in ("next", "main", "release/0.5", ""):
+            code, lines = self.run_step(branch=branch)
+            self.assertEqual(code, 1, branch)
+            self.assertEqual([x for x in self.breaks(lines) if "manifest version" in x], [
+                "[BREAK] package . manifest version '0.5.0-experimental.3' is on channel "
+                "'experimental': target versioning supports alpha/beta/rc only",
+                "[BREAK] package sdk/ts manifest version '1.0.0-1' is on channel '1': "
+                "target versioning supports alpha/beta/rc only"], branch)
+            self.assertLine(lines, "[FIX]   seed the manifest on alpha when adopting, then promote "
+                                   "via beta to rc (references/how-to/target-versioning.md#migrate)")
+
+    def test_manifest_on_alpha_beta_rc_or_stable_passes(self) -> None:
+        for seed in ("0.5.0-alpha.3", "0.5.0-beta.0", "0.5.0-rc.2", "0.5.0-alpha", "0.5.0",
+                     "0.5.0+build.7", "0.5.0-rc.1+build.7"):
+            self.setup_repo(self.kit(), seeds={".": seed, "sdk/ts": seed, "incubator/qmochi": seed})
+            code, lines = self.run_step(branch="next")
+            self.assertEqual(code, 0, seed + "\n" + "\n".join(lines))
+            self.assertLine(lines, f"[OK]    package .: manifest seed '{seed}' (versioning target: "
+                                   "the branch decides stable or prerelease)")
+
+    def test_stock_package_on_another_channel_is_not_refused(self) -> None:
+        config = self.kit()
+        config["packages"]["tools"] = {"component": "tools", "release-type": "simple",
+                                       "prerelease": True, "prerelease-type": "experimental.0",
+                                       "versioning": "prerelease", "bump-minor-pre-major": True}
+        self.setup_repo(config, seeds={".": "0.5.0-alpha.3", "sdk/ts": "0.5.0-alpha.3",
+                                       "incubator/qmochi": "0.2.0-alpha.1",
+                                       "tools": "0.3.0-experimental.2"})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    package tools: manifest seed '0.3.0-experimental.2' is prerelease-shaped")
 
     def test_top_level_versioning_target_counts(self) -> None:
         config = self.kit()
