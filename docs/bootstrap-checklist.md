@@ -117,7 +117,7 @@ version is ever pinned. The example below is the stock
 `versioning: "prerelease"` shape, for a repo that has not opted in
 ([prerelease channel](../references/how-to/prerelease-channel.md)).
 
-**No root `.` package, unless it's an aggregate with no registry target.** Every component listed here must also exist in the caller's `publish.yml` `ecosystems:` map (next step) — tags release-please cuts for a component not in that map fail the publish workflow with `Unknown component`. If you need a Go module at the repo root, give it the bare-name component (`my-pkg`) and place its sources under `go/` (matching the per-language layout) or extend the ecosystems map to include the root component name.
+**No root `.` package, unless it's an aggregate with no registry target.** Every component listed here must also exist in the caller's `publish.yml` `ecosystems:` map (next step) — a tag release-please cuts for a component not in that map publishes nothing: the publish run logs `::notice::Component '<component>' has no ecosystem entry; skipping publish` and finishes green. If you need a Go module at the repo root, give it the bare-name component (`my-pkg`) and place its sources under `go/` (matching the per-language layout) or extend the ecosystems map to include the root component name.
 
 If you DO want a root `.` package purely to version-bump an
 umbrella release across all components (e.g. `release-type: simple`,
