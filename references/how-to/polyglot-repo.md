@@ -92,10 +92,8 @@ commit type is `chore:`](../../docs/bootstrap-checklist.md#if-your-commit-type-i
 of the four.** `node`, `python`, `rust` and `php` each update their
 own manifest natively (`package.json`, `pyproject.toml`,
 `Cargo.toml`, `composer.json`). An `extra-files`
-entry for that same file is redundant at best; for python it
-bypasses PEP 440 normalization and breaks `pip install` —
-[version-strings § Don't break the normalization](../concepts/version-strings.md#dont-break-the-normalization).
-The preflight rejects only the `pyproject.toml` case
+entry for that same file is redundant: the strategy already writes
+it. The preflight rejects only the `pyproject.toml` case
 (`release-please-preflight.yml`, check 5b); keeping the other three
 out is on you. Every *other* release-version literal in the tree (a
 `version.ts` constant, a pinned README example) is an annotated
@@ -212,7 +210,7 @@ is what produces the close+retrigger churn in
 | Release PR opened for a tree that only has scaffolding | Scaffold landed as `feat:` | Land scaffolds as `build:` / `chore:`; close the PR, it regenerates on the first real `feat:` |
 | Umbrella PR opens on every `feat(<lang>):` | Root package missing that dir in `exclude-paths` | List every language dir and nested Go module |
 | `hop-top/<name>` mirror contains `docs/`, `ts/`, `py/` … | Go entry uses `dir: .` in the per-language layout | Set `dir: go`; the next tag pushes only the module |
-| `pip install` fails on the release PR's `pyproject.toml` | `extra-files` entry for `pyproject.toml` | Remove it; the python strategy owns the file |
+| `release-please-preflight` fails: `… has an extra-files block targeting pyproject.toml` | `extra-files` entry for `pyproject.toml` | Remove it: redundant, the python strategy already writes the file |
 | Sibling release PRs CONFLICTING after one merge | Shared manifest | Merge serially — [retrigger-release-please.md](retrigger-release-please.md) |
 | Python release PR proposes stable `0.1.0` | Empty manifest with a python package | Seed every component — [bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please) |
 | notice `no release yet: skipped` for the new tree (target versioning) | Its first `feat:` / `fix:` landed on `main` or `release/x.y` | Release it on `next` — [target versioning § Common issues](target-versioning.md#common-issues) |
