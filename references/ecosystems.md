@@ -34,7 +34,8 @@ ecosystems: |
 | `dir` | yes | Subdirectory in the repo (`.` for root). In a per-language polyglot layout (module under `go/`) the Go entry is `go`, not `.` — a root dir mirrors every other language tree too ([how-to/polyglot-repo.md § 3](how-to/polyglot-repo.md#3-add-the-ecosystems-entry)); a root-Go layout like `poly-kit` uses `.` on purpose |
 | `ecosystem` | yes | `ts` \| `py` \| `rs` \| `php` \| `go` \| `none` — picks the publish job. `go` and `none` have no publish job: Go releases through the mirror plus the module proxy, and `none` is a payload with no registry at all (a spec tree, say). Both still run the mirror job. `php` runs a Packagist notify after the mirror push, not a publish-from-source step. Prefer `none` over omitting the field: an absent `ecosystem` yields an empty output, which the mirror job's `!= ''` guard reads as an umbrella tag and skips |
 | `mirror` | yes | Full slug of the read-only mirror repo (e.g. `hop-top/kit-ts`) |
-| `package` | no | Registry package name (informational; required for php's Packagist notify) |
+| `package` | no | Registry package name. Informational at publish time (no publish job reads it, php's Packagist notify included: that one uses `mirror`); the preflight's first-publish probe reads it |
+| `target-prefix` | no | Path on the mirror to publish under (e.g. `specs/v0.1`); empty (default) publishes at the mirror root. For mirrors whose convention nests the payload, as the `spec-*` repos do (`specs/v<MAJOR>.<MINOR>/<files>`). Repo-relative: an absolute path or a `.` / `..` component fails the mirror job; surrounding whitespace, duplicate slashes and trailing slashes are normalised. The mirror gets one commit carrying the source commit's metadata, not the split history |
 | `test-command` | no | Override default test step |
 | `build-command` | no | Override default build step (ts, py) |
 | `node-version` | no | Override default Node version (ts; default `22`) |
