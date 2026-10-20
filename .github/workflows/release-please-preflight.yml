@@ -441,14 +441,17 @@ jobs:
           # `type` when release-please supports it, `(none)` when unset or
           # empty, else `?<type>` -- an object of type "string" is `?string`),
           # its `jsonpath` (`xpath` for xml) as `=<value>` (`=` alone when
-          # empty; `-` when unset) and whether it is a glob.
+          # empty; `-` when unset) and whether it is a glob. A package with
+          # no `extra-files` of its own (unset or null: release-please's
+          # `??`) takes the top-level list, joined with its own path.
           # Mirrors release-please's Strategy#addPath: a leading `/` anchors
           # the entry at the repository root, the root package `.` joins
           # nothing, any other package joins its own path. No field is empty:
           # `read` with a tab IFS would merge empty fields.
           extra_files() {
             jq -r --arg p "$1" '
-              .packages[$p]["extra-files"] // []
+              (if .packages[$p]["extra-files"] != null then .packages[$p]["extra-files"]
+               else (.["extra-files"] // []) end)
               | .[]
               | (if type == "string" then . else (.path // "") end) as $rel
               | select($rel != "")
