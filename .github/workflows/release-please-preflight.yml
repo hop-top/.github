@@ -834,11 +834,11 @@ jobs:
             fi
 
             for path in $TARGETS; do
-              PT=$(jq -r --arg p "$path" '.packages[$p]["prerelease-type"] // .["prerelease-type"] // empty' "$CONFIG_PATH")
-              RA=$(jq -r --arg p "$path" '.packages[$p]["release-as"] // .["release-as"] // empty' "$CONFIG_PATH")
-              # A package's own value, else (unset or null: release-please's `??`) the top level's.
-              BMPM=$(jq -r --arg p "$path" 'if .packages[$p]["bump-minor-pre-major"] != null then .packages[$p]["bump-minor-pre-major"] else .["bump-minor-pre-major"] end | tostring' "$CONFIG_PATH")
-              BPMPM=$(jq -r --arg p "$path" 'if .packages[$p]["bump-patch-for-minor-pre-major"] != null then .packages[$p]["bump-patch-for-minor-pre-major"] else .["bump-patch-for-minor-pre-major"] end | tostring' "$CONFIG_PATH")
+              # Each a package's own value, else (unset or null) the top level's: pkg_opt.
+              PT=$(pkg_opt "$path" prerelease-type)
+              RA=$(pkg_opt "$path" release-as)
+              BMPM=$(pkg_opt "$path" bump-minor-pre-major)
+              BPMPM=$(pkg_opt "$path" bump-patch-for-minor-pre-major)
               SEED=$(jq -r --arg p "$path" '.[$p] // empty' "$MANIFEST_PATH" 2>/dev/null)
               BAD=0
               if [[ -n "$PT" && "$PT" != "alpha.0" ]]; then
