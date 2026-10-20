@@ -32,10 +32,11 @@ subject, the body, and any `BREAKING CHANGE:` footer. That covers:
 - HTTP header names, values and status codes used literally:
   `Access-Control-Allow-Origin: *`, `403`
 
-release-please copies subjects and `BREAKING CHANGE:` footers verbatim
-into `CHANGELOG.md` and the GitHub release notes. Left bare, `<svc>`
-is dropped by GitHub as an unknown HTML tag, and markdownlint (MD037)
-reads a pair of `*` as emphasis. In a code span both render literally
+release-please copies subjects and `BREAKING CHANGE:` footers into
+`CHANGELOG.md` and the GitHub release notes. It HTML-escapes `<` and `>`
+in subjects but copies footers verbatim, so a bare `<svc>` in a footer
+is dropped by GitHub as an unknown HTML tag; and markdownlint (MD037)
+reads a pair of `*` as emphasis in either. In a code span both render literally
 and lint clean, and a subject's spans show as code in the changelog.
 
 Before:
