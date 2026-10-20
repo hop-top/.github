@@ -20,12 +20,11 @@ test-scripts: ## Run the unit tests for scripts/spec
 test-workflows: ## Run the tests for the workflows' inline check scripts
 	$(PYTHON) -m unittest discover -s tests/workflows -v
 
-test-well-known: ## Run the well-known publisher generator tests (pytest in a venv under build/; needs Python >= 3.11)
+test-well-known: ## Run the well-known publisher generator tests (hash-pinned venv under build/, code from src/ like the action; Python >= 3.11)
 	@$(PYTHON) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "test-well-known needs Python >= 3.11 (e.g. make test-well-known PYTHON=python3.12)")'
 	$(PYTHON) -m venv $(WKP_VENV)
-	$(WKP_PIP) install --require-hashes --only-binary :all: -r $(WKP)/requirements.txt
-	$(WKP_PIP) install -e '$(WKP)[dev]'
-	cd $(WKP) && $(CURDIR)/$(WKP_VENV)/bin/python -m pytest
+	$(WKP_PIP) install --require-hashes --no-deps --only-binary :all: -r $(WKP)/requirements-dev.txt
+	cd $(WKP) && PYTHONPATH=src $(CURDIR)/$(WKP_VENV)/bin/python -m pytest
 
 test-release-please-target: ## Run the tests for scripts/release-please-target (rules, contract, simulation, runner)
 	cd $(RPT) && $(NPM_CI) && npm test
