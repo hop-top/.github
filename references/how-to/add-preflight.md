@@ -69,7 +69,13 @@ Auto-infers from your config — no inputs required:
 - Manifest seed shape matches prerelease declaration (a `target` package takes either shape: its branch decides)
 - [SemVer ∩ PEP 440 intersection](../concepts/version-strings.md): Python packages don't have an `extra-files` override on `pyproject.toml` (the trap that bypasses PEP 440 normalization), and `pyproject.toml`'s current version is PEP 440-shaped (not SemVer-shaped)
 - Spec packages: every package whose path is `<root>/vX.Y` exists as a directory, has a manifest key (a hard failure — the [version-check guard](spec-versioning.md) reads that key), and uses `release-type: simple` (warning otherwise)
-- `extra-files` targets: every entry (a string, or an object with `path`), joined with its package path, names an existing file; a target without an `x-release-please-version` line is warned about (the guard fails it), `pyproject.toml` entries stay with the PEP 440 check above
+- `extra-files` targets: every entry (a string, or an object with `path`), joined with its package path, names an existing file, and is checked by the rule of the updater release-please picks for it:
+  - `type: json` / `yaml` / `toml`: the `jsonpath` reaches the value (json: a version string, yaml: a string). No `jsonpath`, or a JSON file that does not parse, fails (release-please's run would); a path that matches nothing is a warning. Paths beyond `$.a.b` / `['a']` / `[n]` are not evaluated (an `[INFO]` line says so)
+  - `type: xml` needs an `xpath`; `xml` and `pom` are checked for existence only
+  - a string entry ending in `.json` / `.yaml` / `.yml` / `.toml` / `.xml` passes with a version at `$.version` (`/*/version`) or an annotation; a `.json` one that does not parse fails
+  - `type: generic` and any other string entry: a target without an `x-release-please-<scope>` annotation (inline, or a `x-release-please-start-<scope>` block) is warned about (the guard fails it)
+  - any other `type`, or none, fails; a `glob` entry is reported, its matches are not checked
+  - `pyproject.toml` entries stay with the PEP 440 check above
 - `publish.yml` triggers on `*/v*` and delegates to `publish-on-tag.yml`
 - Three-way name alignment holds
 - `release-please.yml` uses the release-bot App token (not the deprecated PAT) and declares `workflow_dispatch`
