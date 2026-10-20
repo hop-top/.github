@@ -434,10 +434,13 @@ test('rule 4: the target comes from the members on a linked line: a member\'s ow
     {component: 'kit-py', current: '2.0.1-alpha.0', lastStable: '2.0.0'},
   ]);
   assert.match(major.blocked[0], /^kit: kit-py already released 2\.0\.0 as stable, at or past group target 2\.0\.0 /);
-  // a live preview of a linked line still wins: a new minor before 1.0, a
-  // new major, with or without a stable
+  // a live preview of a linked line still wins: a new minor before 1.0,
+  // with or without a stable, a new major with one (1.0 with no stable is
+  // its initial version: it never pulls the family, see below)
   assert.deepEqual(group([kit, {component: 'kit-py', current: '0.7.0-alpha.2', lastStable: '0.6.0'}]).versions, {kit: '0.7.0-alpha.3', 'kit-py': '0.7.0-alpha.3'});
-  assert.deepEqual(group([kit, {component: 'kit-py', current: '1.0.0-alpha.1'}]).versions, {kit: '1.0.0-alpha.2', 'kit-py': '1.0.0-alpha.2'});
+  assert.deepEqual(group([kit, {component: 'kit-py', current: '0.7.0-alpha.2'}]).versions, {kit: '0.7.0-alpha.3', 'kit-py': '0.7.0-alpha.3'});
+  assert.deepEqual(group([kit, {component: 'kit-py', current: '1.0.0-alpha.1', lastStable: '0.5.0'}]).versions, {kit: '1.0.0-alpha.2', 'kit-py': '1.0.0-alpha.2'});
+  assert.match(group([kit, {component: 'kit-py', current: '1.0.0-alpha.1'}]).blocked[0], /^kit: kit-py is already at 1\.0\.0-alpha\.1, past group target 0\.6\.0 /);
   // a live preview of a minor from 1.0 is no linked line either
   assert.match(group([
     {component: 'kit', current: '1.4.0', lastStable: '1.4.0', proposed: '2.0.0-alpha.0'},
@@ -471,6 +474,82 @@ test('rule 4: a member already past the group target blocks it, named as past it
   const h = group([{component: 'kit', current: '1.4.0', lastStable: '1.4.0', proposed: '2.0.0-alpha.0'}, {component: 'kit-rs', current: '2.3.0-alpha.0'}]);
   assert.equal(h.versions, undefined);
   assert.deepEqual(h.blocked, ["kit: kit-rs is already at 2.3.0-alpha.0, past group target 2.0.0 (linked by kit@2.0.0-alpha.0), and a member never moves backwards: open 2.3.0 for kit with x-open-line on the prerelease branch so the family links at kit-rs's line"]);
+});
+
+const onNext = members => resolveGroup({kind: 'prerelease', groupName: 'kit', prereleaseBranch: 'next', members});
+const onMain = members => resolveGroup({kind: 'stable', groupName: 'kit', prereleaseBranch: 'next', members});
+
+test('rule 4: a first release never raises the group target, and never opens 1.0 for a family before 1.0', () => {
+  // the family links in that run: a member with no release yet takes the
+  // group's version, whatever its initial version
+  for (const initial of ['1.0.0', '1.0.0-alpha.0', '0.9.0-alpha.0', '2.0.0-alpha.0']) {
+    const g = onNext([KIT, {component: 'kit-go', proposed: initial}, {component: 'kit-py', current: '0.5.0-alpha.5'}]);
+    assert.deepEqual(g.versions, {kit: '0.6.0-alpha.0', 'kit-go': '0.6.0-alpha.0', 'kit-py': '0.6.0-alpha.0'}, initial);
+    assert.deepEqual(g.blocked, [], initial);
+  }
+  // independent, family before 1.0: a first release at or past 1.0.0 blocks
+  // that member alone
+  const fam = [{component: 'kit', current: '0.5.0-alpha.26', proposed: '0.5.0-alpha.27'}, {component: 'kit-py', current: '0.5.0'}];
+  for (const initial of ['1.0.0', '1.0.0-alpha.0', '2.0.0-alpha.0']) {
+    const g = onNext([...fam, {component: 'kit-go', proposed: initial}]);
+    assert.equal(g.linked, false, initial);
+    assert.deepEqual(g.blocked, [], initial);
+    assert.deepEqual(g.blockedMembers, {'kit-go': `kit: kit-go has no release yet and its first release would be ${initial}, but the family is before 1.0 (at 0.5.0): set its initial-version to 0.5.0-alpha.0, the family's line, or open 1.0.0 for kit, kit-py with x-open-line on next`}, initial);
+  }
+  // below 1.0 it opens at its initial version, as outside a group
+  assert.deepEqual(onNext([...fam, {component: 'kit-go', proposed: '0.5.0-alpha.0'}]).blockedMembers, {});
+  // a family from 1.0 has no 1.0 to open: any first release, as outside a group
+  assert.deepEqual(onNext([{component: 'kit', current: '1.2.0-alpha.3', lastStable: '1.1.0', proposed: '1.2.0-alpha.4'}, {component: 'kit-go', proposed: '1.0.0'}]).blockedMembers, {});
+  // the stable branch never opens a package (unreleased: skipped, no proposal)
+  assert.deepEqual(onMain([{component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.5.1'}, {component: 'kit-go'}]).blockedMembers, {});
+});
+
+test('rule 4: a no-stable member on a line from 1.0 (its initial version) never pulls a family before 1.0 to it', () => {
+  // next: kit (stable 0.5.0) opens 0.6.0 while kit-rs, no stable, sits at
+  // its initial 1.0.0-alpha.1: linked at 0.6.0, not 1.0.0; kit-rs is past it
+  const kit = {component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.6.0-alpha.0'};
+  const g = onNext([kit, {component: 'kit-rs', current: '1.0.0-alpha.1'}, {component: 'kit-py', current: '0.5.0-alpha.5'}]);
+  assert.equal(g.versions, undefined);
+  assert.deepEqual(g.blocked, ["kit: kit-rs is already at 1.0.0-alpha.1, past group target 0.6.0 (linked by kit@0.6.0-alpha.0), and a member never moves backwards: open 1.0.0 for kit, kit-py with x-open-line on next so the family links at kit-rs's line"]);
+  // nor does its own next major (2.0.0 from a breaking change on 1.2.0, no stable)
+  const own = onNext([{component: 'kit', current: '0.5.0-alpha.26', proposed: '0.5.0-alpha.27'}, {component: 'kit-rs', current: '1.2.0-alpha.0', proposed: '2.0.0-alpha.0'}]);
+  assert.equal(own.linked, false);
+  assert.deepEqual(own.blockedMembers, {});
+  // its own counter on next stays independent
+  assert.deepEqual(onNext([{component: 'kit', current: '0.5.0-alpha.26'}, {component: 'kit-rs', current: '1.0.0-alpha.1', proposed: '1.0.0-alpha.2'}]).blockedMembers, {});
+  // the family opening 1.0.0 through x-open-line links with it: kit-rs counts on
+  assert.deepEqual(onNext([{component: 'kit', current: '0.9.0-alpha.3', lastStable: '0.8.0', proposed: '1.0.0-alpha.0'}, {component: 'kit-rs', current: '1.0.0-alpha.4'}]).versions,
+    {kit: '1.0.0-alpha.5', 'kit-rs': '1.0.0-alpha.5'});
+  // a family from 1.0 has no 1.0 to open: a no-stable member's later major still links
+  assert.deepEqual(onNext([{component: 'kit', current: '1.4.0', lastStable: '1.4.0', proposed: '2.0.0-alpha.0'}, {component: 'kit-rs', current: '3.0.0-alpha.0'}]).versions,
+    {kit: '3.0.0-alpha.1', 'kit-rs': '3.0.0-alpha.1'});
+
+  // main: kit-rs, no stable, at 1.0.0-rc.0 while kit and kit-py cut 0.6.0:
+  // linked at 0.6.0, not 1.0.0; kit-rs is past it
+  const m = onMain([
+    {component: 'kit', current: '0.6.0-rc.2', lastStable: '0.5.0', proposed: '0.6.0'},
+    {component: 'kit-py', current: '0.6.0-rc.0', lastStable: '0.5.0', proposed: '0.6.0'},
+    {component: 'kit-rs', current: '1.0.0-rc.0', proposed: '1.0.0'},
+  ]);
+  assert.equal(m.versions, undefined);
+  assert.deepEqual(m.blocked, ["kit: kit-rs is already at 1.0.0-rc.0, past group target 0.6.0 (linked by kit@0.6.0, kit-py@0.6.0), and a member never moves backwards: open 1.0.0 for kit, kit-py with x-open-line on next so the family links at kit-rs's line"]);
+  // main, nothing else links (a hotfix on kit): kit-rs alone would cut
+  // 1.0.0: that member is blocked, the rest is independent
+  const h = onMain([
+    {component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.5.1'},
+    {component: 'kit-py', current: '0.5.0', lastStable: '0.5.0'},
+    {component: 'kit-rs', current: '1.0.0-rc.0', proposed: '1.0.0'},
+  ]);
+  assert.equal(h.linked, false);
+  assert.deepEqual(h.blocked, []);
+  assert.deepEqual(h.blockedMembers, {'kit-rs': "kit: kit-rs has no stable and would cut 1.0.0 from 1.0.0-rc.0, a line from 1.0 its initial version opened, but the family is before 1.0 (at 0.5.0): 1.0 opens for the family only through x-open-line (open 1.0.0 for kit, kit-py with x-open-line on next)"});
+  // still on alpha there it is skipped on its own (no proposal): nothing to block
+  assert.deepEqual(onMain([{component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.5.1'}, {component: 'kit-rs', current: '1.0.0-alpha.3'}]).blockedMembers, {});
+  // the family at 1.0.0-rc (opened through x-open-line): kit-rs, no stable, is cut with it
+  assert.deepEqual(onMain([
+    {component: 'kit', current: '1.0.0-rc.1', lastStable: '0.9.0', proposed: '1.0.0'},
+    {component: 'kit-rs', current: '1.0.0-rc.0', proposed: '1.0.0'},
+  ]).versions, {kit: '1.0.0', 'kit-rs': '1.0.0'});
 });
 
 test('rule 4: a promotion that skips a channel blocks the group', () => {

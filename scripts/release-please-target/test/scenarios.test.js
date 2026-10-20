@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {config, repo, nextRepo, FAMILY, MAIN0, CONFIG} = require('./helpers/fixture');
+const {config, repo, nextRepo, FAMILY, MAIN0, NEXT0, CONFIG} = require('./helpers/fixture');
 const {propose, land} = require('./helpers/sim');
 
 const all = (v, comps = FAMILY) => comps.map(c => `${c}: ${v}`);
@@ -64,6 +64,29 @@ function unreleased(branch = 'main') {
   const r = repo().commit('chore: initial').release(released);
   if (branch !== 'main') r.checkout('-b', branch);
   return r.commit('feat(qmochi): first', ['qmochi']).commit('fix(cli): k', ['kit']);
+}
+
+// next as nextRepo, with `component` never released there (no manifest
+// entry, no tag), then a fix on it.
+function nextUnreleased(component, overrides = {}, stables = {}) {
+  const r = repo().commit('chore: initial');
+  for (const [c, v] of Object.entries({kit: '0.4.0', 'kit-py': '0.4.0', 'kit-ts': '0.4.0', qmochi: '0.1.0', ...stables})) r.tag(c, v);
+  const {[component]: _, ...released} = {...NEXT0, ...overrides};
+  return r.checkout('-b', 'next').release(released).commit(`fix(${component}): first`, [component]);
+}
+
+// The kit family stable at 0.5.0 on main except kit-rs, which next
+// released at `rs` with no stable (a first release at 1.0.0-alpha.0 since
+// promoted). The repository is left on main, next merged.
+function rsFromInitial(rs, others) {
+  const {'kit-rs': _, ...stable} = Object.fromEntries(FAMILY.map(c => [c, '0.5.0']));
+  const r = repo().commit('chore: initial').release({...stable, qmochi: '0.5.0'});
+  r.checkout('-b', 'next');
+  if (others) r.commit('feat(cli): y', ['kit']);
+  r.release({...(others ? Object.fromEntries(FAMILY.map(c => [c, others])) : {}), 'kit-rs': rs});
+  r.checkout('main');
+  r.git('merge', '-q', '--no-ff', 'next', '-m', "Merge branch 'next'");
+  return r;
 }
 
 const SCENARIOS = [
@@ -410,6 +433,49 @@ const SCENARIOS = [
   }, expect: [],
   blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 0\.6\.1-alpha\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\), and a member never moves backwards: open 0\.6\.1 for kit, kit-php, kit-py, kit-ts with x-open-line on next so the family links at kit-rs's line$/])),
   stock: [T('kit', '0.6.0-alpha.0')]},
+
+  {id: 'v1', label: 'next, kit-rs released first at 1.0.0-alpha.0 (no stable), then kit opens 0.6.0: the family is not pulled to 1.0, kit-rs named as past the target', build() {
+    return {r: nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '1.0.0-alpha.0'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next'};
+  }, expect: [],
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 1\.0\.0-alpha\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\), and a member never moves backwards: open 1\.0\.0 for kit, kit-php, kit-py, kit-ts with x-open-line on next so the family links at kit-rs's line$/])),
+  stock: [T('kit', '0.6.0-alpha.3')]},
+
+  {id: 'v2', label: 'next, kit-rs never released, no initial-version (release-please opens 1.0.0), family before 1.0: kit-rs blocked alone, kit still counts', build() {
+    return {r: nextUnreleased('kit-rs').commit('fix(cli): k', ['kit']), branch: 'next'};
+  }, expect: [T('kit', '0.5.0-alpha.27')],
+  blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 1\.0\.0, but the family is before 1\.0 \(at 0\.5\.0\): set its initial-version to 0\.5\.0-alpha\.0, the family's line, or open 1\.0\.0 for kit, kit-php, kit-py, kit-ts with x-open-line on next$/},
+  stock: [T('kit', '0.5.0-alpha.27'), T('kit-rs', '1.0.0')]},
+
+  {id: 'v3', label: 'next, kit-rs never released, initial-version 1.0.0-alpha.0, family before 1.0: blocked alone', build() {
+    return {r: nextUnreleased('kit-rs'), branch: 'next', packages: {'sdk/experimental/rs': {'initial-version': '1.0.0-alpha.0'}}};
+  }, expect: [], blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 1\.0\.0-alpha\.0, but the family is before 1\.0/},
+  stock: [T('kit-rs', '1.0.0-alpha.0')]},
+
+  {id: 'v4', label: 'next, kit-rs never released (initial-version 1.0.0-alpha.0) while kit opens 0.6.0: its first release takes the group version, never raises it', build() {
+    return {r: nextUnreleased('kit-rs', {kit: '0.5.1-alpha.3'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next',
+      packages: {'sdk/experimental/rs': {'initial-version': '1.0.0-alpha.0'}}};
+  }, expect: [GROUP_NEXT], versions: all('0.6.0-alpha.0'), stock: [T('kit', '0.6.0-alpha.3'), T('kit-rs', '1.0.0-alpha.0')]},
+
+  {id: 'v5', label: 'main, the family cuts 0.6.0 while kit-rs (no stable) is at 1.0.0-rc.0: linked at 0.6.0, not 1.0.0; kit-rs named as past it', build() {
+    return {r: rsFromInitial('1.0.0-rc.0', '0.6.0-rc.2'), branch: 'main'};
+  }, expect: [],
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 1\.0\.0-rc\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0, kit-php@0\.6\.0, kit-py@0\.6\.0, kit-ts@0\.6\.0\), and a member never moves backwards: open 1\.0\.0 for kit, kit-php, kit-py, kit-ts with x-open-line on next so the family links at kit-rs's line$/])),
+  stock: []},
+
+  {id: 'v6', label: 'main, family stable 0.5.0 + a kit hotfix while kit-rs (no stable) is at 1.0.0-rc.0: kit cut alone, kit-rs blocked (no 1.0 without x-open-line)', build() {
+    return {r: rsFromInitial('1.0.0-rc.0').commit('fix(cli): hotfix', ['kit']), branch: 'main'};
+  }, expect: [T('kit', '0.5.1')],
+  blocked: {'kit-rs': /^kit: kit-rs has no stable and would cut 1\.0\.0 from 1\.0\.0-rc\.0, a line from 1\.0 its initial version opened, but the family is before 1\.0 \(at 0\.5\.0\): 1\.0 opens for the family only through x-open-line \(open 1\.0\.0 for kit, kit-php, kit-py, kit-ts with x-open-line on next\)$/},
+  stock: [T('kit', '0.5.1-alpha.0')]},
+
+  {id: 'v7', label: 'next, qmochi (no group) never released, initial-version 1.0.0-alpha.0, the kit family before 1.0: opened at it, as before', build() {
+    return {r: unreleased('next'), branch: 'next', packages: {'incubator/qmochi': {'initial-version': '1.0.0-alpha.0'}}};
+  }, expect: [T('kit', '0.4.1-alpha.0'), T('qmochi', '1.0.0-alpha.0')], stock: [T('kit', '0.4.1-alpha.0'), T('qmochi', '1.0.0-alpha.0')]},
+
+  {id: 'v8', label: 'main, qmochi (no group, no stable) at 1.0.0-rc.0, the kit family before 1.0: cut 1.0.0, as before', build() {
+    const {qmochi, ...main0} = MAIN0;
+    return {r: promoted({qmochi: '1.0.0-rc.0'}, main0), branch: 'main'};
+  }, expect: [T('qmochi', '1.0.0')], stock: []},
 
   {id: 'r', label: 'Release-As footer on next is ignored', build() {
     return {r: nextRepo().commit('fix(qmochi): pin\n\nRelease-As: 9.9.9', ['qmochi']), branch: 'next'};

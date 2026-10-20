@@ -70,6 +70,7 @@ const channelOf = pre => (pre ? pre.split('.')[0] : undefined);
 const atChannel = (v, ch) => ({...core(v), pre: `${ch}.0`});
 
 const STABLE = /^\d+\.\d+\.\d+$/;
+const ONE = {major: 1, minor: 0, patch: 0};
 
 // A promotion record, validated: {line: 'x.y.z', channel: 'beta' | 'rc'}.
 function promotionOf(record) {
@@ -291,9 +292,12 @@ function toRc(members, L) {
 }
 
 /**
- * resolveGroup({kind, groupName, members, prereleaseBranch}) -> {linked, versions?, reason, blocked}
+ * resolveGroup({kind, groupName, members, prereleaseBranch}) -> {linked, versions?, reason, blocked, blockedMembers}
  * members: [{component, current?, lastStable?, proposed?, promotion?}]
+ *   (no current: no release yet; proposed is then its first release)
  * versions: {component: version}
+ * blockedMembers: {component: reason}, members blocked on their own while
+ *   the group is independent (the others release)
  *
  * Linked only when a member's proposal opens a linked line. Every member
  * then moves to the group's target: the highest proposal of the members
@@ -313,31 +317,64 @@ function toRc(members, L) {
  * members). Nobody moves backwards or changes channel. A member that
  * already released the target (or later) as stable, or is already on a
  * later line, blocks the group: no member gets a version.
+ *
+ * 1.0 opens only through x-open-line. While the family is before 1.0
+ * (any member's stable or line at 0.x), a member's first release never
+ * raises the target (it takes the group's version when the group links)
+ * and, independent, is blocked at or past 1.0.0; a member with no stable
+ * on a line from 1.0 (its initial version) neither links the family nor
+ * raises its target, and its stable cut, independent, is blocked.
  */
 function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   const M = members.map(m => ({
     component: m.component, current: opt(m.current), lastStable: opt(m.lastStable), proposed: opt(m.proposed), promotion: promotionOf(m.promotion),
   }));
-  const triggers = M.filter(m => m.proposed && m.current &&
+  const on = onPrerelease(prereleaseBranch);
+  const stableOf = m => maxV(m.lastStable, m.current && !m.current.pre ? m.current : undefined);
+  // The family is before 1.0 while any member's stable or line is: at the
+  // highest such line.
+  const familyLine = M.reduce((a, m) => (m.current && m.current.major === 0 ? maxV(a, core(m.current)) : a), undefined);
+  // A member with no stable on a line from 1.0 in a family before 1.0 has
+  // that line from its initial version (config): a change or x-open-line
+  // opening 1.0 links the family. It never links the family nor raises
+  // its target.
+  const fromInitial = m => !!familyLine && !stableOf(m) && !!(m.current && m.current.pre) && m.current.major >= 1;
+  // The released members below `line`: x-open-line `line` on them links
+  // the family at it.
+  const below = (line, except) => M.filter(x => x !== except && x.current && cmpCore(x.current, line) < 0).map(x => x.component).join(', ');
+  const triggers = M.filter(m => m.proposed && m.current && !fromInitial(m) &&
     startsLinkedLine({kind, current: m.current, proposed: m.proposed, lastStable: m.lastStable}));
-  if (!triggers.length) return {linked: false, reason: `${groupName}: no new major or pre-1.0 minor line: independent`, blocked: []};
+  if (!triggers.length) {
+    // Independent, but no member's own release opens 1.0 for a family
+    // before 1.0: a first release (its initial version) at or past 1.0.0,
+    // or the stable cut of a line from 1.0 its initial version opened.
+    // That member alone is blocked.
+    const blockedMembers = {};
+    for (const m of M) {
+      if (!familyLine || !m.proposed) continue;
+      if (!m.current && m.proposed.major >= 1) {
+        blockedMembers[m.component] = `${groupName}: ${m.component} has no release yet and its first release would be ${fmt(m.proposed)}, but the family is before 1.0 (at ${fmt(familyLine)}): set its initial-version to ${fmt(familyLine)}-alpha.0, the family's line, or open 1.0.0 for ${below(ONE, m)} with x-open-line on ${on}`;
+      } else if (kind === 'stable' && fromInitial(m)) {
+        blockedMembers[m.component] = `${groupName}: ${m.component} has no stable and would cut ${fmt(m.proposed)} from ${fmt(m.current)}, a line from 1.0 its initial version opened, but the family is before 1.0 (at ${fmt(familyLine)}): 1.0 opens for the family only through x-open-line (open ${fmt(core(m.current))} for ${below(core(m.current), m)} with x-open-line on ${on})`;
+      }
+    }
+    return {linked: false, reason: `${groupName}: no new major or pre-1.0 minor line: independent`, blocked: [], blockedMembers};
+  }
   const by = triggers.map(t => `${t.component}@${fmt(t.proposed)}`).join(', ');
-  const fail = reason => ({linked: true, reason: `${groupName}: ${reason}`, blocked: [`${groupName}: ${reason}`]});
+  const fail = reason => ({linked: true, reason: `${groupName}: ${reason}`, blocked: [`${groupName}: ${reason}`], blockedMembers: {}});
   const all = v => Object.fromEntries(M.map(m => [m.component, fmt(v)]));
   // A member already on a later line than target T: it never moves back,
   // so the family links at its line or later only, which x-open-line on
   // the members below that line opens.
   const pastTarget = (m, T) => {
     const line = core(m.current);
-    const below = M.filter(x => x !== m && x.current && cmpCore(x.current, line) < 0).map(x => x.component).join(', ');
-    return fail(`${m.component} is already at ${fmt(m.current)}, past group target ${fmt(T)} (linked by ${by}), and a member never moves backwards: open ${fmt(line)} for ${below} with x-open-line on ${onPrerelease(prereleaseBranch)} so the family links at ${m.component}'s line`);
+    return fail(`${m.component} is already at ${fmt(m.current)}, past group target ${fmt(T)} (linked by ${by}), and a member never moves backwards: open ${fmt(line)} for ${below(line, m)} with x-open-line on ${on} so the family links at ${m.component}'s line`);
   };
 
   if (kind === 'stable') {
     // The target is what the linking members cut: another member's own
     // proposal (a patch of a member already stable) never raises it.
     const L = triggers.reduce((a, m) => maxV(a, m.proposed), undefined);
-    const stableOf = m => maxV(m.lastStable, m.current && !m.current.pre ? m.current : undefined);
     const done = M.find(m => stableOf(m) && cmp(stableOf(m), L) >= 0);
     if (done) return fail(`${done.component} already released ${fmt(stableOf(done))} as stable, at or past group target ${fmt(L)} (linked by ${by})`);
     const at = M.find(m => m.current && cmp(m.current, L) >= 0);
@@ -345,16 +382,16 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     const notRc = M.filter(m => !(m.current && channelOf(m.current.pre) === 'rc' && cmpCore(core(m.current), L) === 0));
     if (notRc.length) {
       const where = notRc.map(m => `${m.component} is at ${m.current ? fmt(m.current) : 'no release'}`).join(', ');
-      return fail(`linked at ${fmt(L)} by ${by}, but ${where}: a linked release is cut only when every member is at an rc of ${fmt(L)} (${toRc(notRc, L)} on ${onPrerelease(prereleaseBranch)} first)`);
+      return fail(`linked at ${fmt(L)} by ${by}, but ${where}: a linked release is cut only when every member is at an rc of ${fmt(L)} (${toRc(notRc, L)} on ${on} first)`);
     }
-    return {linked: true, versions: all(L), reason: `${groupName}: linked at ${fmt(L)} by ${by}`, blocked: []};
+    return {linked: true, versions: all(L), reason: `${groupName}: linked at ${fmt(L)} by ${by}`, blocked: [], blockedMembers: {}};
   }
 
   // Highest linked line first: what the linking members open, or a later
   // line a member already previews (unreleased) that links as the stable
   // branch would cut it. A member's own patch, proposed or previewed,
-  // never raises it.
-  const previewsLinkedLine = m => !!(m.current && m.current.pre) && !(m.lastStable && cmpCore(m.lastStable, core(m.current)) >= 0) &&
+  // never raises it, nor a line from 1.0 a member's initial version opened.
+  const previewsLinkedLine = m => !fromInitial(m) && !!(m.current && m.current.pre) && !(m.lastStable && cmpCore(m.lastStable, core(m.current)) >= 0) &&
     startsLinkedLine({kind: 'stable', current: m.current, proposed: core(m.current), lastStable: m.lastStable});
   let T = core(triggers.reduce((a, m) => maxV(a, m.proposed), undefined));
   for (const m of M) {
@@ -378,7 +415,7 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     versions[m.component] = fmt(v);
   }
   const distinct = [...new Set(Object.values(versions))].join(', ');
-  return {linked: true, versions, reason: `${groupName}: linked on ${fmt(T)} at ${distinct} by ${by}`, blocked: []};
+  return {linked: true, versions, reason: `${groupName}: linked on ${fmt(T)} at ${distinct} by ${by}`, blocked: [], blockedMembers: {}};
 }
 
 /**
