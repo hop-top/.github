@@ -603,7 +603,7 @@ jobs:
           # ---------- Check 1: required files ----------
           if [[ ! -f "$CONFIG_PATH" ]]; then
             fail "release-please config not found at $CONFIG_PATH"
-            fixhint "create $CONFIG_PATH per the dotgithub SKILL.md Quick-start section"
+            fixhint "create $CONFIG_PATH per the dotgithub SKILL.md \"Quick start (TL;DR)\" section"
           else
             ok "release-please config found ($CONFIG_PATH)"
           fi
@@ -656,7 +656,7 @@ jobs:
             PACKAGES=$(jq -r '.packages // {} | keys[]' "$CONFIG_PATH" 2>/dev/null)
             if [[ -z "$PACKAGES" ]]; then
               fail "$CONFIG_PATH has no .packages map"
-              fixhint "add a packages block per the dotgithub SKILL.md examples"
+              fixhint "add a packages block — see references/quick-start.md#3-add-release-please-config--manifest"
             else
               info "packages: $(echo "$PACKAGES" | tr '\n' ' ')"
             fi
@@ -1486,7 +1486,7 @@ jobs:
             ECO_KEYS=$(jq -r '.jobs.publish.with.ecosystems // {} | keys[]' "$PUBLISH_JSON" 2>/dev/null || echo "")
             if [[ -z "$ECO_KEYS" ]]; then
               warn "publish.yml ecosystems map is empty or unparseable"
-              fixhint "add an ecosystems entry per component (see SKILL.md)"
+              fixhint "add an ecosystems entry per component (see SKILL.md \"Quick start (TL;DR)\", references/ecosystems.md#shape)"
             else
               info "ecosystems keys: $(echo "$ECO_KEYS" | tr '\n' ' ')"
             fi

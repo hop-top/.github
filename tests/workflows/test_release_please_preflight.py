@@ -633,17 +633,73 @@ class PreflightPrereleaseOptionTests(PreflightFixture, unittest.TestCase):
 class PreflightDocPointerTests(unittest.TestCase):
     """The docs the preflight's messages point to exist: a repository path
     (`references/....md`, `docs/....md`) names a file and, with an anchor,
-    one of its headings; `SKILL.md "Section"` names a SKILL.md heading."""
+    one of its headings; every `SKILL.md` mention names a SKILL.md heading
+    (`SKILL.md "Section"`, or `SKILL.md Section section`)."""
 
     ROOT = WORKFLOW.parents[2]
+    FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
     @staticmethod
     def slug(heading: str) -> str:
         return re.sub(r"[^\w\- ]", "", heading.strip().lower()).replace(" ", "-")
 
+    @classmethod
+    def headings_of(cls, text: str) -> set[str]:
+        """Slugs of the ATX headings outside fenced code blocks (a `#`
+        comment in a fenced YAML or shell snippet is no heading)."""
+        found, fence = set(), None
+        for line in text.splitlines():
+            m = cls.FENCE.match(line)
+            if fence is None and m:
+                fence = m.group(1)
+            elif fence is not None:
+                # closed by a run of the same character, at least as long
+                if m and len(m.group(1)) >= len(fence) and not line.strip().lstrip(fence[0]):
+                    fence = None
+            else:
+                h = re.match(r"^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$", line)
+                if h:
+                    found.add(cls.slug(h.group(1)))
+        return found
+
     def headings(self, path: Path) -> set[str]:
-        return {self.slug(m.group(1)) for m in
-                re.finditer(r"(?m)^#{1,6}\s+(.+?)\s*$", path.read_text(encoding="utf-8"))}
+        return self.headings_of(path.read_text(encoding="utf-8"))
+
+    def test_fenced_code_lines_are_not_headings(self) -> None:
+        text = textwrap.dedent("""\
+            # Title
+            ```yaml
+            # .github/workflows/publish.yml
+            ```
+            ~~~~
+            ```
+            ## not a heading either
+            ~~~~
+            ````md
+            ```
+            ## still code
+            ````
+            ```
+            ```text
+            ## an info string opens nothing inside a fence
+            ```
+            ## Real section
+            """)
+        self.assertEqual(self.headings_of(text), {"title", "real-section"})
+        # SKILL.md's own fenced comment line
+        self.assertNotIn("githubworkflowspublishyml", self.headings(self.ROOT / "SKILL.md"))
+        self.assertIn("quick-start-tldr", self.headings(self.ROOT / "SKILL.md"))
+
+    @staticmethod
+    def skill_refs(text: str) -> list[str | None]:
+        """The section each `SKILL.md` mention names (None: none named)."""
+        refs = []
+        for m in re.finditer(r"SKILL\.md", text):
+            rest = text[m.end():].split("\n", 1)[0]
+            q = re.match(r'\s+\\?"([^"\\]+)\\?"', rest)
+            u = re.match(r"\s+(\S+(?:\s+\S+)*?)\s+section\b", rest)
+            refs.append(q.group(1) if q else u.group(1) if u else None)
+        return refs
 
     def test_doc_paths_and_anchors_exist(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -656,11 +712,19 @@ class PreflightDocPointerTests(unittest.TestCase):
                     self.assertIn(anchor, self.headings(self.ROOT / path))
 
     def test_skill_sections_exist(self) -> None:
-        text = WORKFLOW.read_text(encoding="utf-8")
+        refs = self.skill_refs(WORKFLOW.read_text(encoding="utf-8"))
+        self.assertTrue(refs)
         skill = self.headings(self.ROOT / "SKILL.md")
-        for name in re.findall(r'SKILL\.md \\?"([^"\\]+)\\?"', text):
-            with self.subTest(section=name):
+        for i, name in enumerate(refs):
+            with self.subTest(ref=i, section=name):
+                self.assertIsNotNone(name, "a SKILL.md mention names no section")
                 self.assertIn(self.slug(name), skill)
+
+    def test_skill_refs_parse_quoted_and_unquoted_sections(self) -> None:
+        self.assertEqual(self.skill_refs('see SKILL.md \\"Prerelease channel\\"\n'
+                                         "per the SKILL.md Quick-start section\n"
+                                         "per the SKILL.md examples\n(see SKILL.md)\n"),
+                         ["Prerelease channel", "Quick-start", None, None])
 
 
 class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
