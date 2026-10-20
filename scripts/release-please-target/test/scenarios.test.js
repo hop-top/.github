@@ -443,27 +443,28 @@ const SCENARIOS = [
   {id: 'v2', label: 'next, kit-rs never released, no initial-version (release-please opens 1.0.0), family before 1.0: kit-rs blocked alone, kit still counts', build() {
     return {r: nextUnreleased('kit-rs').commit('fix(cli): k', ['kit']), branch: 'next'};
   }, expect: [T('kit', '0.5.0-alpha.27')],
-  blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 1\.0\.0, not a prerelease \(next cuts prereleases only\): set its initial-version to 0\.5\.0-alpha\.0, the family's open line, or open 1\.0\.0 for group kit with x-open-line on next$/},
+  blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 1\.0\.0, not a prerelease \(next cuts prereleases only\): set its initial-version to 0\.5\.0-alpha\.0, the family's open line, or wait for the family to link \(it then takes the group version\), or open 1\.0\.0 for group kit with x-open-line on next$/},
   stock: [T('kit', '0.5.0-alpha.27'), T('kit-rs', '1.0.0')]},
 
   {id: 'v3', label: 'next, kit-rs never released, initial-version 1.0.0-alpha.0, family before 1.0: blocked alone', build() {
     return {r: nextUnreleased('kit-rs'), branch: 'next', packages: {'sdk/experimental/rs': {'initial-version': '1.0.0-alpha.0'}}};
-  }, expect: [], blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 1\.0\.0-alpha\.0, past the family's line 0\.5\.0: set its initial-version to 0\.5\.0-alpha\.0, the family's open line, or open 1\.0\.0 for group kit with x-open-line on next$/},
+  }, expect: [], blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 1\.0\.0-alpha\.0, past the family's line 0\.5\.0: set its initial-version to 0\.5\.0-alpha\.0, the family's open line, or wait for the family to link \(it then takes the group version\), or open 1\.0\.0 for group kit with x-open-line on next$/},
   stock: [T('kit-rs', '1.0.0-alpha.0')]},
 
   {id: 'v9', label: 'next, kit-rs never released, initial-version 0.9.0-alpha.0 past the family line 0.5.0: blocked alone', build() {
     return {r: nextUnreleased('kit-rs').commit('fix(cli): k', ['kit']), branch: 'next', packages: {'sdk/experimental/rs': {'initial-version': '0.9.0-alpha.0'}}};
-  }, expect: [T('kit', '0.5.0-alpha.27')], blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 0\.9\.0-alpha\.0, past the family's line 0\.5\.0: set its initial-version to 0\.5\.0-alpha\.0, the family's open line$/},
+  }, expect: [T('kit', '0.5.0-alpha.27')], blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 0\.9\.0-alpha\.0, past the family's line 0\.5\.0: set its initial-version to 0\.5\.0-alpha\.0, the family's open line, or wait for the family to link \(it then takes the group version\)$/},
   stock: [T('kit', '0.5.0-alpha.27'), T('kit-rs', '0.9.0-alpha.0')]},
 
   {id: 'v10', label: 'next, kit-rs never released, initial-version 0.3.0 (not a prerelease): blocked alone, next cuts prereleases only', build() {
     return {r: nextUnreleased('kit-rs'), branch: 'next', packages: {'sdk/experimental/rs': {'initial-version': '0.3.0'}}};
-  }, expect: [], blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 0\.3\.0, not a prerelease \(next cuts prereleases only\): set its initial-version to 0\.5\.0-alpha\.0, the family's open line$/},
+  }, expect: [], blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 0\.3\.0, not a prerelease \(next cuts prereleases only\): set its initial-version to 0\.5\.0-alpha\.0, the family's open line, or wait for the family to link \(it then takes the group version\)$/},
   stock: [T('kit-rs', '0.3.0')]},
 
-  {id: 'v11', label: 'next, kit-rs never released, initial-version 0.3.0-alpha.0 below the family line: opened at it', build() {
+  {id: 'v11', label: 'next, kit-rs never released, initial-version 0.3.0-alpha.0 below the family line: blocked alone (on the line, or wait for the link)', build() {
     return {r: nextUnreleased('kit-rs'), branch: 'next', packages: {'sdk/experimental/rs': {'initial-version': '0.3.0-alpha.0'}}};
-  }, expect: [T('kit-rs', '0.3.0-alpha.0')], stock: [T('kit-rs', '0.3.0-alpha.0')]},
+  }, expect: [], blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 0\.3\.0-alpha\.0, below the family's line 0\.5\.0: set its initial-version to 0\.5\.0-alpha\.0, the family's open line, or wait for the family to link \(it then takes the group version\)$/},
+  stock: [T('kit-rs', '0.3.0-alpha.0')]},
 
   {id: 'v4', label: 'next, kit-rs never released (initial-version 1.0.0-alpha.0) while kit opens 0.6.0: its first release takes the group version, never raises it', build() {
     return {r: nextUnreleased('kit-rs', {kit: '0.5.1-alpha.3'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next',
@@ -616,7 +617,7 @@ test('(chain) a new member when the family\'s line is released: the advised init
   const first = await propose(r, 'next', config());
   assert.deepEqual(first.titles, [], first.notes.join('\n'));
   assert.deepEqual(first.blocked.map(b => b.component), ['kit-rs']);
-  assert.match(first.blocked[0].reason, /^kit: kit-rs has no release yet and its first release would be 1\.0\.0, not a prerelease \(next cuts prereleases only\): set its initial-version to 0\.5\.1-alpha\.0, the patch line after the family's stable 0\.5\.0, or open 1\.0\.0 for group kit with x-open-line on next$/);
+  assert.match(first.blocked[0].reason, /^kit: kit-rs has no release yet and its first release would be 1\.0\.0, not a prerelease \(next cuts prereleases only\): set its initial-version to 0\.5\.1-alpha\.0, the patch line after the family's stable 0\.5\.0, or wait for the family to link \(it then takes the group version\), or open 1\.0\.0 for group kit with x-open-line on next$/);
   // the advice, then kit-rs promoted via beta to rc
   const rs = {'sdk/experimental/rs': {'initial-version': '0.5.1-alpha.0'}};
   const opened = await propose(r, 'next', config({packages: rs}));
