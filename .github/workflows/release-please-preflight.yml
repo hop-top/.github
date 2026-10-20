@@ -1205,12 +1205,12 @@ jobs:
           SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
           # semver_cmp A B: -1 / 0 / 1 by SemVer precedence (build ignored)
           semver_cmp() {
-            local a="${1%%+*}" b="${2%%+*}" c ap="" bp="" i n x y
+            local va="${1%%+*}" vb="${2%%+*}" c ap="" bp="" i n x y
             local -a pa pb
-            c=$(core_cmp "$a" "$b")
+            c=$(core_cmp "$va" "$vb")
             if [[ "$c" != "0" ]]; then echo "$c"; return; fi
-            [[ "$a" == *-* ]] && ap="${a#*-}"
-            [[ "$b" == *-* ]] && bp="${b#*-}"
+            [[ "$va" == *-* ]] && ap="${va#*-}"
+            [[ "$vb" == *-* ]] && bp="${vb#*-}"
             if [[ -z "$ap" && -z "$bp" ]]; then echo 0; return; fi
             if [[ -z "$ap" ]]; then echo 1; return; fi
             if [[ -z "$bp" ]]; then echo -1; return; fi
