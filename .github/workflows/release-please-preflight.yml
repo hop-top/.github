@@ -471,6 +471,16 @@ jobs:
             ' "$CONFIG_PATH" 2>/dev/null
           }
 
+          # pkg_opt <package> <key> [default]: the option as release-please
+          # merges it -- the package's own value, else (unset or null: its
+          # `??`) the top-level one, else the default (empty) -- as text.
+          pkg_opt() {
+            jq -r --arg p "$1" --arg k "$2" --arg d "${3-}" '
+              if .packages[$p][$k] != null then .packages[$p][$k]
+              elif .[$k] != null then .[$k] else $d end | tostring
+            ' "$CONFIG_PATH" 2>/dev/null
+          }
+
           # has_annotation <file>: carries a marker release-please's generic
           # updater rewrites (inline x-release-please-<scope>, or a
           # x-release-please-start-<scope> ... x-release-please-end block).
@@ -687,18 +697,19 @@ jobs:
 
           # ---------- Check 4: prerelease four-piece combo ----------
           # `versioning` is `prerelease` (release-please's counter strategy) or
-          # `target` (hop-top/.github's extension, Check 4b).
+          # `target` (hop-top/.github's extension, Check 4b). Each piece is the
+          # package's own value or the top-level default (pkg_opt).
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             {
               echo ""
               echo "### prerelease config"
             } >> "$GITHUB_STEP_SUMMARY"
             for path in $PACKAGES; do
-              PRERELEASE=$(jq -r --arg p "$path" '.packages[$p].prerelease // false' "$CONFIG_PATH")
+              PRERELEASE=$(pkg_opt "$path" prerelease false)
               if [[ "$PRERELEASE" == "true" ]]; then
-                PR_TYPE=$(jq -r --arg p "$path" '.packages[$p]["prerelease-type"] // empty' "$CONFIG_PATH")
+                PR_TYPE=$(pkg_opt "$path" prerelease-type)
                 VERSIONING=$(jq -r --arg p "$path" '.packages[$p].versioning // .versioning // empty' "$CONFIG_PATH")
-                BUMP_MINOR=$(jq -r --arg p "$path" '.packages[$p]["bump-minor-pre-major"] // false' "$CONFIG_PATH")
+                BUMP_MINOR=$(pkg_opt "$path" bump-minor-pre-major false)
                 MISSING=""
                 [[ -z "$PR_TYPE" ]] && MISSING="$MISSING prerelease-type"
                 [[ "$VERSIONING" != "prerelease" && "$VERSIONING" != "target" ]] && MISSING="$MISSING versioning"
@@ -917,7 +928,7 @@ jobs:
               fail "$MANIFEST_PATH is not valid JSON"
             else
               for path in $PACKAGES; do
-                PRERELEASE=$(jq -r --arg p "$path" '.packages[$p].prerelease // false' "$CONFIG_PATH")
+                PRERELEASE=$(pkg_opt "$path" prerelease false)
                 SEED=$(jq -r --arg p "$path" '.[$p] // empty' "$MANIFEST_PATH")
                 if [[ -z "$SEED" ]]; then
                   warn "no manifest seed for package $path"
