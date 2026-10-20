@@ -147,9 +147,12 @@ publish.yml:ecosystems.<KEY>
 mirror repo basename (org/<name>)
 ```
 
-If they drift, `publish-on-tag.yml`'s `ecosystems[<component>]`
-lookup fails with `Unknown component '<tag-prefix>'` at parse
-time, before any publish work happens.
+If the component and the key drift, `publish-on-tag.yml` finds no
+`ecosystems[<component>]` entry for the tag's prefix and treats the
+tag like an umbrella tag (next section): a `::notice::`, every publish
+and mirror job skipped, a green run, and nothing published.
+`release-please-preflight` fails the PR for a component with no
+matching key, which is how you catch it before the tag.
 
 ## Umbrella / meta-component tags
 

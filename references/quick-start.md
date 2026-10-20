@@ -163,7 +163,7 @@ with `publish-php` notifying Packagist.
 | Problem | Cause | Fix |
 |---|---|---|
 | Tag pushed but no workflow run | Tag shape doesn't match `*/v*` (3-segment component) | Rename component to single segment. See [SKILL.md § Tag-shape glob trap](../SKILL.md#tag-shape-glob-trap). |
-| `Unknown component '<name>'` at parse | Mismatch between release-please `component`, `ecosystems` key, and mirror basename | Align all three. See [SKILL.md § Three-way name alignment](../SKILL.md#three-way-name-alignment). |
+| Run is green but nothing published; the `parse` log shows `::notice::Component '<name>' has no ecosystem entry; skipping publish` | The tag's prefix (the release-please `component`) is not a key of `ecosystems`, so the router skips it like an umbrella tag | Align the names, then re-publish the tag ([retrigger](how-to/retrigger-failed-publish.md)). See [SKILL.md § Three-way name alignment](../SKILL.md#three-way-name-alignment). |
 | Anything else | — | See [troubleshooting/common-pitfalls.md](troubleshooting/common-pitfalls.md) |
 
 ## Next steps
