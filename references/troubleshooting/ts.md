@@ -150,7 +150,7 @@ run `bash -c "$CMD"`.
 
 Two fixes:
 
-1. **Pin to `@v0` or `@v1`** rolling tag — fixed for `test-command` AND `build-command` at `publish-{ts,py,rs}.yml@v0.4.3+`. `&&` is safe in either field at that pin.
+1. **Pin to the `@v0`** rolling tag (or a full SHA at or after `v0.4.3`; see [pinning.md](../pinning.md)) — fixed for `test-command` AND `build-command` at `publish-{ts,py,rs}.yml@v0.4.3+`. `&&` is safe in either field at that pin.
 2. **On an older pin, move the pipeline into a package.json script** (`ci:build`) so the workflow command is single-token. Harmless to keep after upgrading (`poly-cite` still does).
 
 Tracked in [#9](https://github.com/hop-top/.github/issues/9). See
