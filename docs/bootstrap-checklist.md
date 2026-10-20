@@ -108,6 +108,15 @@ Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish
 
 `release-please-config.json` + `.release-please-manifest.json` at `.github/`. The shape is documented separately in the `custom-release-please` skill, but the minimum for a polyglot repo:
 
+**Recommended: [target versioning](../references/how-to/target-versioning.md).**
+Every package on `"versioning": "target"`, the caller on
+`versioning-extension: true`, triggered on `main`, `next` and
+`release/*`: lines start at `alpha.0`, `main` cuts stable from an rc,
+an SDK family links only on a new major (or a pre-1.0 minor), and no
+version is ever pinned. The example below is the stock
+`versioning: "prerelease"` shape, for a repo that has not opted in
+([prerelease channel](../references/how-to/prerelease-channel.md)).
+
 **No root `.` package, unless it's an aggregate with no registry target.** Every component listed here must also exist in the caller's `publish.yml` `ecosystems:` map (next step) — tags release-please cuts for a component not in that map fail the publish workflow with `Unknown component`. If you need a Go module at the repo root, give it the `go` component and place its sources under `go/` (matching the per-language layout) or extend the ecosystems map to include the root component name.
 
 If you DO want a root `.` package purely to version-bump an
@@ -135,14 +144,32 @@ on:
   "include-component-in-tag": true,
   "tag-separator": "/",
   "packages": {
-    "ts":  { "release-type": "node",   "component": "ts",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "py":  { "release-type": "python", "component": "py",     "package-name": "my-pkg", "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "rs":  { "release-type": "rust",   "component": "rs",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "php": { "release-type": "php",    "component": "php",    "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" },
-    "go":  { "release-type": "go",     "component": "go",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease" }
+    "ts":  { "release-type": "node",   "component": "ts",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease", "bump-minor-pre-major": true },
+    "py":  { "release-type": "python", "component": "py",     "package-name": "my-pkg", "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease", "bump-minor-pre-major": true },
+    "rs":  { "release-type": "rust",   "component": "rs",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease", "bump-minor-pre-major": true },
+    "php": { "release-type": "php",    "component": "php",    "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease", "bump-minor-pre-major": true },
+    "go":  { "release-type": "go",     "component": "go",     "prerelease": true, "prerelease-type": "alpha.0", "versioning": "prerelease", "bump-minor-pre-major": true }
   }
 }
 ```
+
+**A root `.` package lists every nested package in `exclude-paths`.**
+release-please gives the root package every commit in the repository,
+minus what its `exclude-paths` drops. Without the entry, a `fix(ts):`
+also bumps the root, and a nested Go module (a directory with its own
+`go.mod`, versioned on its own tags) ships in the root's changelog and
+version. So every directory released as its own package, and every
+nested Go module, goes in the root's `exclude-paths`:
+
+```json
+".": { "release-type": "simple", "component": "my-poly",
+       "exclude-paths": ["ts", "py", "rs", "php", "go", "extensions/mcp"] }   // extensions/mcp: own go.mod
+```
+
+Side effect: an empty commit (`git commit --allow-empty`) never
+reaches a package with `exclude-paths`, so an empty `Release-As:`
+commit releases nothing for the root
+([prerelease channel § What a pin reaches](../references/how-to/prerelease-channel.md#what-a-pin-reaches)).
 
 **`extra-files` names every release-version literal release-please
 does not rewrite natively — and never `pyproject.toml`.** Each
@@ -219,13 +246,17 @@ package (`{}`, not present-at-any-value). Verified empirically — see
 [how-to/prerelease-channel.md § Manifest presence vs
 initial-version](../references/how-to/prerelease-channel.md#manifest-presence-vs-initial-version).
 
-Three critical settings for prerelease counter behavior (`alpha.0 → alpha.1` rather than `alpha.0 → 0.1.0`):
+Four settings for prerelease counter behavior (`alpha.0 → alpha.1`),
+all required by `release-please-preflight` on every package with
+`prerelease: true`:
 
 - `"prerelease": true`
-- `"prerelease-type": "alpha.0"` (the `.0` matters — without it, the counter starts at 1)
-- `"versioning": "prerelease"`
+- `"prerelease-type": "alpha.0"` (the `.0` matters — with `"alpha"` the first release has no counter, the next is `alpha.1`)
+- `"versioning": "prerelease"` (or `"target"` with target versioning)
+- `"bump-minor-pre-major": true` (without it a breaking change before 1.0 jumps to `1.0.0-…`)
 
-All three must be set. See `custom-release-please` skill for full coverage.
+What each one does without the others:
+[prerelease channel § Why each piece matters](../references/how-to/prerelease-channel.md#why-each-piece-matters).
 
 ## 5b. Create required repo labels
 
@@ -289,7 +320,7 @@ git commit -m "feat: initial public release"
 git push origin main
 ```
 
-release-please opens a standing PR per component (`separate-pull-requests: true`). Merge each PR you want to release. Each merge creates a `<component>/v<version>` tag and triggers `publish.yml`, which fans out to the right ecosystem.
+release-please opens a standing PR per component (`separate-pull-requests: true`). Merge each PR you want to release. With target versioning, push this commit to `next`: `main` skips a package with no release yet (it cuts only rcs), `next` opens it at its `initial-version`. Each merge creates a `<component>/v<version>` tag and triggers `publish.yml`, which fans out to the right ecosystem.
 
 For first publish on **PyPI specifically** (OIDC mode), the pending trusted publisher resolves on first successful publish and becomes a project-scoped publisher. After that, the pending entry can be deleted; subsequent publishes use the project-scoped binding.
 
@@ -303,10 +334,13 @@ for every package. This is a common trap for a genuinely "wipe
 history to one clean commit" bootstrap, where `chore: initial public
 release` is the natural message but produces zero PRs.
 
-**Fix**: add a `Release-As: <version>` footer to that commit. In
+**Fix (stock versioning)**: add a `Release-As: <version>` footer to
+that commit; the footer makes even a `chore:` commit visible. In
 manifest mode with multiple packages, ONE unscoped footer forces a
-release for every package in the config simultaneously, at that
-version:
+release, at that version, for every package the commit reaches. An
+initial commit touches every package's files, so it reaches all of
+them; an empty commit would skip every package with `exclude-paths`
+(the root, typically):
 
 ```bash
 git commit -m "chore: initial public release" -m "Release-As: 0.1.0-alpha.0"
@@ -317,6 +351,11 @@ There is no per-component `Release-As` syntax — see [how-to/prerelease-channel
 § Release-As is global across
 components](../references/how-to/prerelease-channel.md#release-as-is-global-across-components-in-manifest-mode)
 before reaching for anything fancier.
+
+**With target versioning** the footer is ignored (the log says
+`ignoring "Release-As: …"`), so a `chore:`-only first commit opens
+nothing. Make it a `feat:` (or `fix:`): on `next`, each package with no
+release yet opens at its `initial-version`.
 
 ### If you want a single, clean initial commit (no intermediate history)
 
@@ -355,6 +394,32 @@ and fix it, you may already be dealing with the sibling-PR
 close+retrigger churn described in [docs/failure-modes.md § Sibling
 PRs and the close+retrigger
 trap](failure-modes.md#sibling-prs-and-the-close-retrigger-trap).
+
+## 6b. Make checks required last
+
+A required status check blocks every pull request into a branch where
+it never reports. GitHub leaves it at `Expected — Waiting for status to
+be reported` when the workflow file is not in the PR's merge commit (a
+`next` or `release/x.y` cut before the workflow landed, and a PR
+branch cut from it), or when a trigger-level `paths:` / `branches:`
+filter skips it (a job skipped by its own `if:` reports success
+instead) —
+[GitHub: handling skipped but required checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks#handling-skipped-but-required-checks).
+
+So, per check (preflight, spec gates, any reusable caller):
+
+1. Land the caller workflow on **every** branch the ruleset will cover
+   (`main`, `next`, each `release/x.y`), and watch it report once on a
+   PR into each.
+2. Only then add it to the ruleset's required checks, under the name
+   GitHub shows: a reusable workflow reports as
+   `<caller job> / <reusable job>` (`preflight / preflight`), not by
+   the reusable's file name.
+3. Before requiring a path-filtered workflow, move the filter inside
+   the job (`if:`), so a run that has nothing to check still reports.
+
+Renaming the caller job renames the check: update the ruleset in the
+same change.
 
 ## 7. Verify on each registry
 
