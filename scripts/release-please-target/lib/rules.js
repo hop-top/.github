@@ -306,11 +306,11 @@ function toRc(members, L) {
  * versions: {component: version}
  *
  * Linked only when a member's proposal opens a linked line. Every member
- * then moves to the group's target, the highest among the members (their
- * proposals, and any member already previewing a later unreleased target).
- * On a stable branch the target is the highest proposal of the members
- * that open the linked line (another member's patch never raises it),
- * every member gets that stable version, and every
+ * then moves to the group's target: the highest proposal of the members
+ * that open the linked line, or, on a prerelease branch, a later linked
+ * line a member already previews (unreleased). A member's own patch,
+ * proposed or previewed, never raises it. On a stable branch every
+ * member gets that stable version, and every
  * member must be at an rc of it: one member still on alpha or beta (or
  * on no rc of the target), experimental ones included, blocks the
  * group, it never ships stable from anything but an rc. On a prerelease
@@ -352,15 +352,18 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     return {linked: true, versions: all(L), reason: `${groupName}: linked at ${fmt(L)} by ${by}`, blocked: []};
   }
 
-  // Highest target first: the members' proposals, or a member already
-  // previewing a later (unreleased) target.
-  let T = core(M.reduce((a, m) => maxV(a, m.proposed), undefined));
+  // Highest linked line first: what the linking members open, or a later
+  // line a member already previews (unreleased) that links as the stable
+  // branch would cut it. A member's own patch, proposed or previewed,
+  // never raises it.
+  const previewsLinkedLine = m => !!(m.current && m.current.pre) && !(m.lastStable && cmpCore(m.lastStable, core(m.current)) >= 0) &&
+    startsLinkedLine({kind: 'stable', current: m.current, proposed: core(m.current), lastStable: m.lastStable});
+  let T = core(triggers.reduce((a, m) => maxV(a, m.proposed), undefined));
   for (const m of M) {
-    const live = m.current && m.current.pre && !(m.lastStable && cmpCore(m.lastStable, core(m.current)) >= 0);
-    if (live && cmpCore(core(m.current), T) > 0) T = core(m.current);
+    if (previewsLinkedLine(m) && cmpCore(core(m.current), T) > 0) T = core(m.current);
   }
   const done = M.find(m => (m.lastStable && cmpCore(m.lastStable, T) >= 0) || (m.current && !m.current.pre && cmpCore(m.current, T) >= 0));
-  if (done) return fail(`${done.component} already released ${fmt(maxV(done.lastStable, done.current && !done.current.pre ? done.current : undefined))} as stable, at or past group target ${fmt(T)}`);
+  if (done) return fail(`${done.component} already released ${fmt(maxV(done.lastStable, done.current && !done.current.pre ? done.current : undefined))} as stable, at or past group target ${fmt(T)} (linked by ${by})`);
 
   const onT = v => !!(v && v.pre && cmpCore(core(v), T) === 0);
   // A promotion counts only for a member already on its line.

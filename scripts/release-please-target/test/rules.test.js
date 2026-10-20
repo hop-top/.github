@@ -412,6 +412,39 @@ test('rule 4: a member that already released the target as stable blocks the gro
   assert.match(g.blocked[0], /kit-php already released 0\.6\.0 as stable/);
 });
 
+test('rule 4: the target comes from the members on a linked line: a member\'s own patch never raises it', () => {
+  // kit (stable 0.5.0) + feat opens 0.6.0; kit-py cut 0.6.0 on its own and
+  // has a fix since (0.6.1-alpha.0): the group links at 0.6.0, not 0.6.1,
+  // and kit-py, already stable at it, blocks
+  const kit = {component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.6.0-alpha.0'};
+  const g = group([kit, {component: 'kit-py', current: '0.6.0', lastStable: '0.6.0', proposed: '0.6.1-alpha.0'}, {component: 'kit-ts', current: '0.5.0-alpha.3'}]);
+  assert.equal(g.linked, true);
+  assert.equal(g.versions, undefined);
+  assert.match(g.blocked[0], /^kit: kit-py already released 0\.6\.0 as stable, at or past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\)$/);
+  // nor does a live preview of its own patch line (0.6.1-alpha.N after
+  // stable 0.6.0), with or without a proposal of its own
+  for (const proposed of [undefined, '0.6.1-alpha.3']) {
+    const h = group([kit, {component: 'kit-py', current: '0.6.1-alpha.2', lastStable: '0.6.0', proposed}]);
+    assert.equal(h.versions, undefined, String(proposed));
+    assert.match(h.blocked[0], /^kit: kit-py already released 0\.6\.0 as stable, at or past group target 0\.6\.0 /, String(proposed));
+  }
+  // from 1.0 the same: a member's patch of the new major never raises it
+  const major = group([
+    {component: 'kit', current: '1.4.0', lastStable: '1.4.0', proposed: '2.0.0-alpha.0'},
+    {component: 'kit-py', current: '2.0.1-alpha.0', lastStable: '2.0.0'},
+  ]);
+  assert.match(major.blocked[0], /^kit: kit-py already released 2\.0\.0 as stable, at or past group target 2\.0\.0 /);
+  // a live preview of a linked line still wins: a new minor before 1.0, a
+  // new major, with or without a stable
+  assert.deepEqual(group([kit, {component: 'kit-py', current: '0.7.0-alpha.2', lastStable: '0.6.0'}]).versions, {kit: '0.7.0-alpha.3', 'kit-py': '0.7.0-alpha.3'});
+  assert.deepEqual(group([kit, {component: 'kit-py', current: '1.0.0-alpha.1'}]).versions, {kit: '1.0.0-alpha.2', 'kit-py': '1.0.0-alpha.2'});
+  // a live preview of a minor from 1.0 is no linked line either
+  assert.match(group([
+    {component: 'kit', current: '1.4.0', lastStable: '1.4.0', proposed: '2.0.0-alpha.0'},
+    {component: 'kit-py', current: '2.1.0-alpha.0', lastStable: '2.0.0'},
+  ]).blocked[0], /^kit: kit-py already released 2\.0\.0 as stable, at or past group target 2\.0\.0 /);
+});
+
 test('rule 4: never moves a member backwards', () => {
   const currents = ['0.6.0-alpha.0', '0.6.0-alpha.9', '0.6.0-beta.0', '0.6.0-beta.4', '0.6.0-rc.7', '0.7.0-alpha.1', '0.5.9-rc.3', '0.5.0-alpha.1'];
   for (const c of currents) {

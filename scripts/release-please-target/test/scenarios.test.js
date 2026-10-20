@@ -386,6 +386,22 @@ const SCENARIOS = [
   }, expect: [T('qmochi', '0.2.0-alpha.2')], blocked: Object.fromEntries(FAMILY.map(c => [c, /kit-php already released 0\.6\.0 as stable/])),
   stock: [T('kit', '0.6.0-alpha.3'), T('qmochi', '0.2.0-alpha.2')]},
 
+  {id: 'k9', label: 'kit stable 0.5.0 + feat opens 0.6.0; kit-py cut 0.6.0 on its own, a fix since (0.6.1-alpha.0): its patch never raises the target, kit-py named as already stable, no member is cut', build() {
+    const r = repo().commit('chore: initial').release({...Object.fromEntries(FAMILY.map(c => [c, '0.5.0'])), 'kit-py': '0.6.0', qmochi: '0.5.0'});
+    r.checkout('-b', 'next').commit('feat(cli): new', ['kit']).commit('fix(py): since', ['kit-py']).commit('fix(qmochi): independent', ['qmochi']);
+    return {r, branch: 'next'};
+  }, expect: [T('qmochi', '0.5.1-alpha.0')],
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-py already released 0\.6\.0 as stable, at or past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\)$/])),
+  stock: [T('kit', '0.6.0-alpha.0'), T('kit-py', '0.6.1-alpha.0'), T('qmochi', '0.5.1-alpha.0')]},
+
+  {id: 'k10', label: 'kit stable 0.5.0 + feat opens 0.6.0 while kit-py previews its patch line 0.6.1-alpha.2 (stable 0.6.0): that preview never raises the target, kit-py named as already stable', build() {
+    const r = repo().commit('chore: initial').release({...Object.fromEntries(FAMILY.map(c => [c, '0.5.0'])), 'kit-py': '0.6.0', qmochi: '0.5.0'});
+    r.checkout('-b', 'next').commit('fix(py): since', ['kit-py']).release({'kit-py': '0.6.1-alpha.2'}).commit('feat(cli): new', ['kit']);
+    return {r, branch: 'next'};
+  }, expect: [],
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-py already released 0\.6\.0 as stable, at or past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\)$/])),
+  stock: [T('kit', '0.6.0-alpha.0')]},
+
   {id: 'r', label: 'Release-As footer on next is ignored', build() {
     return {r: nextRepo().commit('fix(qmochi): pin\n\nRelease-As: 9.9.9', ['qmochi']), branch: 'next'};
   }, expect: [T('qmochi', '0.2.0-alpha.2')], stock: [T('qmochi', '9.9.9')], note: /ignoring "Release-As: 9\.9\.9"/},
