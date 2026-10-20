@@ -311,17 +311,21 @@ class VersionCheckTests(unittest.TestCase):
                     "x-release-please-version line and no version at /*/version")
         self.assertEqual(r.stdout.splitlines(), want)
 
-    def test_structured_string_entry_without_a_parser_is_not_evaluated(self) -> None:
-        # The preflight's rule: no TOML parser, the default path is not
-        # evaluated and the entry passes; a note says so. YAML is read
-        # without PyYAML (block style, release-please's core schema).
+    def hide_modules(self, *mods: str) -> str:
+        """A PYTHONPATH entry under which importing ``mods`` fails."""
         hide = Path(tempfile.mkdtemp(prefix="vc-noparser-"))
         self.addCleanup(shutil.rmtree, hide, True)
-        for mod in ("yaml", "tomllib", "tomli"):
+        for mod in mods:
             (hide / f"{mod}.py").write_text('raise ImportError("hidden")\n', encoding="utf-8")
+        return str(hide)
+
+    def test_structured_string_entry_without_a_toml_parser_is_not_evaluated(self) -> None:
+        # The preflight's rule: no TOML parser, the default path is not
+        # evaluated and the entry passes; a note says so.
+        hide = self.hide_modules("tomllib", "tomli")
         self.write(".github/release-please-config.json", _config({"ts": self.STRUCTURED}))
         self.write_structured_targets()
-        r = self.run_check(pythonpath=str(hide))
+        r = self.run_check(pythonpath=hide)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("version-check: ok (0 annotated,", r.stdout)
         self.assertEqual(sorted(x for x in r.stderr.splitlines() if "not evaluated" in x), [
@@ -380,6 +384,71 @@ class VersionCheckTests(unittest.TestCase):
         self.assertEqual(r.stdout.splitlines(), [stale.format(x) for x in (
             "ts/Cargo.toml:4", "ts/app.xml:3", "ts/chart.yaml:2", "ts/plain.toml:3",
             "ts/plain.xml:4", "ts/plain.yaml:3", "ts/pom.xml:4")])
+
+    # --- YAML through PyYAML (BaseLoader nodes, js-yaml's core schema) -------
+
+    def test_yaml_without_pyyaml_fails_its_yaml_targets_only(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": [
+            {"type": "yaml", "path": "Chart.yaml", "jsonpath": "$.appVersion"},
+            "chart.yaml", "meta.json", "app.xml",
+            *(["/engine/meta.toml"] if HAS_TOML else [])]}))
+        self.write_structured_targets()
+        self.write("ts/Chart.yaml", "appVersion: 1.0.0-alpha.0\n")
+        r = self.run_check(pythonpath=self.hide_modules("yaml"))
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "ts/Chart.yaml:0: configured: YAML target not checked: PyYAML is not "
+            "importable (pip install pyyaml)",
+            "ts/chart.yaml:0: configured: YAML target not checked: PyYAML is not "
+            "importable (pip install pyyaml)"])
+
+    def test_yaml_flow_collection_or_anchor_on_the_path_exempts_nothing(self) -> None:
+        # One line holds the value and its siblings (flow), or the value
+        # is shared with an alias: no line is release-please's alone.
+        self.write(".github/release-please-config.json", _config({"ts": [
+            {"type": "yaml", "path": "flow.yaml", "jsonpath": "$.app.version"}, "chart.yaml"]}))
+        self.write("ts/flow.yaml", "app: {version: 1.0.0-alpha.0, compat: 1.0.0-alpha.0}\n")
+        self.write("ts/chart.yaml", "version: &v 1.0.0-alpha.0\nappVersion: *v\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        stale = ("{}: literal: 1.0.0-alpha.0 equals a manifest version and is not annotated "
+                 "with x-release-please-version")
+        self.assertEqual(r.stdout.splitlines(), [stale.format(x) for x in (
+            "ts/chart.yaml:1", "ts/flow.yaml:1", "ts/flow.yaml:1")])
+        self.assertEqual(sorted(x for x in r.stderr.splitlines() if "not placed" in x), [
+            "version-check: ts/chart.yaml: yaml selector $.version not placed; "
+            "rule 3 reads every line",
+            "version-check: ts/flow.yaml: yaml selector $.app.version not placed; "
+            "rule 3 reads every line"])
+
+    def test_yaml_quoted_keys_comments_and_documents(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": [
+            "multi.yaml", {"type": "yaml", "path": "quoted.yaml", "jsonpath": "$.appVersion"}]}))
+        self.write("ts/multi.yaml", '# header\n---\nname: a\n---\n# the version\n'
+                                    '"version": 1.0.0-alpha.0\nappVersion: 1.0.0-alpha.0\n')
+        self.write("ts/quoted.yaml", "'appVersion': 1.0.0-alpha.0\nversion: 1.0.0-alpha.0\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        stale = ("{}: literal: 1.0.0-alpha.0 equals a manifest version and is not annotated "
+                 "with x-release-please-version")
+        self.assertEqual(r.stdout.splitlines(), [stale.format(x) for x in (
+            "ts/multi.yaml:7", "ts/quoted.yaml:2")])
+
+    def test_yaml_scalars_are_typed_by_the_core_schema(self) -> None:
+        # js-yaml (release-please) reads YAML 1.2's core schema: yes / on
+        # are strings, true / 1 are not.
+        names = ("yes", "on", "quoted", "true", "int")
+        self.write(".github/release-please-config.json", _config({"ts": [
+            f"{n}.yaml" for n in names]}))
+        for name, value in zip(names, ("yes", "on", '"1"', "true", "1")):
+            self.write(f"ts/{name}.yaml", f"version: {value}\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.splitlines(), [
+            "ts/int.yaml:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line and no version at $.version ($.version is 1)",
+            "ts/true.yaml:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line and no version at $.version ($.version is true)"])
 
     # --- annotations release-please never rewrites ---------------------------
 

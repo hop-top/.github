@@ -49,8 +49,10 @@ CI runs the same on every PR.
   (`spec-commit-rules`, `spec-status-line`, `version-check`). A caller
   has none of it on disk: each workflow checks this repo out at its
   own commit and runs the scripts from there, so a script and the
-  workflow that wraps it always ship together. Standard library only;
-  tests in `scripts/spec/tests/`, run with `make test-scripts`
+  workflow that wraps it always ship together. Standard library, plus
+  PyYAML for `version-check`'s YAML targets (the workflow pins it; for
+  the tests, `python3 -m pip install pyyaml==6.0.3`); tests in
+  `scripts/spec/tests/`, run with `make test-scripts`
 - `scripts/release-please-target/` — the release-please extension
   behind `release-please-on-push`'s `versioning-extension: true`
   (target versioning): a Node package pinning release-please exactly,
