@@ -172,6 +172,9 @@ const MUTATIONS = [
   {id: 'M51', what: 'a member\'s live preview of its own patch line raises the linked prerelease target',
     file: 'lib/rules.js', from: "startsLinkedLine({kind: 'stable', current: m.current, proposed: core(m.current), lastStable: m.lastStable});", to: 'true;',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M52', what: 'a linked member already past the prerelease target is moved backwards to it',
+    file: 'lib/rules.js', from: 'if (m.current && cmp(v, m.current) <= 0) return pastTarget(m, T);', to: '',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
 ];
 
 function copy() {

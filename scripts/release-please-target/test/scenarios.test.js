@@ -402,6 +402,15 @@ const SCENARIOS = [
   blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-py already released 0\.6\.0 as stable, at or past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\)$/])),
   stock: [T('kit', '0.6.0-alpha.0')]},
 
+  {id: 'k11', label: 'kit stable 0.5.0 + feat opens 0.6.0 while kit-rs, no stable, already previews 0.6.1-alpha.0: kit-rs named as past the group target, no member is cut', build() {
+    const {'kit-rs': _, ...stable} = Object.fromEntries(FAMILY.map(c => [c, '0.5.0']));
+    const r = repo().commit('chore: initial').release({...stable, qmochi: '0.5.0'});
+    r.checkout('-b', 'next').release({'kit-rs': '0.6.1-alpha.0'}).commit('feat(cli): new', ['kit']);
+    return {r, branch: 'next'};
+  }, expect: [],
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 0\.6\.1-alpha\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\), and a member never moves backwards: open 0\.6\.1 for kit, kit-php, kit-py, kit-ts with x-open-line on next so the family links at kit-rs's line$/])),
+  stock: [T('kit', '0.6.0-alpha.0')]},
+
   {id: 'r', label: 'Release-As footer on next is ignored', build() {
     return {r: nextRepo().commit('fix(qmochi): pin\n\nRelease-As: 9.9.9', ['qmochi']), branch: 'next'};
   }, expect: [T('qmochi', '0.2.0-alpha.2')], stock: [T('qmochi', '9.9.9')], note: /ignoring "Release-As: 9\.9\.9"/},
