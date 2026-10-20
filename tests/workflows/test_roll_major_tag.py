@@ -62,6 +62,14 @@ class ResolveStepTests(unittest.TestCase):
             self.assertEqual(outputs, {"roll": "false"}, tag)
             self.assertIn(f"::notice::tag '{tag}' is not a stable vMAJOR.MINOR.PATCH", out)
 
+    def test_leading_zeros_are_not_a_stable_version(self) -> None:
+        # SemVer forbids them: v01.2.3 is no release tag, so v01 never rolls.
+        for tag in ("v01.2.3", "v0.01.0", "v0.1.01", "v00.1.0"):
+            code, out, outputs = self.run_step(ref=f"refs/tags/{tag}")
+            self.assertEqual(code, 0, f"{tag}: {out}")
+            self.assertEqual(outputs, {"roll": "false"}, tag)
+            self.assertIn(f"::notice::tag '{tag}' is not a stable vMAJOR.MINOR.PATCH", out)
+
     def test_dispatch_input_is_held_to_the_same_rule(self) -> None:
         code, out, outputs = self.run_step(ref="refs/heads/main", version="v0.14.1")
         self.assertEqual(code, 0, out)
