@@ -8,6 +8,7 @@ The literals below are the checker's inputs by construction.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -18,6 +19,10 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "version_check.py"
+# The script runs under this interpreter: which optional parsers it can
+# import (tomllib / tomli, PyYAML) is known here.
+HAS_TOML = any(importlib.util.find_spec(m) for m in ("tomllib", "tomli"))
+HAS_YAML = importlib.util.find_spec("yaml") is not None
 
 MANIFEST = {"go": "1.0.0-alpha.0", "ts": "1.0.0-alpha.0", "py": "1.0.0-alpha.0",
             "spec/v1.0": "1.0.0-alpha.0"}
@@ -52,10 +57,12 @@ class VersionCheckTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
 
-    def run_check(self, *args: str) -> subprocess.CompletedProcess:
+    def run_check(self, *args: str, pythonpath: str = "") -> subprocess.CompletedProcess:
         subprocess.run(["git", "-C", str(self.tmp), "add", "-A"], check=True)
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
+        if pythonpath:
+            env["PYTHONPATH"] = pythonpath
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--root", str(self.tmp), *args],
             capture_output=True, text=True, env=env,
@@ -240,6 +247,87 @@ class VersionCheckTests(unittest.TestCase):
             r"ts/meta.json:1: forbidden: example-ts v1 matches forbidden literal pattern "
             r"example-ts v\d",
             "ts/meta.json:1: spec-path: spec/v0.9 is not a manifest package (known: spec/v1.0)"])
+
+    # --- plain *.json / *.yaml / *.toml / *.xml entries ----------------------
+    # release-please rewrites `$.version` (`/*/version` for XML) of such an
+    # entry, then its annotations: either one is the marker, read the way
+    # the preflight reads it.
+
+    STRUCTURED = ["meta.json", "/engine/meta.toml", "chart.yaml", "app.xml"]
+
+    def write_structured_targets(self) -> None:
+        self.write("ts/meta.json", '{"name": "x", "version": "1.0.0-alpha.0"}\n')
+        self.write("engine/meta.toml", 'version = "1.0.0-alpha.0"\n')
+        self.write("ts/chart.yaml", "name: x\nversion: 1.0.0-alpha.0\n")
+        self.write("ts/app.xml", "<app><version>1.0.0-alpha.0</version></app>\n")
+
+    def test_structured_string_entry_passes_with_a_version_at_the_default_path(self) -> None:
+        entries = ["meta.json", "app.xml"]
+        entries += ["/engine/meta.toml"] if HAS_TOML else []
+        entries += ["chart.yaml"] if HAS_YAML else []
+        self.write(".github/release-please-config.json", _config({"ts": entries}))
+        self.write_structured_targets()
+        r = self.run_check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("version-check: ok (0 annotated,", r.stdout)
+
+    def test_structured_string_entry_needs_a_version_or_an_annotation(self) -> None:
+        self.write(".github/release-please-config.json", _config({"ts": [
+            "bare.json", "latest.json", "broken.json", "nover.xml", "annotated.json",
+            *(["int.toml"] if HAS_TOML else []), *(["list.yaml"] if HAS_YAML else [])]}))
+        self.write("ts/bare.json", '{"name": "x"}\n')
+        self.write("ts/latest.json", '{"version": "latest"}\n')
+        self.write("ts/broken.json", '{"version": "1.0.0-alpha.0",}\n')
+        self.write("ts/nover.xml", "<app><v>1</v></app>\n")
+        self.write("ts/int.toml", "version = 1\n")
+        self.write("ts/list.yaml", "version: [1]\n")
+        # The annotation alone is enough; rule 3 still reads its other lines.
+        self.write("ts/annotated.json", '{"pin": "1.0.0-alpha.0 x-release-please-version",\n'
+                                        ' "old": "1.0.0-alpha.0"}\n')
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        want = [
+            "ts/annotated.json:2: literal: 1.0.0-alpha.0 equals a manifest version and is not "
+            "annotated with x-release-please-version",
+            "ts/bare.json:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line and no version at $.version",
+            "ts/broken.json:0: configured: listed in extra-files but carries no "
+            "x-release-please-version line and no version at $.version (not valid json)",
+            "ts/broken.json:1: literal: 1.0.0-alpha.0 equals a manifest version and is not "
+            "annotated with x-release-please-version",
+        ]
+        if HAS_TOML:
+            want.append("ts/int.toml:0: configured: listed in extra-files but carries no "
+                        "x-release-please-version line and no version at $.version "
+                        "($.version is 1)")
+        want.append("ts/latest.json:0: configured: listed in extra-files but carries no "
+                    "x-release-please-version line and no version at $.version "
+                    '($.version is "latest")')
+        if HAS_YAML:
+            want.append("ts/list.yaml:0: configured: listed in extra-files but carries no "
+                        "x-release-please-version line and no version at $.version "
+                        "($.version is [1])")
+        want.append("ts/nover.xml:0: configured: listed in extra-files but carries no "
+                    "x-release-please-version line and no version at /*/version")
+        self.assertEqual(r.stdout.splitlines(), want)
+
+    def test_structured_string_entry_without_a_parser_is_not_evaluated(self) -> None:
+        # The preflight's rule: no YAML / TOML parser, the default path is
+        # not evaluated and the entry passes; a note says so.
+        hide = Path(tempfile.mkdtemp(prefix="vc-noparser-"))
+        self.addCleanup(shutil.rmtree, hide, True)
+        for mod in ("yaml", "tomllib", "tomli"):
+            (hide / f"{mod}.py").write_text('raise ImportError("hidden")\n', encoding="utf-8")
+        self.write(".github/release-please-config.json", _config({"ts": self.STRUCTURED}))
+        self.write_structured_targets()
+        r = self.run_check(pythonpath=str(hide))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("version-check: ok (0 annotated,", r.stdout)
+        self.assertEqual(sorted(x for x in r.stderr.splitlines() if "not evaluated" in x), [
+            "version-check: engine/meta.toml: $.version not evaluated (no TOML parser); "
+            "the entry passes without an annotation",
+            "version-check: ts/chart.yaml: $.version not evaluated (no YAML parser); "
+            "the entry passes without an annotation"])
 
     def test_root_package_native_file_is_not_scanned(self) -> None:
         self.write(".github/.release-please-manifest.json", json.dumps({".": "1.0.0-alpha.0"}))
