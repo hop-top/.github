@@ -188,33 +188,32 @@ package](references/how-to/polyglot-repo.md#4-decide-on-a-root-umbrella-package-
 
 ## Bootstrap-mirror gotcha
 
-`mirror-subtree.yml` does a non-force subtree push, which assumes
-the mirror's `main` is empty or a strict descendant of what the
-subtree split produces. Two bootstrap shapes are safe:
+`mirror-subtree.yml` force-pushes the mirror on every publish: the
+split commit goes to the mirror's `main` with `--force`, and the tag
+is pushed with `--force` too. Whatever the mirror's `main` held
+before is replaced by the payload for that tag. The force is
+required, not incidental: a root component (`dir: "."`) or a
+`target-prefix` graft publishes one parentless commit per tag, so
+consecutive publishes never fast-forward, and a re-pointed tag
+(delete + recreate for a rerun) has to move on the mirror as well.
 
-1. **Empty mirror repo** — `gh repo create <org>/<name>-<lang>
-   --public --description "..."` and stop. The first tag's subtree
-   push initialises `main` cleanly.
-2. **Pre-registration mirror** — if you must seed `main` before the
+Consequence: the mirror's history is overwritten, and anything
+committed to the mirror by hand is lost on the next tag. Treat
+mirrors as read-only; never commit to one directly. Changes belong
+in the source repo.
+
+Bootstrap shapes:
+
+1. **Empty mirror repo, or none at all**: the first tag's publish
+   creates the repo if it is missing (`gh repo view || gh repo
+   create`) and initialises `main`.
+2. **Pre-registration mirror**: if you must seed `main` before the
    first tag (e.g. to register the repo on Packagist or claim a
-   crates.io name), populate `main` with `git subtree split` from
-   the polyglot source at the exact commit the first tag will land
-   on, then push. Anything else (hand-written `README.md`,
-   placeholder commits, license-only seed) will cause the first
-   subtree publish to non-fast-forward and the `mirror` job to fail.
-
-If you hit a non-fast-forward on the first publish:
-
-- Delete and recreate the mirror as empty, then re-run the publish.
-- OR hand-push a `git subtree split` of the source-commit-for-the-tag
-  to the mirror's `main`, then re-run.
-
-Force-push is intentionally NOT the default — a stray force from
-`mirror-subtree.yml` would silently destroy a hand-written
-pre-registration commit on the mirror. A `bootstrap-mirror: true`
-per-component opt-in flag is a candidate future enhancement (would
-flip the first publish to `--force-with-lease` then auto-revert);
-not implemented yet.
+   crates.io name), push a `git subtree split` of the source
+   directory so the registry sees the real manifest. Any seed works
+   for the push itself, but the first tag replaces it: a
+   hand-written `README.md`, placeholder commit or license-only seed
+   does not survive.
 
 ## Re-runs use the tag's workflow snapshot, not main
 
