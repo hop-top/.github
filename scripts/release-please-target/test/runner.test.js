@@ -370,6 +370,30 @@ test('config the extension cannot honour is refused before any write', async () 
   }
 });
 
+test('a target package whose manifest is on a channel other than alpha, beta or rc is refused, on every branch', async () => {
+  const msg = v => new RegExp(`^::error::.*package sdk/experimental/php manifest version '${v.replace(/\./g, '\\.')}' is on channel '[^']+': target versioning supports alpha/beta/rc only; seed the manifest on alpha when adopting$`);
+  for (const [branch, v, build] of [
+    ['next', '0.5.0-experimental.3', v => nextRepo({'kit-php': v})],
+    ['next', '0.5.0-0', v => nextRepo({'kit-php': v})],
+    ['main', '0.5.0-experimental.3', v => repo().commit('chore: initial').release({...MAIN0, 'kit-php': v})],
+    ['release/0.4', '0.4.1-experimental.0', v => repo().commit('chore: initial').release({...MAIN0, 'kit-php': v}).checkout('-b', 'release/0.4')],
+  ]) {
+    const r = build(v).commit('fix(qmochi): c', ['qmochi']);
+    const res = await runner(r, branch);
+    assert.equal(res.exitCode, 1, `${branch} ${v}`);
+    assert.ok(res.lines.some(l => msg(v).test(l)), `${branch} ${v}\n${res.lines.join('\n')}`);
+    assert.deepEqual(res.fake.prs, [], `${branch} ${v}`);
+  }
+  // alpha, beta and rc pass; so does a package not on target versioning
+  for (const v of ['0.5.0-alpha.2', '0.5.0-beta.0', '0.5.0-rc.1']) {
+    const res = await runner(nextRepo({'kit-php': v}).commit('fix(qmochi): c', ['qmochi']), 'next');
+    assert.equal(res.exitCode, 0, `${v}\n${res.lines.join('\n')}`);
+  }
+  const stock = await runner(nextRepo({qmochi: '0.2.0-experimental.1'}).commit('fix(qmochi): c', ['qmochi']), 'next',
+    {cfg: config({packages: {'incubator/qmochi': {versioning: 'prerelease'}}})});
+  assert.ok(!stock.lines.some(l => /manifest version/.test(l)), stock.lines.join('\n'));
+});
+
 test('a release PR drops the records its version makes stale, and nothing else', async () => {
   const r = nextRepo({qmochi: '0.6.1-beta.2', kit: '0.5.0-beta.1'}, {qmochi: '0.6.0'}).commit('feat(qmochi): y', ['qmochi']).commit('fix(cli): z', ['kit']);
   const cfg = config({records: {qmochi: {'x-channel': {line: '0.6.1', channel: 'beta'}}, kit: {'x-channel': {line: '0.5.0', channel: 'beta'}}}});
