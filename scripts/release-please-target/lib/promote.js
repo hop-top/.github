@@ -106,6 +106,11 @@ function promote({configText, manifest, command, value, packages, groups}) {
   if (!['channel', 'open-line', 'clear'].includes(command)) problems.push(`unknown command "${command}" (channel | open-line | clear)`);
   if (problems.length) return {text: configText, changes: [], notes: [], problems};
 
+  // Whether the line opened links the family, as the rules see a picked
+  // member's proposal opening it: only then does a member with no release
+  // yet take the group's version (else it opens at its initial-version).
+  const links = command === 'open-line' && paths.some(p => manifest[p] !== undefined &&
+    rules.startsLinkedLine({kind: 'prerelease', current: manifest[p], proposed: `${value}-alpha.0`}));
   let text = configText;
   const changes = [], notes = [];
   for (const p of paths) {
@@ -123,8 +128,9 @@ function promote({configText, manifest, command, value, packages, groups}) {
       continue;
     }
     if (manifest[p] === undefined) {
-      if (command === 'open-line' && !explicit.has(p)) notes.push(`${name}: unchanged, no release yet: it takes the group's version`);
-      else problems.push(`${name}: no version in the manifest`);
+      if (command === 'open-line' && !explicit.has(p)) {
+        notes.push(`${name}: unchanged, no release yet: ${links ? "it takes the group's version" : `${value} does not link the family, so it opens at its initial-version`}`);
+      } else problems.push(`${name}: no version in the manifest`);
       continue;
     }
     const cur = rules.parse(manifest[p]);

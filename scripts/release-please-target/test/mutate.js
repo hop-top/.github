@@ -213,7 +213,7 @@ const MUTATIONS = [
     to: 'if (cur.pre && c === 0) return {problem: `${name}: at ${rules.fmt(cur)}: line ${value} already reached`};',
     tests: ['test/promote.test.js']},
   {id: 'M65', what: 'promote.js open-line --group refuses the whole group when a member has no release yet',
-    file: 'lib/promote.js', from: "if (command === 'open-line' && !explicit.has(p)) notes.push(", to: 'if (false) notes.push(',
+    file: 'lib/promote.js', from: "if (command === 'open-line' && !explicit.has(p)) {", to: 'if (false) {',
     tests: ['test/promote.test.js']},
   {id: 'M66', what: 'a new member is advised the family\'s line already released stable (its rc then blocks the family on main)',
     file: 'lib/rules.js', from: 'const advised = openLine || (highestStable && {...core(highestStable), patch: highestStable.patch + 1});', to: 'const advised = openLine || highestStable;',
@@ -239,6 +239,9 @@ const MUTATIONS = [
   {id: 'M73', what: 'a linked member\'s first release below the family\'s line opens on its own',
     file: 'lib/rules.js', from: 'const off = advised ? cmpCore(m.proposed, advised) : 0;', to: 'const off = advised ? Math.max(0, cmpCore(m.proposed, advised)) : 0;',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M74', what: 'promote.js open-line --group tells a member with no release yet it takes the group version when the line does not link',
+    file: 'lib/promote.js', from: '${links ? "it takes the group\'s version"', to: '${true ? "it takes the group\'s version"',
+    tests: ['test/promote.test.js']},
 ];
 
 function copy() {
