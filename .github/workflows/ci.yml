@@ -43,6 +43,11 @@ jobs:
       - name: Tests for the workflows' inline check scripts
         run: make test-workflows
 
+      # Installs the generator's hash-pinned deps plus pytest into a venv
+      # under build/ (never committed); the tests themselves stay offline.
+      - name: Tests for the well-known publisher generator
+        run: make test-well-known
+
   release-please-target:
     runs-on: ubuntu-latest
     steps:
