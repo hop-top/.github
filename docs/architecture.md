@@ -70,7 +70,7 @@ Source: [`diagrams/release-flow.mmd`](diagrams/release-flow.mmd)
 The router parses any `<component>/v<version>` tag, looks the component
 up in the caller's `ecosystems` map, and dispatches to the right
 ecosystem workflow plus the mirror. The mirror runs for every
-component in the map (unless the caller sets `enable-mirror: false`),
+component in the map that sets `ecosystem` (unless the caller sets `enable-mirror: false`),
 after the publish job and only if that job did not fail. `ts`, `py`
 and `rs` have a publish job before the mirror. `go` and `none` have no
 publish job (the Go module proxy pulls from the tag). `php` has none
@@ -90,7 +90,7 @@ sequenceDiagram
     participant Mirror_repo as hop-top/kit-ts
 
     Tag->>Router: triggers on tags ['*/v*']
-    Router->>Parse: extract component, version; look up the ecosystems entry
+    Router->>Parse: extract component and version, then look up the ecosystems entry
     Parse-->>Router: component=kit-ts, dir=ts, ecosystem=ts, mirror=hop-top/kit-ts
 
     Router->>Publish: working-directory=ts
@@ -163,7 +163,7 @@ flowchart TB
     Router -->|CARGO_REGISTRY_TOKEN| PubRS[publish-rs]
     Router -->|GH_MIRROR_PAT| Mirror[mirror-subtree]
     Router -->|PACKAGIST_USERNAME<br/>PACKAGIST_TOKEN| PubPHP[publish-php job]
-    Router -->|no secret needed| PubPY[publish-py]
+    Router -->|"OIDC, or PYPI_REGISTRY_TOKEN when pypi-auth is token"| PubPY[publish-py]
 
     PubTS -->|NODE_AUTH_TOKEN env| NPM[(npm)]
     PubRS -->|CARGO_REGISTRY_TOKEN env| Crates[(crates.io)]
