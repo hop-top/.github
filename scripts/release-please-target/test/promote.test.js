@@ -219,6 +219,16 @@ test('open-line by group: a member already on the line is left as it is, one wit
   assert.match(one.out, /^kit-rs \(sdk\/experimental\/rs\): unchanged, no release yet: it takes the group's version$/m);
   assert.equal(JSON.parse(one.config).packages['sdk/experimental/rs']['x-open-line'], undefined);
   assert.equal(JSON.parse(one.config).packages['sdk/py']['x-open-line'], '1.0.0');
+  // ... but only when the line links the family: a patch line, or a minor
+  // from 1.0, does not, and that member opens at its initial-version
+  const patch = fresh.run('open-line', '0.5.1', '--group', 'kit', '--dry-run');
+  assert.equal(patch.code, 0, patch.err);
+  assert.match(patch.out, /^kit-rs \(sdk\/experimental\/rs\): unchanged, no release yet: 0\.5\.1 does not link the family, so it opens at its initial-version$/m);
+  const late = workspace(KIT_CONFIG, Object.fromEntries(Object.entries(noRs).map(([p, v]) => [p, p === 'tools' ? v : v.replace(/^0\.\d+\.0/, '1.2.0')])));
+  const minor = late.run('open-line', '1.3.0', '--group', 'kit', '--dry-run');
+  assert.equal(minor.code, 0, minor.err);
+  assert.match(minor.out, /^kit-rs \(sdk\/experimental\/rs\): unchanged, no release yet: 1\.3\.0 does not link the family, so it opens at its initial-version$/m);
+  assert.match(late.run('open-line', '2.0.0', '--group', 'kit', '--dry-run').out, /^kit-rs \(sdk\/experimental\/rs\): unchanged, no release yet: it takes the group's version$/m);
   // ... named with --package, or for a channel, it is refused, as before
   assert.match(fresh.run('open-line', '1.0.0', '--package', 'kit-rs').err, /kit-rs \(sdk\/experimental\/rs\): no version in the manifest/);
   assert.match(fresh.run('channel', 'beta', '--group', 'kit').err, /kit-rs \(sdk\/experimental\/rs\): no version in the manifest/);
