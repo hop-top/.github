@@ -66,8 +66,19 @@ rule holds for both.
 See `RELEASING.md` in each repo. Org-wide pattern:
 
 - **Stable cuts**: release-please opens a PR; merging it tags and publishes
-- **Prereleases (`-alpha`, `-beta`, `-rc`)**: manual via
-  `scripts/tag-prerelease.sh` — tag-push triggers `publish-on-tag.yml`
+- **Prereleases (`-alpha`, `-beta`, `-rc`)**: never tagged by hand.
+  release-please cuts them from the prerelease branch (`next`) through
+  its release PRs, and the tag it creates triggers `publish-on-tag.yml`
+  like a stable one. Under [target versioning][target] every line
+  starts at `alpha.0`; moving a package or family to beta, then rc, is
+  a recorded step (`promote.js`, see [Promote and open lines][promote]);
+  the stable branch (`main`) cuts the stable version from the rc. Repos
+  still on stock `versioning: "prerelease"` follow the
+  [prerelease channel][channel] guide.
+
+[target]: https://github.com/hop-top/.github/blob/main/references/how-to/target-versioning.md
+[promote]: https://github.com/hop-top/.github/blob/main/references/how-to/target-versioning.md#promote-and-open-lines
+[channel]: https://github.com/hop-top/.github/blob/main/references/how-to/prerelease-channel.md
 
 ## Sign-offs
 
