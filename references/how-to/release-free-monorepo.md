@@ -108,6 +108,15 @@ Then confirm the registry and the mirror repo (tag + Release) advanced.
 - **Requires `separate-pull-requests: true`** (the org default). The
   component is derived from the release-please branch name; combined
   release PRs have no `--components--` segment and fail loudly.
+- **A linked family's release is a combined PR too.** release-please's
+  `linked-versions` plugin merges its group into one PR by default
+  (`merge: true`), and target versioning's `conditional-linked-versions`
+  cuts a linked release (a new major, or a pre-1.0 minor) as one group
+  PR. Its branch is `release-please--branches--<branch>--groups--<group>`,
+  so the companion fails it (`has no '--components--' segment`) and no
+  member is tagged. Keep the skips off a repo with a linked family, or
+  tag a merged group PR by hand: one tag per member, then flip the
+  label (see the last gotcha).
 - **Umbrella root packages are handled.** The companion tags them like
   any component; `publish-on-tag` skips components with no `ecosystems:`
   entry via a `::notice::` (green run, all publish jobs `skipped`) — no

@@ -4,11 +4,13 @@ Why release PRs are opened by `release-bot[bot]`, and what your repo needs for t
 
 ## What
 
-release-please runs on every push to main and maintains a standing release PR. That PR is
+release-please runs on every push to a release branch (`main`; with target versioning also
+`next` and `release/x.y`) and maintains a standing release PR. That PR is
 not opened with the workflow's default token or anyone's personal token — each run mints a
 short-lived installation token from the **release-bot** GitHub App via
-`actions/create-github-app-token` and passes it to `googleapis/release-please-action`. The
-PR author you see is `release-bot[bot]`.
+`actions/create-github-app-token` and passes it to `googleapis/release-please-action` (or,
+with `versioning-extension: true`, to the target-versioning runner, which takes the same
+token). The PR author you see is `release-bot[bot]`.
 
 ## Why
 
