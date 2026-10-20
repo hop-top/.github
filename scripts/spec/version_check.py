@@ -20,14 +20,18 @@ Rules, each with its own message and a non-zero exit on any finding:
    that names the annotation but carries no version literal is prose
    about the mechanism, not an annotation, and is ignored.
 2. ``configured`` -- the set of annotated files equals the set of
-   ``extra-files`` entries across packages. A configured file with no
-   annotation, or an annotated file missing from the config, is a
-   half-wired mechanism.
+   generic ``extra-files`` entries across packages (a plain string, or
+   an object of ``type`` ``generic``: what release-please rewrites
+   through the annotation). A configured file with no annotation, or an
+   annotated file missing from the config, is a half-wired mechanism. A
+   typed entry (``type`` json, yaml, toml, xml or pom) is rewritten at
+   its ``jsonpath`` / ``xpath`` -- the selector is the marker -- and
+   needs no annotation.
 3. ``literal``    -- outside the manifest, changelogs, lockfiles, the
-   natively rewritten files and the ``--allow`` globs, no un-annotated
-   line contains a literal equal to a manifest value, or a literal in
-   the prerelease channel shape (``X.Y.Z-alpha.N`` or the PEP 440
-   ``X.Y.ZaN``).
+   natively rewritten files, the typed ``extra-files`` targets and the
+   ``--allow`` globs, no un-annotated line contains a literal equal to
+   a manifest value, or a literal in the prerelease channel shape
+   (``X.Y.Z-alpha.N`` or the PEP 440 ``X.Y.ZaN``).
 4. ``spec-path``  -- every ``<root>/vX.Y`` path, and every corpus-walker
    spelling of one (a quoted ``vX.Y`` token joined to a quoted
    ``conformance``), names a version whose ``<root>/vX.Y`` key is in
@@ -95,6 +99,9 @@ NATIVE_FILES = {
     "simple": ("version.txt",),
 }
 LOCKFILES = ("Cargo.lock", "composer.lock", "pnpm-lock.yaml", "uv.lock")
+# extra-files types release-please rewrites at a selector (jsonpath /
+# xpath; pom's own), not through the annotation (Strategy#extraFileUpdates).
+TYPED_EXTRA_FILES = ("json", "yaml", "toml", "xml", "pom")
 
 
 def package_file(pkg: str, rel: str) -> str:
@@ -141,7 +148,10 @@ class Repo:
         self.manifest: dict[str, str] = self._load(manifest)
         self.config: dict = self._load(config)
         self.packages: dict[str, dict] = self.config.get("packages", {})
-        self.extra_files: dict[str, str] = self._extra_file_owners()
+        self.extra_files: dict[str, str] = {}
+        self.typed_files: set[str] = set()
+        self.generic_files: set[str] = set()
+        self._index_extra_files()
         self.allow = allow
         self.forbid = forbid
         # root -> compiled path regex, for every spec package root.
@@ -192,19 +202,28 @@ class Repo:
                 out.add(package_file(pkg, name))
         return out
 
-    def _extra_file_owners(self) -> dict[str, str]:
-        """Every extra-files entry as a repo-root path, mapped to the
-        package that lists it (the first, if several do)."""
-        out: dict[str, str] = {}
+    def _index_extra_files(self) -> None:
+        """Every extra-files entry as a repo-root path: ``extra_files``
+        maps it to the package that lists it (the first, if several do);
+        ``typed_files`` holds the paths a typed entry rewrites at its
+        selector, ``generic_files`` those of every other entry (a string,
+        ``generic``, or a type release-please rejects): the annotation is
+        their marker."""
         for pkg, cfg in self.packages.items():
             for entry in cfg.get("extra-files", ()):
                 rel = entry if isinstance(entry, str) else entry.get("path", "")
-                if rel:
-                    out.setdefault(package_file(pkg, rel), pkg)
-        return out
+                if not rel:
+                    continue
+                path = package_file(pkg, rel)
+                self.extra_files.setdefault(path, pkg)
+                if isinstance(entry, dict) and entry.get("type") in TYPED_EXTRA_FILES:
+                    self.typed_files.add(path)
+                else:
+                    self.generic_files.add(path)
 
     def configured_extra_files(self) -> set[str]:
-        return set(self.extra_files)
+        """The entries that must carry the annotation."""
+        return set(self.generic_files)
 
     def spec_versions(self) -> dict[str, set[str]]:
         """Manifest-known spec versions, by root: ``{"spec": {"1.0"}}``."""
@@ -260,13 +279,16 @@ def rule_annotated(repo: Repo, path: str, n: int, line: str) -> list[Finding]:
 
 
 def rule_configured(repo: Repo, annotated: set[str]) -> list[Finding]:
-    """Rule 2: annotated files and extra-files entries are one set."""
+    """Rule 2: annotated files and generic extra-files entries are one set.
+
+    A typed entry's selector is its marker: it needs no annotation.
+    """
     out: list[Finding] = []
     configured = repo.configured_extra_files()
     for path in sorted(configured - annotated):
         out.append(Finding(path, 0, "configured",
                            f"listed in extra-files but carries no {ANNOTATION} line"))
-    for path in sorted(annotated - configured):
+    for path in sorted(annotated - configured - repo.typed_files):
         out.append(Finding(path, 0, "configured",
                            f"carries {ANNOTATION} but is not an extra-files entry"))
     return out
@@ -352,6 +374,8 @@ def check(repo: Repo) -> tuple[list[Finding], int, int]:
             continue
         scanned += 1
         in_package = repo.package_of(path) is not None
+        # A typed target's version sits at its selector, un-annotated.
+        typed = path in repo.typed_files
         for n, line in enumerate(lines, 1):
             if ANNOTATION in line:
                 if not in_package and not VERSION_RE.search(line):
@@ -360,7 +384,8 @@ def check(repo: Repo) -> tuple[list[Finding], int, int]:
                 annotated_lines += 1
                 findings += rule_annotated(repo, path, n, line)
                 continue
-            findings += rule_literal(repo, path, n, line)
+            if not typed:
+                findings += rule_literal(repo, path, n, line)
             findings += rule_spec_path(repo, path, n, line, known)
             findings += rule_forbidden(repo, path, n, line)
     findings += rule_configured(repo, annotated_files)
