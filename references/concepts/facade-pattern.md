@@ -45,7 +45,11 @@ trigger downstream workflows.
 The canonical pattern: mint a short-lived installation token from
 the **release-bot GitHub App** (`RELEASE_BOT_APP_ID` +
 `RELEASE_BOT_PRIVATE_KEY` org secrets) via
-`actions/create-github-app-token@v1`. See [quick-start.md](../quick-start.md).
+`actions/create-github-app-token@v3`, with
+`client-id: ${{ secrets.RELEASE_BOT_APP_ID }}` (the App ID works as
+the client ID) and `private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}`.
+`release-please-on-push.yml` does this for you. See
+[quick-start.md](../quick-start.md).
 
 Avoid long-lived PATs (`GH_RELEASE_PLEASE_PAT`); delivery to fresh
 repos has proved unreliable, and PR authorship as the human owner
