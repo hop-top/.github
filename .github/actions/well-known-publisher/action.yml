@@ -1,8 +1,9 @@
 name: well-known publisher
 description: |
-  Generate /.well-known/* resource files (security.txt, openid-configuration,
-  assetlinks.json, etc.) from a single YAML config. Optional deploy step is
-  delegated to the caller workflow.
+  EXPERIMENTAL; interface may change. Generate /.well-known/* files from a
+  single YAML config. Today it validates the config and writes `custom:`
+  entries; per-resource generators (security.txt, assetlinks.json, ...) are
+  not implemented yet. Deploying is left to the caller workflow.
 author: hop-top
 
 inputs:
@@ -18,10 +19,10 @@ inputs:
     required: false
   env_allowlist:
     description: |
-      Comma- or newline-separated env var names that the config's
-      env placeholders (env.NAME inside double braces) may read. Empty (the default) means no
-      placeholder interpolates: any reference fails the run, so values such
-      as tokens in the job environment cannot reach a published file.
+      Comma- or newline-separated env var names the config's env
+      placeholders (env.NAME in double braces) may read. Empty (the
+      default) means no placeholder interpolates: any reference fails the
+      run, so tokens in the job environment cannot reach a published file.
     required: false
     default: ''
 
@@ -38,21 +39,40 @@ outputs:
 runs:
   using: composite
   steps:
+    # update-environment: false keeps this interpreter off PATH and out of
+    # the job env, so the caller's later steps see their own Python.
     - name: Setup Python
-      uses: actions/setup-python@v5
+      id: python
+      uses: actions/setup-python@v7
       with:
-        python-version: '3.11'
+        python-version: '3.12'
+        update-environment: false
 
-    - name: Install generator package
+    # Private venv under RUNNER_TEMP; deps come from the hash-pinned,
+    # wheels-only requirements.txt. pip is the venv's bundled one.
+    - name: Install generator dependencies
+      id: venv
       shell: bash
+      env:
+        WKP_PYTHON: ${{ steps.python.outputs.python-path }}
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install -e "${{ github.action_path }}/generator"
+        venv="${RUNNER_TEMP}/well-known-publisher-venv"
+        "${WKP_PYTHON}" -m venv "${venv}"
+        if [ -x "${venv}/bin/python" ]; then
+          py="${venv}/bin/python"
+        else
+          py="${venv}/Scripts/python.exe"
+        fi
+        "${py}" -m pip install --disable-pip-version-check --no-input \
+          --require-hashes --only-binary :all: \
+          -r "${GITHUB_ACTION_PATH}/generator/requirements.txt"
+        echo "python=${py}" >> "${GITHUB_OUTPUT}"
 
     - name: Generate well-known files
       id: generate
       shell: bash
       env:
+        WKP_PYTHON: ${{ steps.venv.outputs.python }}
         WKP_CONFIG_PATH: ${{ inputs.config_path }}
         WKP_OUTPUT_DIR: ${{ inputs.output_dir }}
         WKP_ENV_ALLOWLIST: ${{ inputs.env_allowlist }}
@@ -61,4 +81,6 @@ runs:
         if [ -n "${WKP_OUTPUT_DIR}" ]; then
           args+=( --output-dir "${WKP_OUTPUT_DIR}" )
         fi
-        python -m well_known_publisher "${args[@]}"
+        # -P: never import from the caller's working directory.
+        PYTHONPATH="${GITHUB_ACTION_PATH}/generator/src" \
+          "${WKP_PYTHON}" -P -m well_known_publisher "${args[@]}"
