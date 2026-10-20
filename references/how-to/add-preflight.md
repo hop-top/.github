@@ -85,6 +85,33 @@ Auto-infers from your config — no inputs required:
 - `release-please.yml` uses the release-bot App token (not the deprecated PAT) and declares `workflow_dispatch`
 - Per-ecosystem infrastructure: GitHub Environment exists (for PyPI OIDC), mirror repo exists (if configured), PyPI/npm package-name availability (informational)
 
+## First-publish risk
+
+The workflow has a second job, `first-publish-risk`, next to the checks
+above. It has no `needs:`, so the two run in parallel and the slowest
+registry probe gates nothing. For each package in the config it takes
+the registry name from the `package` field of the matching `ecosystems`
+entry in `publish.yml` (or, when the entry has none, from the package's
+own `package.json`, `pyproject.toml`, `Cargo.toml` or `composer.json`;
+with no `publish.yml` at all, the ecosystem comes from the package's
+`release-type`) and asks the registry whether the name exists:
+
+| Ecosystem | Probe | Name not published yet |
+|---|---|---|
+| `ts` | registry.npmjs.org | warns; names `scripts/bootstrap-first-publish.sh npm` |
+| `py` | pypi.org | warns; names `scripts/bootstrap-first-publish.sh pypi` |
+| `rs` | crates.io (no published version counts as missing) | warns; names `scripts/bootstrap-first-publish.sh cargo` |
+| `php` | packagist.org | warns; points at the Packagist submit page |
+| `go` | none | info only: proxy.golang.org pulls from the tag |
+
+A scoped CI token cannot create a package, so the first publish has to
+be done locally — see [SKILL.md § First publish of a new
+package](../../SKILL.md#first-publish-of-a-new-package). The job is
+annotation-only by design: it writes `::warning::` annotations and a
+step summary, `fail-on` does not apply to it, and a registry that
+answers anything but 200 or 404, or a package whose name it cannot
+resolve, becomes an info line. It times out after 5 minutes.
+
 ## Optional overrides
 
 ```yaml
@@ -95,6 +122,20 @@ jobs:
       fail-on: any              # default 'breaking' — also fail on warnings
       config-path: custom/path  # default '.github/release-please-config.json'
 ```
+
+All inputs are optional:
+
+| Input | Default | Use when |
+|---|---|---|
+| `fail-on` | `breaking` | the run should fail on warnings (`any`) or never (`never`), see below |
+| `config-path` | `.github/release-please-config.json` | the config lives elsewhere |
+| `manifest-path` | `.github/.release-please-manifest.json` | the manifest lives elsewhere |
+| `publish-workflow-path` | `.github/workflows/publish.yml` | the publish caller has another name or location |
+| `release-please-workflow-path` | `.github/workflows/release-please.yml` | the release-please caller has another name or location |
+
+When you move a file, move the matching entry in the caller's
+`on.pull_request.paths` list too, or edits to it no longer trigger the
+check.
 
 `fail-on` values:
 

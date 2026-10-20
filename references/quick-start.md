@@ -74,6 +74,7 @@ Inputs, all optional:
 | `manifest-file` | `.github/.release-please-manifest.json` | the manifest lives elsewhere |
 | `target-branch` | the branch that triggered the run | release PRs should target a fixed branch |
 | `versioning-extension` | `false` | the config uses `versioning: "target"` — see [target versioning](how-to/target-versioning.md) |
+| `tooling-ref` | `v0` | normally never. With `versioning-extension`, the extension is checked out at the running workflow's own commit; this git ref or SHA (one line, else the step fails) is the fallback when the runner does not expose that commit. Ignored without the extension |
 
 Outputs keep `googleapis/release-please-action`'s names
 (`releases_created`, `release_created`, `tag_name`, `version`, `prs_created`,
