@@ -281,23 +281,13 @@ function startsLinkedLine({kind, current, proposed, lastStable}) {
 
 // How the members not at an rc of L get there, as one instruction: on
 // L's line one channel at a time (alpha via beta); off it, to the line
-// first. A channel outside alpha -> beta -> rc (experimental) is not
-// promoted: the member reaches alpha first.
+// first.
 function toRc(members, L) {
-  const step = m => {
-    if (!m.current || !m.current.pre || cmpCore(core(m.current), L) !== 0) return ['promote', `to an rc of ${fmt(L)}`];
-    const ch = channelOf(m.current.pre);
-    if (ch === 'alpha') return ['promote', 'via beta to rc'];
-    if (rank(ch)) return ['promote', 'to rc'];
-    return ['move', `onto alpha first (${ch} is not a pipeline channel: graduate it with an alpha release), then via beta to rc`];
-  };
-  const by = new Map(); // verb -> path -> components
-  for (const m of members) {
-    const [verb, p] = step(m);
-    const paths = by.get(verb) || new Map();
-    by.set(verb, paths.set(p, [...(paths.get(p) || []), m.component]));
-  }
-  return [...by].map(([verb, paths]) => `${verb} ${[...paths].map(([p, cs]) => `${cs.join(', ')} ${p}`).join(' and ')}`).join('; ');
+  const path = m => (!m.current || !m.current.pre || cmpCore(core(m.current), L) !== 0 ? `to an rc of ${fmt(L)}`
+    : channelOf(m.current.pre) === 'alpha' ? 'via beta to rc' : 'to rc');
+  const by = new Map();
+  for (const m of members) by.set(path(m), [...(by.get(path(m)) || []), m.component]);
+  return `promote ${[...by].map(([p, cs]) => `${cs.join(', ')} ${p}`).join(' and ')}`;
 }
 
 /**

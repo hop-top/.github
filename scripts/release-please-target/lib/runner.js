@@ -112,6 +112,17 @@ function roleOf(manifest, raw, p) {
   return branchKind(manifest.targetBranch, ctx) || (manifest.repositoryConfig[p].prerelease ? 'prerelease' : 'stable');
 }
 
+// The prerelease channel of a manifest version (alpha of 0.5.0-alpha.3),
+// if it has one.
+function channelOf(version) {
+  try {
+    const {pre} = rules.parse(version);
+    return pre && pre.split('.')[0];
+  } catch {
+    return undefined; // not a version: release-please refuses it itself
+  }
+}
+
 // Config the extension cannot honour: the pull request stage refuses it
 // before anything is written. `versions` is the manifest (path -> version).
 async function checkConfig(manifest, configFile, raw, versions = {}) {
@@ -155,6 +166,11 @@ async function checkConfig(manifest, configFile, raw, versions = {}) {
     if (c.releaseAs) problems.push(`${configFile}: package ${p} sets release-as; target versioning picks the version (remove it)`);
     if (c.prereleaseType !== undefined && String(c.prereleaseType) !== 'alpha.0') {
       problems.push(`${configFile}: package ${p} prerelease-type '${c.prereleaseType}': every line starts on alpha.0; promote a line with x-channel (bin/promote.js)`);
+    }
+    // The rules know alpha -> beta -> rc only (a stock experimental.N, say).
+    const ch = channelOf(versions[p]);
+    if (ch !== undefined && !rules.CHANNELS.includes(ch)) {
+      problems.push(`${configFile}: package ${p} manifest version '${versions[p]}' is on channel '${ch}': target versioning supports alpha/beta/rc only; seed the manifest on alpha when adopting`);
     }
   }
   for (const [i, plugin] of (manifest.plugins || []).entries()) {

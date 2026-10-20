@@ -576,17 +576,6 @@ test('rule 4: a stable-branch link takes its target from the members that open i
   ]).blocked[0], /^kit: kit-py is already at 0\.7\.0-alpha\.1 >= 0\.6\.0 \(linked by kit@0\.6\.0\)$/);
 });
 
-test('rule 4: a member off the channel pipeline (experimental) is told to reach alpha first', () => {
-  const b = resolveGroup({kind: 'stable', groupName: 'kit', prereleaseBranch: 'next', members: [
-    {component: 'kit', current: '0.5.0-rc.1', proposed: '0.5.0'},
-    {component: 'kit-php', current: '0.5.0-experimental.3'},
-    {component: 'kit-py', current: '0.5.0-alpha.2'},
-  ]}).blocked[0];
-  assert.match(b, /but kit-php is at 0\.5\.0-experimental\.3, kit-py is at 0\.5\.0-alpha\.2: /);
-  assert.match(b, /\(move kit-php onto alpha first \(experimental is not a pipeline channel: graduate it with an alpha release\), then via beta to rc; promote kit-py via beta to rc on next first\)$/);
-  assert.doesNotMatch(b, /kit-php to rc/);
-});
-
 test('rule 4: different targets and last stables: the highest live line wins', () => {
   const g = group([
     {component: 'kit', current: '0.9.0-alpha.3', lastStable: '0.8.0', proposed: '1.0.0-alpha.0'},
