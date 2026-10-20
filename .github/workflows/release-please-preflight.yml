@@ -437,8 +437,11 @@ jobs:
           # extra_files <package>: one `<entry>\t<target>\t<kind>\t<selector>\t<glob>`
           # line per extra-files entry of the package -- the entry as written
           # (a string, or an object's `path`), the repo-root path release-please
-          # rewrites, `string` or the object's `type` (`(none)` when unset), its
-          # `jsonpath` (`xpath` for xml; `-` when unset) and whether it is a glob.
+          # rewrites, the kind (`string` for the string form; an object's
+          # `type` when release-please supports it, `(none)` when unset or
+          # empty, else `?<type>` -- an object of type "string" is `?string`),
+          # its `jsonpath` (`xpath` for xml) as `=<value>` (`=` alone when
+          # empty; `-` when unset) and whether it is a glob.
           # Mirrors release-please's Strategy#addPath: a leading `/` anchors
           # the entry at the repository root, the root package `.` joins
           # nothing, any other package joins its own path. No field is empty:
@@ -456,9 +459,10 @@ jobs:
                   end),
                  (if type == "string" then "string"
                   elif (.type // "") == "" then "(none)"
-                  else (.type | tostring) end),
+                  elif (.type as $t | ["generic", "json", "yaml", "toml", "xml", "pom"] | any(. == $t)) then .type
+                  else "?" + (.type | tostring) end),
                  (if type == "object" then (if .type == "xml" then .xpath else .jsonpath end) else null end
-                  | if . == null or (tostring == "") then "-" else tostring end),
+                  | if . == null then "-" else "=" + tostring end),
                  (if type == "object" and .glob == true then "true" else "false" end)]
               | @tsv
             ' "$CONFIG_PATH" 2>/dev/null
@@ -1068,6 +1072,9 @@ jobs:
           #     string, fails release-please's run; a path matching nothing
           #     is skipped by it (a warning here).
           #   - `type` xml (needs `xpath`) / pom: existence only.
+          #   - an empty `jsonpath` updates nothing (release-please stays
+          #     silent): a failure here; an empty `xpath` throws like a
+          #     missing one.
           #   - a string entry ending in .json / .yaml / .yml / .toml / .xml:
           #     release-please rewrites `$.version` (`/*/version`), then any
           #     annotation; a .json one that does not parse, or a .toml one
@@ -1075,10 +1082,12 @@ jobs:
           #   - `type` generic, and any other string entry: the
           #     x-release-please-<scope> annotation the generic updater
           #     rewrites (the pyproject.toml case belongs to check 5b).
-          #   - any other `type` (or none): release-please throws.
+          #   - any other `type` (or none; an object of type "string" too):
+          #     release-please throws.
           # A glob entry is matched on the target branch by release-please;
-          # its matches are not checked here. The literal's value stays with
-          # the version-check guard.
+          # its matches are not checked here. One with no selector throws
+          # only once the glob matches a file (a warning here). The
+          # literal's value stays with the version-check guard.
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             {
               echo ""
@@ -1097,20 +1106,34 @@ jobs:
                     if [[ "$kind" == "(none)" ]]; then
                       fail "package $path extra-files entry '$rel' has no type — release-please supports generic, json, yaml, toml, xml, pom"
                     else
-                      fail "package $path extra-files entry '$rel' has type '$kind' — release-please supports generic, json, yaml, toml, xml, pom"
+                      fail "package $path extra-files entry '$rel' has type '${kind#\?}' — release-please supports generic, json, yaml, toml, xml, pom"
                     fi
                     fixhint "set \"type\" on the entry in $CONFIG_PATH (generic for an x-release-please-version annotation)"
                     continue
                     ;;
+                esac
+                case "$sel" in
+                  -) SEL_STATE=unset; sel="" ;;
+                  =) SEL_STATE=empty; sel="" ;;
+                  *) SEL_STATE=set; sel="${sel#=}" ;;
                 esac
                 SELECTOR_KEY=""
                 case "$kind" in
                   json|yaml|toml) SELECTOR_KEY=jsonpath ;;
                   xml) SELECTOR_KEY=xpath ;;
                 esac
-                if [[ -n "$SELECTOR_KEY" && "$sel" == "-" ]]; then
-                  fail "package $path extra-files entry '$rel' (type $kind) has no $SELECTOR_KEY — release-please fails on it"
+                if [[ -n "$SELECTOR_KEY" && ( "$SEL_STATE" == unset || ( "$SEL_STATE" == empty && "$kind" == xml ) ) ]]; then
+                  if [[ "$glob" == "true" ]]; then
+                    warn "package $path extra-files glob entry '$rel' (type $kind) has no $SELECTOR_KEY — release-please fails on it once the glob matches a file"
+                  else
+                    fail "package $path extra-files entry '$rel' (type $kind) has no $SELECTOR_KEY — release-please fails on it"
+                  fi
                   fixhint "add \"$SELECTOR_KEY\" naming the version field to the entry in $CONFIG_PATH"
+                  continue
+                fi
+                if [[ -n "$SELECTOR_KEY" && "$SEL_STATE" == empty ]]; then
+                  fail "package $path extra-files entry '$rel' (type $kind) has an empty $SELECTOR_KEY — release-please updates nothing in it"
+                  fixhint "set \"$SELECTOR_KEY\" to the version field of the entry in $CONFIG_PATH"
                   continue
                 fi
                 if [[ "$glob" == "true" ]]; then
@@ -1211,7 +1234,8 @@ jobs:
           fi
 
           # ---------- Check 5e: stale release-as ----------
-          # `release-as` (a package's own, else the top-level default) makes
+          # `release-as` (a package's own, else -- unset or null, release-please's
+          # `??` -- the top-level default) makes
           # release-please propose exactly that version on every run. Once
           # that release is cut the pin is stale: release-please proposes the
           # same version again, or a lower one. Stale = below the package's
@@ -1258,7 +1282,7 @@ jobs:
           # (empty when the package has no component and the tag needs one)
           release_tag() {
             jq -r --arg p "$1" --arg v "$2" '
-              def opt($k; $d): if (.packages[$p] | has($k)) then .packages[$p][$k] elif has($k) then .[$k] else $d end;
+              def opt($k; $d): if .packages[$p][$k] != null then .packages[$p][$k] elif .[$k] != null then .[$k] else $d end;
               (.packages[$p].component // "") as $c
               | (if opt("include-v-in-tag"; true) == false then "" else "v" end) as $vp
               | if opt("include-component-in-tag"; true) == false then $vp + $v
@@ -1270,7 +1294,7 @@ jobs:
             PINS=$(jq -r '.versioning as $top_versioning | (.["release-as"] // "") as $top
               | (.packages // {}) | to_entries[]
               | select((.value.versioning // $top_versioning) != "target")
-              | (if (.value | has("release-as")) then .value["release-as"] else $top end) as $ra
+              | (if .value["release-as"] != null then .value["release-as"] else $top end) as $ra
               | select(($ra | type) == "string" and $ra != "")
               | "\(.key)\t\($ra)"' "$CONFIG_PATH" 2>/dev/null)
             if [[ -n "$PINS" ]]; then
@@ -1311,7 +1335,7 @@ jobs:
           # release-please gives the root package `.` every commit, and any
           # other package the commits under its path that no deeper package
           # claims; `exclude-paths` (repo-root-relative; a package's own, else
-          # the top-level default) is the only way out. A nested directory
+          # -- unset or null -- the top-level default) is the only way out. A nested directory
           # that is a module of its own -- a go.mod, or (under the root) a
           # configured package with its own manifest -- and is not excluded
           # releases its parent on every commit made in it. A release-type
@@ -1342,7 +1366,7 @@ jobs:
               RT=$(jq -r --arg p "$path" '.packages[$p]["release-type"] // .["release-type"] // empty' "$CONFIG_PATH")
               [[ "$RT" == "simple" ]] && continue
               EXCLUDES=$(jq -r --arg p "$path" '
-                (if (.packages[$p] | has("exclude-paths")) then .packages[$p]["exclude-paths"] else (.["exclude-paths"] // []) end)
+                (if .packages[$p]["exclude-paths"] != null then .packages[$p]["exclude-paths"] else (.["exclude-paths"] // []) end)
                 | if type == "array" then .[] | strings | sub("^/+"; "") | sub("/+$"; "") else empty end' "$CONFIG_PATH" 2>/dev/null)
               CANDIDATES=""
               while IFS= read -r dir; do

@@ -264,6 +264,26 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
                                                                       "parsing it")
                                 for x in lines), "\n".join(lines))
 
+    def test_typed_entry_with_an_empty_selector_fails(self) -> None:
+        # jsonpath "": release-please updates nothing, silently;
+        # xpath "": it throws ("XPath expression unspecified").
+        self.configure({"sdk/ts": {"component": "ts", "extra-files": [
+            {"type": "json", "path": "package.json", "jsonpath": ""},
+            {"type": "yaml", "path": "chart.yaml", "jsonpath": ""},
+            {"type": "xml", "path": "app.xml", "xpath": ""}]}})
+        self.write("sdk/ts/package.json", '{"version": "1.0.0"}\n')
+        self.write("sdk/ts/chart.yaml", "version: 1.0.0\n")
+        self.write("sdk/ts/app.xml", "<app><version>1.0.0</version></app>\n")
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertEqual([x for x in lines if x.startswith("[BREAK]")], [
+            "[BREAK] package sdk/ts extra-files entry 'package.json' (type json) has an empty "
+            "jsonpath — release-please updates nothing in it",
+            "[BREAK] package sdk/ts extra-files entry 'chart.yaml' (type yaml) has an empty "
+            "jsonpath — release-please updates nothing in it",
+            "[BREAK] package sdk/ts extra-files entry 'app.xml' (type xml) has no xpath — "
+            "release-please fails on it"])
+
     def test_typed_entry_without_its_selector_fails(self) -> None:
         self.configure({"sdk/ts": {"component": "ts", "extra-files": [
             {"type": "json", "path": "package.json"},
@@ -278,17 +298,28 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
                                "has no xpath — release-please fails on it")
 
     def test_unsupported_or_missing_type_fails(self) -> None:
+        # release-please throws "unsupported extraFile type" on each; an
+        # object of type "string" is not the plain string form.
         self.configure({"sdk/ts": {"component": "ts", "extra-files": [
             {"type": "jsn", "path": "package.json", "jsonpath": "$.version"},
-            {"path": "VERSION"}]}})
+            {"path": "VERSION"},
+            {"type": "string", "path": "version.txt"},
+            {"type": "(none)", "path": "other.txt"}]}})
         self.write("sdk/ts/package.json", '{"version": "1.0.0"}\n')
         self.write("sdk/ts/VERSION", "1.0.0 x-release-please-version\n")
+        self.write("sdk/ts/version.txt", "1.0.0 x-release-please-version\n")
+        self.write("sdk/ts/other.txt", "1.0.0 x-release-please-version\n")
         code, lines = self.run_step()
         self.assertEqual(code, 1, "\n".join(lines))
-        self.assertLine(lines, "[BREAK] package sdk/ts extra-files entry 'package.json' has type "
-                               "'jsn' — release-please supports generic, json, yaml, toml, xml, pom")
-        self.assertLine(lines, "[BREAK] package sdk/ts extra-files entry 'VERSION' has no type "
-                               "— release-please supports generic, json, yaml, toml, xml, pom")
+        self.assertEqual([x for x in lines if x.startswith("[BREAK]")], [
+            "[BREAK] package sdk/ts extra-files entry 'package.json' has type "
+            "'jsn' — release-please supports generic, json, yaml, toml, xml, pom",
+            "[BREAK] package sdk/ts extra-files entry 'VERSION' has no type "
+            "— release-please supports generic, json, yaml, toml, xml, pom",
+            "[BREAK] package sdk/ts extra-files entry 'version.txt' has type "
+            "'string' — release-please supports generic, json, yaml, toml, xml, pom",
+            "[BREAK] package sdk/ts extra-files entry 'other.txt' has type "
+            "'(none)' — release-please supports generic, json, yaml, toml, xml, pom"])
 
     @unittest.skipUnless(HAS_TOML, "no TOML parser: the step reports a toml jsonpath as not evaluated")
     def test_toml_jsonpath_resolves_or_warns(self) -> None:
@@ -401,6 +432,22 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
         self.assertEqual(self.warns(lines), [
             "[WARN]  extra-files target sdk/ts/bare.json carries no x-release-please-version "
             "annotation and no version at $.version — release-please rewrites nothing in it"])
+
+    def test_glob_entry_without_its_selector_is_reported_not_failed(self) -> None:
+        # release-please builds an updater per match: with no match it
+        # never reaches the missing selector. The preflight does not
+        # evaluate globs, so it warns instead of failing.
+        self.configure({".": {"component": "kit", "extra-files": [
+            {"type": "json", "path": "sdk/*/package.json", "glob": True},
+            {"type": "xml", "path": "java/*.xml", "glob": True}]}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertNoLine(lines, "[BREAK]")
+        self.assertEqual([x for x in lines if x.startswith("[WARN]  package")], [
+            "[WARN]  package . extra-files glob entry 'sdk/*/package.json' (type json) has no "
+            "jsonpath — release-please fails on it once the glob matches a file",
+            "[WARN]  package . extra-files glob entry 'java/*.xml' (type xml) has no "
+            "xpath — release-please fails on it once the glob matches a file"])
 
     def test_glob_entry_is_not_checked_as_a_file(self) -> None:
         self.configure({".": {"component": "kit", "extra-files": [
@@ -895,6 +942,22 @@ class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
             "[WARN]  package .: nested module tools (own go.mod) is not in its "
             "exclude-paths — commits under tools also release package ."])
 
+    def test_null_exclude_paths_falls_back_to_the_top_level(self) -> None:
+        # release-please merges a package's options over the top level
+        # with `??`: null is unset.
+        self.gomod(".", "tools")
+        self.setup_repo({"exclude-paths": ["tools"], "packages": {
+            ".": {"component": "kit", "release-type": "go", "exclude-paths": None, **self.PRE}}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [])
+        # An empty list is set: it overrides the default.
+        self.setup_repo({"exclude-paths": ["tools"], "packages": {
+            ".": {"component": "kit", "release-type": "go", "exclude-paths": [], **self.PRE}}})
+        self.assertEqual(self.warns(self.run_step()[1]), [
+            "[WARN]  package .: nested module tools (own go.mod) is not in its "
+            "exclude-paths — commits under tools also release package ."])
+
     def test_nested_module_under_another_package(self) -> None:
         # tlc's plugins/*: their commits land on `plugins`, the deepest package.
         self.gomod(".", "plugins", "plugins/foo")
@@ -1021,6 +1084,26 @@ class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
         self.assertNoLine(lines, "[WARN]  package sdk/ts release-as")
         self.assertLine(lines, "[INFO]  package sdk/ts: release-as '0.1.0-alpha.0' equals the "
                                "manifest's seed; its tag is not checked (no component)")
+
+    def test_null_release_as_falls_back_to_the_top_level(self) -> None:
+        self.git("init", "-q")
+        self.git("commit", "-q", "--allow-empty", "-m", "init")
+        self.git("tag", "v0.6.0")
+        self.setup_repo({"release-as": "0.5.0-alpha.1", "packages": {
+            "sdk/ts": {"component": "kit-ts", **self.PRE, "release-as": None}}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  package sdk/ts release-as '0.5.0-alpha.1' is stale (below the manifest's "
+            "0.5.0-alpha.3) — release-please keeps proposing 0.5.0-alpha.1 until the pin is removed"])
+        # The tag options fall back the same way: include-component-in-tag
+        # null on the package takes the top-level false (tag v0.6.0).
+        self.setup_repo({"include-component-in-tag": False, "packages": {
+            "sdk/ts": {"component": "kit-ts", **self.PRE, "release-as": "0.6.0",
+                       "include-component-in-tag": None}}})
+        self.assertEqual(self.warns(self.run_step()[1]), [
+            "[WARN]  package sdk/ts release-as '0.6.0' is stale (tag v0.6.0 exists) — "
+            "release-please keeps proposing 0.6.0 until the pin is removed"])
 
     def test_top_level_release_as_counts_and_target_packages_stay_with_check_4b(self) -> None:
         self.setup_repo({"release-as": "0.5.0-alpha.1", "packages": {
