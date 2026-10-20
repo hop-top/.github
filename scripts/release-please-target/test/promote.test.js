@@ -197,6 +197,41 @@ test('open-line by package and by group; refused once reached', () => {
   assert.match(w.run('open-line', '1.0', '--package', 'kit').err, /x-open-line "1\.0": expected "x\.y\.z"/);
 });
 
+test('open-line by group: a member already on the line is left as it is, one with no release yet takes the group version', () => {
+  // kit-rs already previews 0.6.1 (past the 0.6.0 the family links at):
+  // the group opens 0.6.1 for the others
+  const w = workspace(KIT_CONFIG, {...KIT_MANIFEST, 'sdk/experimental/rs': '0.6.1-alpha.0'});
+  const r = w.run('open-line', '0.6.1', '--group', 'kit');
+  assert.equal(r.code, 0, r.err);
+  const c = JSON.parse(r.config);
+  for (const p of ['.', 'sdk/experimental/php', 'sdk/py', 'sdk/ts']) assert.equal(c.packages[p]['x-open-line'], '0.6.1', p);
+  assert.equal(c.packages['sdk/experimental/rs']['x-open-line'], undefined);
+  assert.match(r.out, /^kit-rs \(sdk\/experimental\/rs\): unchanged, at 0\.6\.1-alpha\.0: line 0\.6\.1 already reached$/m);
+  // named with --package it is refused, as before
+  const named = w.run('open-line', '0.6.1', '--package', 'kit-rs');
+  assert.equal(named.code, 1);
+  assert.match(named.err, /^refused: kit-rs \(sdk\/experimental\/rs\): at 0\.6\.1-alpha\.0: line 0\.6\.1 already reached/m);
+  // a member with no release yet (no manifest entry) takes the group version
+  const {'sdk/experimental/rs': _, ...noRs} = KIT_MANIFEST;
+  const fresh = workspace(KIT_CONFIG, noRs);
+  const one = fresh.run('open-line', '1.0.0', '--group', 'kit');
+  assert.equal(one.code, 0, one.err);
+  assert.match(one.out, /^kit-rs \(sdk\/experimental\/rs\): unchanged, no release yet: it takes the group's version$/m);
+  assert.equal(JSON.parse(one.config).packages['sdk/experimental/rs']['x-open-line'], undefined);
+  assert.equal(JSON.parse(one.config).packages['sdk/py']['x-open-line'], '1.0.0');
+  // ... named with --package, or for a channel, it is refused, as before
+  assert.match(fresh.run('open-line', '1.0.0', '--package', 'kit-rs').err, /kit-rs \(sdk\/experimental\/rs\): no version in the manifest/);
+  assert.match(fresh.run('channel', 'beta', '--group', 'kit').err, /kit-rs \(sdk\/experimental\/rs\): no version in the manifest/);
+  // real refusals stay all or nothing: a member past the line, or stable at it
+  for (const [v, why] of [['0.7.0-alpha.0', 'at 0\\.7\\.0-alpha\\.0, past line 0\\.6\\.1: lines never move backwards'], ['0.6.1', 'at stable 0\\.6\\.1: line 0\\.6\\.1 already released']]) {
+    const b = workspace(KIT_CONFIG, {...KIT_MANIFEST, 'sdk/py': v});
+    const res = b.run('open-line', '0.6.1', '--group', 'kit');
+    assert.equal(res.code, 1, v);
+    assert.match(res.err, new RegExp(`kit-py \\(sdk/py\\): ${why}`), v);
+    assert.equal(res.config, KIT_CONFIG, `nothing written (${v})`);
+  }
+});
+
 test('all or nothing, clear, dry run, usage', () => {
   const w = workspace();
   const mixed = w.run('channel', 'beta', '--package', 'kit', '--package', 'tools');

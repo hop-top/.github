@@ -208,6 +208,13 @@ const MUTATIONS = [
   {id: 'M63', what: 'a no-stable member\'s line from 1.0 (its initial version) lifts the family out of before 1.0',
     file: 'lib/rules.js', from: '(stableOf(m) || m.current.major === 0) ? core(m.current)', to: 'true ? core(m.current)',
     tests: ['test/rules.test.js', 'test/scenarios.test.js']},
+  {id: 'M64', what: 'promote.js open-line --group refuses the whole group when a member is already on the line',
+    file: 'lib/promote.js', from: 'if (cur.pre && c === 0) return {same: `at ${rules.fmt(cur)}: line ${value} already reached`};',
+    to: 'if (cur.pre && c === 0) return {problem: `${name}: at ${rules.fmt(cur)}: line ${value} already reached`};',
+    tests: ['test/promote.test.js']},
+  {id: 'M65', what: 'promote.js open-line --group refuses the whole group when a member has no release yet',
+    file: 'lib/promote.js', from: "if (command === 'open-line' && !explicit.has(p)) notes.push(", to: 'if (false) notes.push(',
+    tests: ['test/promote.test.js']},
 ];
 
 function copy() {
