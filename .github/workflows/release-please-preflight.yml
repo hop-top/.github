@@ -434,12 +434,15 @@ jobs:
           ok()      { echo "[OK]    $1" >> "$GITHUB_STEP_SUMMARY"; }
           fixhint() { echo "[FIX]   $1" >> "$GITHUB_STEP_SUMMARY"; }
 
-          # extra_files <package>: one `<entry>\t<target>` line per extra-files
-          # entry of the package -- the entry as written (a string, or an
-          # object's `path`) and the repo-root path release-please rewrites.
+          # extra_files <package>: one `<entry>\t<target>\t<kind>\t<selector>\t<glob>`
+          # line per extra-files entry of the package -- the entry as written
+          # (a string, or an object's `path`), the repo-root path release-please
+          # rewrites, `string` or the object's `type` (`(none)` when unset), its
+          # `jsonpath` / `xpath` (`-` when unset) and whether it is a glob.
           # Mirrors release-please's Strategy#addPath: a leading `/` anchors
           # the entry at the repository root, the root package `.` joins
-          # nothing, any other package joins its own path.
+          # nothing, any other package joins its own path. No field is empty:
+          # `read` with a tab IFS would merge empty fields.
           extra_files() {
             jq -r --arg p "$1" '
               .packages[$p]["extra-files"] // []
@@ -450,9 +453,104 @@ jobs:
                  (if ($rel | startswith("/")) or $p == "."
                   then ($rel | sub("^/+"; ""))
                   else ($p | sub("/+$"; "")) + "/" + $rel
-                  end)]
+                  end),
+                 (if type == "string" then "string"
+                  elif (.type // "") == "" then "(none)"
+                  else (.type | tostring) end),
+                 (if type == "object" and ((.jsonpath // .xpath // "") | tostring) != ""
+                  then ((.jsonpath // .xpath) | tostring) else "-" end),
+                 (if type == "object" and .glob == true then "true" else "false" end)]
               | @tsv
             ' "$CONFIG_PATH" 2>/dev/null
+          }
+
+          # has_annotation <file>: carries a marker release-please's generic
+          # updater rewrites (inline x-release-please-<scope>, or a
+          # x-release-please-start-<scope> ... x-release-please-end block).
+          has_annotation() {
+            grep -Eq 'x-release-please-(start-)?(major|minor|patch|version|date)' "$1"
+          }
+
+          # extra_file_probe <json|yaml|toml|xml-root> <file> <selector>: reads
+          # the value release-please's typed updater would rewrite. Prints
+          # `ok\t<value>`, `missing`, `notversion\t<value>` (not a string, or
+          # for json not a version string -- both skipped by release-please),
+          # `parse\t<error>`, or `skip\t<reason>` (a jsonpath beyond
+          # `$.a.b` / `['a']` / `[n]`, or no parser for the format here).
+          # xml-root is release-please's `/*/version`: a `version` child of the
+          # root element, no namespace.
+          extra_file_probe() {
+            python3 - "$@" 2>/dev/null <<'PY' || printf 'skip\tno python3\n'
+          import json, re, sys
+
+          kind, path, sel = sys.argv[1:4]
+          VERSION = re.compile(r"\d+\.\d+\.\d+(-[\w.]+)?(\+[-\w.]+)?")
+
+          def out(*fields):
+              print("\t".join(" ".join(str(f).split()) for f in fields))
+              sys.exit(0)
+
+          try:
+              if kind == "json":
+                  with open(path, encoding="utf-8") as f:
+                      docs = [json.load(f)]
+              elif kind == "toml":
+                  try:
+                      import tomllib
+                  except ImportError:
+                      try:
+                          import tomli as tomllib
+                      except ImportError:
+                          out("skip", "no TOML parser")
+                  with open(path, "rb") as f:
+                      docs = [tomllib.load(f)]
+              elif kind == "yaml":
+                  try:
+                      import yaml
+                  except ImportError:
+                      out("skip", "no YAML parser")
+                  with open(path, encoding="utf-8") as f:
+                      docs = list(yaml.safe_load_all(f))
+              else:
+                  import xml.etree.ElementTree as ET
+                  root = ET.parse(path).getroot()
+                  hit = next((c for c in root if c.tag == "version"), None)
+                  out("missing") if hit is None else out("ok", (hit.text or "").strip())
+          except Exception as exc:
+              out("parse", str(exc) or type(exc).__name__)
+
+          steps, rest = [], sel[1:] if sel.startswith("$") else None
+          token = re.compile(r"""\.([A-Za-z_$][\w$-]*)|\[(\d+)\]|\['([^']*)'\]|\["([^"]*)"\]""")
+          while rest:
+              m = token.match(rest)
+              if not m:
+                  break
+              name, index, single, double = m.groups()
+              steps.append(int(index) if index is not None else next(
+                  g for g in (name, single, double) if g is not None))
+              rest = rest[m.end():]
+          if rest is None or rest:
+              out("skip", "beyond $.a.b / [n] paths")
+
+          found = []
+          for doc in docs:
+              cur = doc
+              for step in steps:
+                  if isinstance(step, int) and isinstance(cur, list) and step < len(cur):
+                      cur = cur[step]
+                  elif isinstance(step, str) and isinstance(cur, dict) and step in cur:
+                      cur = cur[step]
+                  else:
+                      break
+              else:
+                  found.append(cur)
+          if not found:
+              out("missing")
+          for value in found:
+              if kind == "toml" or (isinstance(value, str) and (kind != "json" or VERSION.search(value))):
+                  out("ok", value)
+          out("notversion", json.dumps(found[0]))
+          PY
           }
 
           # apply_fail_on: runs at the end (and on early-stop paths) so the
@@ -951,10 +1049,23 @@ jobs:
           # a leading `/` is repo-root-relative, anything else joins the
           # package path), must name a file in the checkout.
           # A configured file that does not exist is a config-shape defect.
-          # The literal's value stays with the version-check guard; whether
-          # the file carries the `x-release-please-version` annotation the
-          # generic updater rewrites is surfaced here as a warning (the
-          # pyproject.toml case belongs to check 5b).
+          # Then each entry is checked by the rule of the updater
+          # release-please picks for it (Strategy#extraFileUpdates):
+          #   - `type` json / yaml / toml: its `jsonpath` must reach the value
+          #     (json: a version string; yaml: a string). No jsonpath, or a
+          #     json file that does not parse, fails release-please's run;
+          #     a path matching nothing is skipped by it (a warning here).
+          #   - `type` xml (needs `xpath`) / pom: existence only.
+          #   - a string entry ending in .json / .yaml / .yml / .toml / .xml:
+          #     release-please rewrites `$.version` (`/*/version`), then any
+          #     annotation; a .json one that does not parse fails its run.
+          #   - `type` generic, and any other string entry: the
+          #     x-release-please-<scope> annotation the generic updater
+          #     rewrites (the pyproject.toml case belongs to check 5b).
+          #   - any other `type` (or none): release-please throws.
+          # A glob entry is matched on the target branch by release-please;
+          # its matches are not checked here. The literal's value stays with
+          # the version-check guard.
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             {
               echo ""
@@ -964,20 +1075,104 @@ jobs:
             for path in $PACKAGES; do
               ENTRIES=$(extra_files "$path")
               [[ -n "$ENTRIES" ]] || continue
-              while IFS=$'\t' read -r rel target; do
+              while IFS=$'\t' read -r rel target kind sel glob; do
                 [[ -n "$rel" && -n "$target" ]] || continue
                 EXTRA_SEEN=$((EXTRA_SEEN+1))
+                case "$kind" in
+                  string|generic|json|yaml|toml|xml|pom) ;;
+                  *)
+                    if [[ "$kind" == "(none)" ]]; then
+                      fail "package $path extra-files entry '$rel' has no type — release-please supports generic, json, yaml, toml, xml, pom"
+                    else
+                      fail "package $path extra-files entry '$rel' has type '$kind' — release-please supports generic, json, yaml, toml, xml, pom"
+                    fi
+                    fixhint "set \"type\" on the entry in $CONFIG_PATH (generic for an x-release-please-version annotation)"
+                    continue
+                    ;;
+                esac
+                SELECTOR_KEY=""
+                case "$kind" in
+                  json|yaml|toml) SELECTOR_KEY=jsonpath ;;
+                  xml) SELECTOR_KEY=xpath ;;
+                esac
+                if [[ -n "$SELECTOR_KEY" && "$sel" == "-" ]]; then
+                  fail "package $path extra-files entry '$rel' (type $kind) has no $SELECTOR_KEY — release-please fails on it"
+                  fixhint "add \"$SELECTOR_KEY\" naming the version field to the entry in $CONFIG_PATH"
+                  continue
+                fi
+                if [[ "$glob" == "true" ]]; then
+                  info "package $path: extra-files entry '$rel' is a glob — its matches are not checked by the preflight"
+                  continue
+                fi
                 if [[ ! -f "$target" ]]; then
                   fail "package $path lists extra-files entry '$rel' but $target does not exist"
                   fixhint "create $target with an x-release-please-version annotation, or remove the entry from $CONFIG_PATH"
                   continue
                 fi
                 ok "package $path: extra-files entry '$rel' exists ($target)"
+
+                # Typed updater: the probe decides.
+                PROBE_KIND=""
+                PROBE_SEL="$sel"
+                PSTATE=""
+                PVALUE=""
+                case "$kind" in
+                  json|yaml|toml) PROBE_KIND="$kind" ;;
+                  xml|pom) continue ;;
+                  string)
+                    case "$rel" in
+                      *.json) PROBE_KIND=json; PROBE_SEL='$.version' ;;
+                      *.yaml|*.yml) PROBE_KIND=yaml; PROBE_SEL='$.version' ;;
+                      *.toml) PROBE_KIND=toml; PROBE_SEL='$.version' ;;
+                      *.xml) PROBE_KIND=xml-root; PROBE_SEL='/*/version' ;;
+                    esac
+                    ;;
+                esac
+                if [[ -n "$PROBE_KIND" ]]; then
+                  IFS=$'\t' read -r PSTATE PVALUE <<<"$(extra_file_probe "$PROBE_KIND" "$target" "$PROBE_SEL")"
+                  if [[ "$PSTATE" == "ok" ]]; then
+                    ok "extra-files target $target: $PROBE_SEL = $PVALUE"
+                    continue
+                  fi
+                  if [[ "$PSTATE" == "parse" && "$PROBE_KIND" == "json" ]]; then
+                    fail "extra-files target $target is not valid JSON ($PVALUE) — release-please fails parsing it"
+                    fixhint "make $target plain JSON, or use {\"type\": \"generic\"} with an x-release-please-version annotation for a template"
+                    continue
+                  fi
+                  if [[ "$kind" != "string" ]]; then
+                    case "$PSTATE" in
+                      missing)
+                        warn "extra-files target $target: jsonpath $sel matches nothing — release-please rewrites nothing in it"
+                        fixhint "point the entry's jsonpath at the version field of $target in $CONFIG_PATH"
+                        ;;
+                      notversion)
+                        warn "extra-files target $target: jsonpath $sel is $PVALUE, not a version string — release-please rewrites nothing in it"
+                        fixhint "point the entry's jsonpath at the version string in $target in $CONFIG_PATH"
+                        ;;
+                      parse)
+                        warn "extra-files target $target is not valid $kind ($PVALUE) — release-please rewrites nothing in it"
+                        ;;
+                      *)
+                        info "extra-files target $target: jsonpath $sel not evaluated by the preflight (${PVALUE:-no result})"
+                        ;;
+                    esac
+                    continue
+                  fi
+                  # A string entry falls through to its annotations.
+                fi
+
                 if [[ "$(basename "$rel")" == "pyproject.toml" ]]; then
                   continue  # check 5b owns this case
                 fi
-                if ! grep -q "x-release-please-version" "$target"; then
-                  warn "extra-files target $target carries no x-release-please-version annotation — release-please rewrites nothing in it"
+                if ! has_annotation "$target"; then
+                  if [[ "$PSTATE" == "skip" ]]; then
+                    info "extra-files target $target: $PROBE_SEL not evaluated by the preflight ($PVALUE), and no x-release-please-version annotation"
+                    continue
+                  elif [[ -n "$PROBE_KIND" ]]; then
+                    warn "extra-files target $target carries no x-release-please-version annotation and no version at $PROBE_SEL — release-please rewrites nothing in it"
+                  else
+                    warn "extra-files target $target carries no x-release-please-version annotation — release-please rewrites nothing in it"
+                  fi
                   fixhint "annotate the version literal's line in $target with x-release-please-version (see references/how-to/spec-versioning.md); the version-check guard fails this as 'configured'"
                 fi
               done <<<"$ENTRIES"

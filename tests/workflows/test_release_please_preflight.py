@@ -12,10 +12,13 @@ reaches the network. Assertions read the step summary lines (`[BREAK]`,
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
+import site
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -27,6 +30,8 @@ STEP = "Run preflight checks"
 DETECT_STEP = "Detect single-language adopter"
 CONFIG = ".github/release-please-config.json"
 MANIFEST = ".github/.release-please-manifest.json"
+HAS_TOML = any(importlib.util.find_spec(m) for m in ("tomllib", "tomli"))
+HAS_YAML = importlib.util.find_spec("yaml") is not None
 
 
 def step_script(workflow: Path, step: str) -> str:
@@ -56,6 +61,13 @@ class PreflightFixture:
             shim = shims / tool
             shim.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
             shim.chmod(0o755)
+        # The step's python3 is the interpreter running the tests, user site
+        # included (HOME is the temp dir), so which parsers it has (tomllib /
+        # tomli, PyYAML) is known here.
+        python = shims / "python3"
+        python.write_text(f'#!/bin/sh\nPYTHONUSERBASE="{site.getuserbase()}" '
+                          f'exec "{sys.executable}" "$@"\n', encoding="utf-8")
+        python.chmod(0o755)
         self.path = f"{shims}{os.pathsep}{os.environ['PATH']}"
         self.script = self.tmp / "step.sh"
         self.script.write_text(step_script(WORKFLOW, STEP), encoding="utf-8")
@@ -135,8 +147,7 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
         self.configure({"sdk/ts": {"component": "ts", "extra-files": [
             {"type": "json", "path": "/internal/builtins/package.json.tmpl",
              "jsonpath": "$.version"}]}})
-        self.write("internal/builtins/package.json.tmpl",
-                   '"version": "1.0.0" // x-release-please-version\n')
+        self.write("internal/builtins/package.json.tmpl", '{"version": "1.0.0"}\n')
         code, lines = self.run_step()
         self.assertEqual(code, 0, "\n".join(lines))
         self.assertLine(lines, "[OK]    package sdk/ts: extra-files entry "
@@ -171,6 +182,203 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
         self.assertLine(lines, "[WARN]  extra-files target templates/plain.tmpl carries no "
                                "x-release-please-version annotation — release-please "
                                "rewrites nothing in it")
+
+    def test_block_annotation_counts_as_an_annotation(self) -> None:
+        self.configure({".": {"component": "x", "extra-files": [
+            "README.md", {"type": "generic", "path": "install.sh"}]}})
+        self.write("README.md", "<!-- x-release-please-start-version -->\n1.0.0\n"
+                                "<!-- x-release-please-end -->\n")
+        self.write("install.sh", "MAJOR=1 # x-release-please-major\n")
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertNoLine(lines, "[WARN]  extra-files target")
+
+    # --- check 5d: typed extra-files (json / yaml / toml / xml / pom) --------
+
+    def warns(self, lines: list[str]) -> list[str]:
+        return [x for x in lines if x.startswith("[WARN]  extra-files target")]
+
+    def test_kit_json_extra_files_resolve_without_an_annotation(self) -> None:
+        # poly-kit's config: release-please rewrites these through the
+        # jsonpath, never through an x-release-please-version annotation.
+        self.write(CONFIG, json.dumps({"packages": {
+            ".": {"component": "kit", "release-type": "go", "extra-files": [
+                {"type": "generic", "path": "templates/cli-go/go.mod.tmpl"},
+                {"type": "json", "path": "engine/sdk/ts-kit-engine/package.json",
+                 "jsonpath": "$.kit.version"}]},
+            "sdk/experimental/php": {"component": "kit-php", "release-type": "php",
+                                     "extra-files": [{"type": "json", "path": "composer.json",
+                                                      "jsonpath": "$.version"}]}}}))
+        self.write(MANIFEST, json.dumps({".": "0.5.0-alpha.26",
+                                         "sdk/experimental/php": "0.5.0-alpha.2"}))
+        self.write("templates/cli-go/go.mod.tmpl",
+                   "require hop.top/kit v0.5.0-alpha.26 // x-release-please-version\n")
+        self.write("engine/sdk/ts-kit-engine/package.json", json.dumps(
+            {"name": "@hop-top/kit-engine", "version": "0.1.0",
+             "kit": {"version": "0.5.0-alpha.26"}}, indent=2))
+        self.write("sdk/experimental/php/composer.json", json.dumps(
+            {"name": "hop-top/kit", "version": "0.5.0-alpha.2"}, indent=2))
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [])
+        self.assertLine(lines, "[OK]    extra-files target engine/sdk/ts-kit-engine/package.json: "
+                               "$.kit.version = 0.5.0-alpha.26")
+        self.assertLine(lines, "[OK]    extra-files target sdk/experimental/php/composer.json: "
+                               "$.version = 0.5.0-alpha.2")
+
+    def test_json_jsonpath_matching_nothing_warns(self) -> None:
+        self.configure({"sdk/ts": {"component": "ts", "extra-files": [
+            {"type": "json", "path": "package.json", "jsonpath": "$.kit.version"}]}})
+        self.write("sdk/ts/package.json", '{"version": "1.0.0"}\n')
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  extra-files target sdk/ts/package.json: jsonpath $.kit.version matches "
+            "nothing — release-please rewrites nothing in it"])
+
+    def test_json_jsonpath_on_a_non_version_warns(self) -> None:
+        self.configure({"sdk/ts": {"component": "ts", "extra-files": [
+            {"type": "json", "path": "package.json", "jsonpath": "$.version"},
+            {"type": "json", "path": "meta.json", "jsonpath": "$['build'].tags[1]"}]}})
+        self.write("sdk/ts/package.json", '{"version": 1}\n')
+        self.write("sdk/ts/meta.json", '{"build": {"tags": ["x", "latest"]}}\n')
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  extra-files target sdk/ts/package.json: jsonpath $.version is 1, "
+            "not a version string — release-please rewrites nothing in it",
+            "[WARN]  extra-files target sdk/ts/meta.json: jsonpath $['build'].tags[1] is "
+            "\"latest\", not a version string — release-please rewrites nothing in it"])
+
+    def test_json_target_that_does_not_parse_fails(self) -> None:
+        self.configure({"sdk/ts": {"component": "ts", "extra-files": [
+            {"type": "json", "path": "package.json.tmpl", "jsonpath": "$.version"},
+            "version.json"]}})
+        self.write("sdk/ts/package.json.tmpl", '{"name": "{{ .Name }}", "version": "1.0.0",}\n')
+        self.write("sdk/ts/version.json", '// x-release-please-version\n{"v": "1.0.0"}\n')
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        for target in ("sdk/ts/package.json.tmpl", "sdk/ts/version.json"):
+            self.assertTrue(any(x.startswith(f"[BREAK] extra-files target {target} is not valid "
+                                             "JSON (") and x.endswith(") — release-please fails "
+                                                                      "parsing it")
+                                for x in lines), "\n".join(lines))
+
+    def test_typed_entry_without_its_selector_fails(self) -> None:
+        self.configure({"sdk/ts": {"component": "ts", "extra-files": [
+            {"type": "json", "path": "package.json"},
+            {"type": "xml", "path": "app.xml"}]}})
+        self.write("sdk/ts/package.json", '{"version": "1.0.0"}\n')
+        self.write("sdk/ts/app.xml", "<app><version>1.0.0</version></app>\n")
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, "[BREAK] package sdk/ts extra-files entry 'package.json' (type json) "
+                               "has no jsonpath — release-please fails on it")
+        self.assertLine(lines, "[BREAK] package sdk/ts extra-files entry 'app.xml' (type xml) "
+                               "has no xpath — release-please fails on it")
+
+    def test_unsupported_or_missing_type_fails(self) -> None:
+        self.configure({"sdk/ts": {"component": "ts", "extra-files": [
+            {"type": "jsn", "path": "package.json", "jsonpath": "$.version"},
+            {"path": "VERSION"}]}})
+        self.write("sdk/ts/package.json", '{"version": "1.0.0"}\n')
+        self.write("sdk/ts/VERSION", "1.0.0 x-release-please-version\n")
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, "[BREAK] package sdk/ts extra-files entry 'package.json' has type "
+                               "'jsn' — release-please supports generic, json, yaml, toml, xml, pom")
+        self.assertLine(lines, "[BREAK] package sdk/ts extra-files entry 'VERSION' has no type "
+                               "— release-please supports generic, json, yaml, toml, xml, pom")
+
+    @unittest.skipUnless(HAS_TOML, "no TOML parser: the step reports a toml jsonpath as not evaluated")
+    def test_toml_jsonpath_resolves_or_warns(self) -> None:
+        # A go root bumping an embedded Python SDK's pyproject: check 5b is
+        # about release-type python packages only.
+        self.configure({".": {"component": "kit", "release-type": "go", "extra-files": [
+            {"type": "toml", "path": "engine/py/pyproject.toml", "jsonpath": "$.project.version"},
+            {"type": "toml", "path": "engine/rs/Cargo.toml", "jsonpath": "$.package.version"}]}})
+        self.write("engine/py/pyproject.toml", '[project]\nname = "x"\nversion = "1.0.0"\n')
+        self.write("engine/rs/Cargo.toml", '[workspace.package]\nversion = "1.0.0"\n')
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    extra-files target engine/py/pyproject.toml: "
+                               "$.project.version = 1.0.0")
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  extra-files target engine/rs/Cargo.toml: jsonpath $.package.version "
+            "matches nothing — release-please rewrites nothing in it"])
+
+    @unittest.skipUnless(HAS_TOML, "no TOML parser: the step reports a toml jsonpath as not evaluated")
+    def test_toml_target_that_does_not_parse_warns(self) -> None:
+        self.configure({".": {"component": "kit", "extra-files": [
+            {"type": "toml", "path": "tool.toml", "jsonpath": "$.version"}]}})
+        self.write("tool.toml", 'version = "1.0.0\n')
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertTrue(any(x.startswith("[WARN]  extra-files target tool.toml is not valid "
+                                         "toml (") for x in lines), "\n".join(lines))
+
+    @unittest.skipUnless(HAS_YAML, "no PyYAML: the step reports a yaml jsonpath as not evaluated")
+    def test_yaml_jsonpath_resolves_or_warns(self) -> None:
+        self.configure({".": {"component": "kit", "extra-files": [
+            {"type": "yaml", "path": "chart/Chart.yaml", "jsonpath": "$.appVersion"},
+            {"type": "yaml", "path": "kit-template.yaml", "jsonpath": "$.kit.version"}]}})
+        self.write("chart/Chart.yaml", "apiVersion: v2\nappVersion: 1.0.0\n")
+        self.write("kit-template.yaml", "kit:\n  name: x\n")
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    extra-files target chart/Chart.yaml: $.appVersion = 1.0.0")
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  extra-files target kit-template.yaml: jsonpath $.kit.version matches "
+            "nothing — release-please rewrites nothing in it"])
+
+    def test_complex_jsonpath_is_reported_not_evaluated(self) -> None:
+        self.configure({".": {"component": "kit", "extra-files": [
+            {"type": "json", "path": "deps.json", "jsonpath": "$..version"}]}})
+        self.write("deps.json", '{"a": {"version": "1.0.0"}}\n')
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [])
+        self.assertLine(lines, "[INFO]  extra-files target deps.json: jsonpath $..version not "
+                               "evaluated by the preflight (beyond $.a.b / [n] paths)")
+
+    def test_xml_and_pom_entries_need_no_annotation(self) -> None:
+        self.configure({"java": {"component": "java", "extra-files": [
+            {"type": "xml", "path": "app.xml", "xpath": "//app/version"},
+            {"type": "pom", "path": "pom.xml"}]}})
+        self.write("java/app.xml", "<app><version>1.0.0</version></app>\n")
+        self.write("java/pom.xml", "<project><version>1.0.0</version></project>\n")
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [])
+        self.assertNoLine(lines, "[BREAK]")
+
+    def test_string_entries_with_a_structured_extension_use_the_version_key(self) -> None:
+        # release-please updates `$.version` (`/*/version` for XML) of a plain
+        # *.json / *.yaml / *.toml / *.xml entry, then its annotations.
+        self.configure({"sdk/ts": {"component": "ts", "extra-files": [
+            "package.json", "meta.toml", "app.xml", "annotated.json", "bare.json"]}})
+        self.write("sdk/ts/package.json", '{"name": "x", "version": "1.0.0"}\n')
+        self.write("sdk/ts/meta.toml", 'version = "1.0.0"\n')
+        self.write("sdk/ts/app.xml", "<app><version>1.0.0</version></app>\n")
+        self.write("sdk/ts/annotated.json", '{"pin": "1.0.0 x-release-please-version"}\n')
+        self.write("sdk/ts/bare.json", '{"name": "x"}\n')
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[OK]    extra-files target sdk/ts/package.json: $.version = 1.0.0")
+        if HAS_TOML:
+            self.assertLine(lines, "[OK]    extra-files target sdk/ts/meta.toml: $.version = 1.0.0")
+        self.assertLine(lines, "[OK]    extra-files target sdk/ts/app.xml: /*/version = 1.0.0")
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  extra-files target sdk/ts/bare.json carries no x-release-please-version "
+            "annotation and no version at $.version — release-please rewrites nothing in it"])
+
+    def test_glob_entry_is_not_checked_as_a_file(self) -> None:
+        self.configure({".": {"component": "kit", "extra-files": [
+            {"type": "json", "path": "sdk/*/package.json", "jsonpath": "$.version", "glob": True}]}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, "[INFO]  package .: extra-files entry 'sdk/*/package.json' is a glob "
+                               "— its matches are not checked by the preflight")
 
     # --- check 5b: python pyproject.toml override ----------------------------
 
