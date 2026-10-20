@@ -271,7 +271,9 @@ function outputPRs(out, prs) {
 function summary(env, report, closed) {
   if (!env.GITHUB_STEP_SUMMARY) return;
   const lines = ['## release-please (target versioning)', ''];
-  for (const d of report.decisions.values()) lines.push(`- ${d.name}: ${d.from} -> ${d.to} (${d.reason})`);
+  // A blocked package releases nothing: its block, not the decision it was blocked after.
+  const blocked = report.blockedComponents();
+  for (const d of report.decisions.values()) if (!blocked.has(d.component)) lines.push(`- ${d.name}: ${d.from} -> ${d.to} (${d.reason})`);
   for (const b of report.list()) lines.push(`- **blocked** ${b.name}: ${b.reason}`);
   for (const s of report.notices()) lines.push(`- skipped ${s.name}: ${s.reason}`);
   for (const c of closed) lines.push(`- closed #${c.number}: ${c.comment.split('\n')[0]}`);

@@ -263,6 +263,30 @@ test('rule 2: a package skipped on main is a notice, and its stale release PR is
   assert.match(fs.readFileSync(summaryFile, 'utf8'), /^- skipped qmochi: 0\.6\.0-beta\.1 is not an rc: skipped/m);
 });
 
+test('a linked member blocked alone (the group independent): its stale PR is closed with the reason, the summary shows the block only', async () => {
+  // main: the family stable at 0.5.0, kit-rs (no stable) at 1.0.0-rc.0 from
+  // its initial version, a kit hotfix
+  const {'kit-rs': _, ...stable} = Object.fromEntries(FAMILY.map(c => [c, '0.5.0']));
+  const r = repo().commit('chore: initial').release({...stable, qmochi: '0.5.0'}).release({'kit-rs': '1.0.0-rc.0'});
+  r.commit('fix(cli): hotfix', ['kit']).commit('fix(rs): z', ['kit-rs']);
+  // standing proposals from before the switch to target versioning
+  const stock = await runner(r, 'main', {cfg: config({versioning: 'prerelease'})});
+  const rsPr = stock.fake.prs.find(p => p.title.includes('kit-rs'));
+  assert.ok(rsPr, stock.fake.prs.map(p => p.title).join(', '));
+  const summaryFile = tmpFile('summary');
+  const res = await runner(r, 'main', {prs: stock.fake.prs, env: {GITHUB_STEP_SUMMARY: summaryFile}});
+  assert.equal(res.exitCode, 1, res.lines.join('\n'));
+  assert.deepEqual(res.blocked.map(b => b.component), ['kit-rs']);
+  assert.ok(res.fake.prs.some(p => p.title === 'chore(release): kit 0.5.1' && p.state === 'OPEN'), res.fake.prs.map(p => `${p.title} ${p.state}`).join(', '));
+  assert.ok(res.fake.closed.includes(rsPr.number), JSON.stringify(res.fake.closed));
+  const comment = res.fake.comments.find(c => c.number === rsPr.number);
+  assert.match(comment.comment, /^Closed: no release is proposed for kit-rs:\n\n- kit: kit-rs has no stable and would cut 1\.0\.0 from 1\.0\.0-rc\.0, a line from 1\.0 its initial version opened/);
+  const summary = fs.readFileSync(summaryFile, 'utf8');
+  assert.match(summary, /^- \*\*blocked\*\* kit-rs: kit: kit-rs has no stable and would cut 1\.0\.0/m);
+  assert.match(summary, /^- kit: 0\.5\.0 -> 0\.5\.1 /m);
+  assert.doesNotMatch(summary, /^- kit-rs: /m, summary);
+});
+
 test('rule 2: a package never released is a notice on main, not its initial-version', async () => {
   const {qmochi, ...released} = MAIN0;
   const r = repo().commit('chore: initial').release(released).commit('feat(qmochi): first', ['qmochi']).commit('fix(cli): k', ['kit']);
