@@ -50,6 +50,8 @@ runs:
 
     # Private venv under RUNNER_TEMP; deps come from the hash-pinned,
     # wheels-only requirements.txt. pip is the venv's bundled one.
+    # Every python call takes -P: the working directory is the caller's
+    # checkout, and a venv.py / pip/ / shutil.py there must not be imported.
     - name: Install generator dependencies
       id: venv
       shell: bash
@@ -57,13 +59,13 @@ runs:
         WKP_PYTHON: ${{ steps.python.outputs.python-path }}
       run: |
         venv="${RUNNER_TEMP}/well-known-publisher-venv"
-        "${WKP_PYTHON}" -m venv "${venv}"
+        "${WKP_PYTHON}" -P -m venv "${venv}"
         if [ -x "${venv}/bin/python" ]; then
           py="${venv}/bin/python"
         else
           py="${venv}/Scripts/python.exe"
         fi
-        "${py}" -m pip install --disable-pip-version-check --no-input \
+        "${py}" -P -m pip install --disable-pip-version-check --no-input \
           --require-hashes --only-binary :all: \
           -r "${GITHUB_ACTION_PATH}/generator/requirements.txt"
         echo "python=${py}" >> "${GITHUB_OUTPUT}"
