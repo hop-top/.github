@@ -438,7 +438,7 @@ jobs:
           # line per extra-files entry of the package -- the entry as written
           # (a string, or an object's `path`), the repo-root path release-please
           # rewrites, `string` or the object's `type` (`(none)` when unset), its
-          # `jsonpath` / `xpath` (`-` when unset) and whether it is a glob.
+          # `jsonpath` (`xpath` for xml; `-` when unset) and whether it is a glob.
           # Mirrors release-please's Strategy#addPath: a leading `/` anchors
           # the entry at the repository root, the root package `.` joins
           # nothing, any other package joins its own path. No field is empty:
@@ -457,8 +457,8 @@ jobs:
                  (if type == "string" then "string"
                   elif (.type // "") == "" then "(none)"
                   else (.type | tostring) end),
-                 (if type == "object" and ((.jsonpath // .xpath // "") | tostring) != ""
-                  then ((.jsonpath // .xpath) | tostring) else "-" end),
+                 (if type == "object" then (if .type == "xml" then .xpath else .jsonpath end) else null end
+                  | if . == null or (tostring == "") then "-" else tostring end),
                  (if type == "object" and .glob == true then "true" else "false" end)]
               | @tsv
             ' "$CONFIG_PATH" 2>/dev/null
