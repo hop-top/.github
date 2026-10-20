@@ -122,7 +122,7 @@ matching whatever `ci.yml` already does:
 
 ```yaml
 ecosystems: |
-  ts:
+  pkg-ts:
     dir: ts
     ecosystem: ts
     package: "@org/pkg"

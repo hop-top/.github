@@ -15,7 +15,12 @@ You can read or write any `ecosystems` entry with confidence.
 ## Shape
 
 YAML map. Each key is the **component name** that appears in tag
-prefixes (e.g. `kit-ts` → tag `kit-ts/v1.2.3`).
+prefixes (e.g. `kit-ts` → tag `kit-ts/v1.2.3`) and must equal the
+release-please `component` of the package it publishes. By convention
+it is also the basename of its `mirror` slug (`kit-ts` →
+`hop-top/kit-ts`); the router reads `mirror` verbatim, so that part is
+not checked ([SKILL.md § Three-way name
+alignment](../SKILL.md#three-way-name-alignment)).
 
 ```yaml
 ecosystems: |
@@ -61,13 +66,13 @@ If your repo uses a Makefile for tests/builds:
 
 ```yaml
 ecosystems: |
-  ts:
+  uri-ts:
     dir: ts
     ecosystem: ts
     mirror: hop-top/uri-ts
     test-command: make test-ts
     build-command: make build-ts
-  rs:
+  uri-rs:
     dir: rs
     ecosystem: rs
     mirror: hop-top/uri-rs

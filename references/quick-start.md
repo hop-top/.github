@@ -125,12 +125,13 @@ jobs:
     with:
       homepage: https://your-project-url
       description-prefix: "READ-ONLY MIRROR"
+      # each key == the release-please `component` of that package
       ecosystems: |
-        ts:  { dir: ts,  ecosystem: ts,  package: "@org/pkg",  mirror: org/pkg-ts }
-        py:  { dir: py,  ecosystem: py,  package: org-pkg,     mirror: org/pkg-py }
-        rs:  { dir: rs,  ecosystem: rs,  package: org-pkg,     mirror: org/pkg-rs }
-        php: { dir: php, ecosystem: php, package: org/pkg,     mirror: org/pkg-php }
-        go:  { dir: go,  ecosystem: go,                        mirror: org/pkg }
+        pkg-ts:  { dir: ts,  ecosystem: ts,  package: "@org/pkg",  mirror: org/pkg-ts }
+        pkg-py:  { dir: py,  ecosystem: py,  package: org-pkg,     mirror: org/pkg-py }
+        pkg-rs:  { dir: rs,  ecosystem: rs,  package: org-pkg,     mirror: org/pkg-rs }
+        pkg-php: { dir: php, ecosystem: php, package: org/pkg,     mirror: org/pkg-php }
+        pkg:     { dir: go,  ecosystem: go,                        mirror: org/pkg }
 ```
 
 ### 3. Add release-please config + manifest
@@ -154,7 +155,7 @@ gh run list --workflow publish.yml --limit 1
 ```
 
 The run's `parse` job should resolve the tag, then the
-matching publish job (e.g. `publish-ts` for a `ts` tag) should run,
+matching publish job (e.g. `publish-ts` for a `pkg-ts/v...` tag) should run,
 then `mirror` pushes the read-only mirror. For php, the chain ends
 with `publish-php` notifying Packagist.
 
@@ -163,7 +164,7 @@ with `publish-php` notifying Packagist.
 | Problem | Cause | Fix |
 |---|---|---|
 | Tag pushed but no workflow run | Tag shape doesn't match `*/v*` (3-segment component) | Rename component to single segment. See [SKILL.md § Tag-shape glob trap](../SKILL.md#tag-shape-glob-trap). |
-| Run is green but nothing published; the `parse` log shows `::notice::Component '<name>' has no ecosystem entry; skipping publish` | The tag's prefix (the release-please `component`) is not a key of `ecosystems`, so the router skips it like an umbrella tag | Align the names, then re-publish the tag ([retrigger](how-to/retrigger-failed-publish.md)). See [SKILL.md § Three-way name alignment](../SKILL.md#three-way-name-alignment). |
+| Run is green but nothing published; the `parse` log shows `::notice::Component '<name>' has no ecosystem entry; skipping publish` | The tag's prefix (the release-please `component`) is not a key of `ecosystems`, so the router skips it like an umbrella tag | Make the `ecosystems` key equal the `component` (and name both after the mirror), then re-publish the tag ([retrigger](how-to/retrigger-failed-publish.md)). See [SKILL.md § Three-way name alignment](../SKILL.md#three-way-name-alignment). |
 | Anything else | — | See [troubleshooting/common-pitfalls.md](troubleshooting/common-pitfalls.md) |
 
 ## Next steps

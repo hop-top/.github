@@ -81,7 +81,7 @@ Auto-infers from your config — no inputs required:
   - any other `type` (an object of `type: string` included), or none, fails; a `glob` entry is reported, its matches are not checked, and one without its `jsonpath` / `xpath` is a warning (release-please fails on it only once the glob matches a file)
   - `pyproject.toml` entries stay with the PEP 440 check above
 - `publish.yml` triggers on `*/v*` and delegates to `publish-on-tag.yml`
-- Three-way name alignment holds
+- Name alignment: every package's `component` is a key of the `ecosystems` map (a root `.` aggregate may be absent). The mirror basename is a naming convention and is not compared
 - `release-please.yml` uses the release-bot App token (not the deprecated PAT) and declares `workflow_dispatch`
 - Per-ecosystem infrastructure: GitHub Environment exists (for PyPI OIDC), mirror repo exists (if configured), PyPI/npm package-name availability (informational)
 

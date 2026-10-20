@@ -56,7 +56,7 @@ jobs:
     with:
       enable-mirror: false
       ecosystems: |
-        ts: { dir: ., ecosystem: ts, package: "@org/pkg", mirror: org/pkg-ts }
+        pkg-ts: { dir: ., ecosystem: ts, package: "@org/pkg", mirror: org/pkg-ts }
 ```
 
 ## How `enable-mirror` works
