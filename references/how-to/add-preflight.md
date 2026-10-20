@@ -92,9 +92,11 @@ above. It has no `needs:`, so the two run in parallel and the slowest
 registry probe gates nothing. For each package in the config it takes
 the registry name from the `package` field of the matching `ecosystems`
 entry in `publish.yml` (or, when the entry has none, from the package's
-own `package.json`, `pyproject.toml`, `Cargo.toml` or `composer.json`;
-with no `publish.yml` at all, the ecosystem comes from the package's
-`release-type`) and asks the registry whether the name exists:
+own `package.json`, `pyproject.toml`, `Cargo.toml` or `composer.json`).
+When `publish.yml` is missing or has no entry for the package, the
+ecosystem comes from its `release-type` instead (`node`, `python`,
+`rust`, `php`, `go`; any other type is not probed). It then asks the
+registry whether the name exists:
 
 | Ecosystem | Probe | Name not published yet |
 |---|---|---|
