@@ -3,8 +3,10 @@
 // channel (x-channel) and open a line (x-open-line), for packages picked by
 // path, by component, or by conditional-linked-versions group. All or
 // nothing: one refused package and nothing is written. A group member
-// already on (or already promoted to) the requested channel is left as it
-// is; named with --package, it is refused. Once the edit lands on the
+// already on (or already promoted to) the requested channel, or already
+// on the line to open, is left as it is, and so is a group member with no
+// release yet for an open line (the group's link gives it the version);
+// named with --package, it is refused. Once the edit lands on the
 // prerelease branch, that run cuts the release PR for it.
 const rules = require('./rules');
 const {setPackageKey, removePackageKeys, parseConfig} = require('./config-edit');
@@ -74,8 +76,11 @@ function channelEdit(config, p, cur, value) {
 
 function openLineEdit(config, p, cur, open, value) {
   const name = nameOf(config, p);
-  const reach = cur.pre ? rules.core(cur) : cur;
-  if (rules.cmpCore(reach, open) >= 0) return {problem: `${name}: at ${rules.fmt(cur)}: line ${value} already reached`};
+  const c = rules.cmpCore(cur, open);
+  // Already on the line: nothing to record (a no-op for a group member).
+  if (cur.pre && c === 0) return {same: `at ${rules.fmt(cur)}: line ${value} already reached`};
+  if (!cur.pre && c === 0) return {problem: `${name}: at stable ${rules.fmt(cur)}: line ${value} already released`};
+  if (c > 0) return {problem: `${name}: at ${rules.fmt(cur)}, past line ${value}: lines never move backwards`};
   return {key: 'x-open-line', value, change: `${name}: x-open-line "${value}" (${rules.fmt(cur)} -> ${value}-alpha.0, unless a change requires more: ${CUT})`};
 }
 
@@ -118,7 +123,8 @@ function promote({configText, manifest, command, value, packages, groups}) {
       continue;
     }
     if (manifest[p] === undefined) {
-      problems.push(`${name}: no version in the manifest`);
+      if (command === 'open-line' && !explicit.has(p)) notes.push(`${name}: unchanged, no release yet: it takes the group's version`);
+      else problems.push(`${name}: no version in the manifest`);
       continue;
     }
     const cur = rules.parse(manifest[p]);

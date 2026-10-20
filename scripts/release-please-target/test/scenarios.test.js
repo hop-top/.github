@@ -431,19 +431,19 @@ const SCENARIOS = [
     r.checkout('-b', 'next').release({'kit-rs': '0.6.1-alpha.0'}).commit('feat(cli): new', ['kit']);
     return {r, branch: 'next'};
   }, expect: [],
-  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 0\.6\.1-alpha\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\), and a member never moves backwards: open 0\.6\.1 for kit, kit-php, kit-py, kit-ts with x-open-line on next so the family links at kit-rs's line$/])),
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 0\.6\.1-alpha\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\), and a member never moves backwards: open 0\.6\.1 for group kit with x-open-line on next so the family links at kit-rs's line$/])),
   stock: [T('kit', '0.6.0-alpha.0')]},
 
   {id: 'v1', label: 'next, kit-rs released first at 1.0.0-alpha.0 (no stable), then kit opens 0.6.0: the family is not pulled to 1.0, kit-rs named as past the target', build() {
     return {r: nextRepo({kit: '0.5.1-alpha.3', 'kit-rs': '1.0.0-alpha.0'}, {kit: '0.5.0'}).commit('feat(cli)!: new line', ['kit']), branch: 'next'};
   }, expect: [],
-  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 1\.0\.0-alpha\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\), and a member never moves backwards: open 1\.0\.0 for kit, kit-php, kit-py, kit-ts with x-open-line on next so the family links at kit-rs's line$/])),
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 1\.0\.0-alpha\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0-alpha\.0\), and a member never moves backwards: open 1\.0\.0 for group kit with x-open-line on next so the family links at kit-rs's line$/])),
   stock: [T('kit', '0.6.0-alpha.3')]},
 
   {id: 'v2', label: 'next, kit-rs never released, no initial-version (release-please opens 1.0.0), family before 1.0: kit-rs blocked alone, kit still counts', build() {
     return {r: nextUnreleased('kit-rs').commit('fix(cli): k', ['kit']), branch: 'next'};
   }, expect: [T('kit', '0.5.0-alpha.27')],
-  blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 1\.0\.0, but the family is before 1\.0 \(at 0\.5\.0\): set its initial-version to 0\.5\.0-alpha\.0, the family's line, or open 1\.0\.0 for kit, kit-php, kit-py, kit-ts with x-open-line on next$/},
+  blocked: {'kit-rs': /^kit: kit-rs has no release yet and its first release would be 1\.0\.0, but the family is before 1\.0 \(at 0\.5\.0\): set its initial-version to 0\.5\.0-alpha\.0, the family's line, or open 1\.0\.0 for group kit with x-open-line on next$/},
   stock: [T('kit', '0.5.0-alpha.27'), T('kit-rs', '1.0.0')]},
 
   {id: 'v3', label: 'next, kit-rs never released, initial-version 1.0.0-alpha.0, family before 1.0: blocked alone', build() {
@@ -459,13 +459,13 @@ const SCENARIOS = [
   {id: 'v5', label: 'main, the family cuts 0.6.0 while kit-rs (no stable) is at 1.0.0-rc.0: linked at 0.6.0, not 1.0.0; kit-rs named as past it', build() {
     return {r: rsFromInitial('1.0.0-rc.0', '0.6.0-rc.2'), branch: 'main'};
   }, expect: [],
-  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 1\.0\.0-rc\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0, kit-php@0\.6\.0, kit-py@0\.6\.0, kit-ts@0\.6\.0\), and a member never moves backwards: open 1\.0\.0 for kit, kit-php, kit-py, kit-ts with x-open-line on next so the family links at kit-rs's line$/])),
+  blocked: Object.fromEntries(FAMILY.map(c => [c, /^kit: kit-rs is already at 1\.0\.0-rc\.0, past group target 0\.6\.0 \(linked by kit@0\.6\.0, kit-php@0\.6\.0, kit-py@0\.6\.0, kit-ts@0\.6\.0\), and a member never moves backwards: open 1\.0\.0 for group kit with x-open-line on next so the family links at kit-rs's line$/])),
   stock: []},
 
   {id: 'v6', label: 'main, family stable 0.5.0 + a kit hotfix while kit-rs (no stable) is at 1.0.0-rc.0: kit cut alone, kit-rs blocked (no 1.0 without x-open-line)', build() {
     return {r: rsFromInitial('1.0.0-rc.0').commit('fix(cli): hotfix', ['kit']), branch: 'main'};
   }, expect: [T('kit', '0.5.1')],
-  blocked: {'kit-rs': /^kit: kit-rs has no stable and would cut 1\.0\.0 from 1\.0\.0-rc\.0, a line from 1\.0 its initial version opened, but the family is before 1\.0 \(at 0\.5\.0\): 1\.0 opens for the family only through x-open-line \(open 1\.0\.0 for kit, kit-php, kit-py, kit-ts with x-open-line on next\)$/},
+  blocked: {'kit-rs': /^kit: kit-rs has no stable and would cut 1\.0\.0 from 1\.0\.0-rc\.0, a line from 1\.0 its initial version opened, but the family is before 1\.0 \(at 0\.5\.0\): 1\.0 opens for the family only through x-open-line \(open 1\.0\.0 for group kit with x-open-line on next\)$/},
   stock: [T('kit', '0.5.1-alpha.0')]},
 
   {id: 'v7', label: 'next, qmochi (no group) never released, initial-version 1.0.0-alpha.0, the kit family before 1.0: opened at it, as before', build() {

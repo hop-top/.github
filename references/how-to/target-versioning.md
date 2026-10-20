@@ -244,8 +244,9 @@ When it links:
   stable, previews `0.6.1-alpha.0` (or, from 1.0, kit opens `2.0.0`
   while kit-rs previews `2.3.0-alpha.0`): the run fails naming kit-rs
   as past group target `0.6.0` (`2.0.0`), on either branch. Opening
-  kit-rs's line for the members below it with `x-open-line` links the
-  family there, on `main` too: with `x-open-line 0.6.1` the family
+  kit-rs's line for the group with `x-open-line` (`promote.js open-line
+  0.6.1 --group kit`; kit-rs, already on it, is left as it is) links
+  the family there, on `main` too: with `x-open-line 0.6.1` the family
   moves to `0.6.1-alpha.1` on `next`, and `main` holds every member
   until all five are at `0.6.1-rc.N`, then cuts `0.6.1` in one group
   PR.
@@ -437,11 +438,15 @@ step is measured from the channel the manifest shows: with beta
 recorded but `0.5.0-beta.0` not released yet, `channel rc` is refused
 as a skip. All or nothing: if one package is refused (not on
 `target`, no open line, a skipped or backward step, a line already
-reached), nothing is written and it exits 1. A package already on the
-channel, or already promoted to it, is refused when named with
-`--package`; picked through `--group` it is left as it is (printed
-`unchanged, …`) and the other members are recorded, so promoting a
-family after promoting one of its members works. Commit the change to
+reached, passed or released stable), nothing is written and it exits
+1. A package already on the channel, already promoted to it, or
+already on the line to open, is refused when named with `--package`;
+picked through `--group` it is left as it is (printed `unchanged, …`)
+and the other members are recorded, so promoting a family after
+promoting one of its members works, and so does opening the line a
+member is already past the group's target on. For `open-line`, a group
+member with no release yet is left out too: the group's link gives it
+the version. Commit the change to
 the prerelease branch:
 the run that push triggers cuts each package's release PR
 (`0.5.0-beta.0`, `1.0.0-alpha.0`) with no other commit.
@@ -507,9 +512,9 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | `x-channel … skips a channel from …` | a promotion two steps ahead (hand edit) | record the next channel only (`promote.js channel`) |
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
 | `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target (cut on its own before the family linked, on `next` or `main`) | owner decision: re-seed the member or the group |
-| `… is already at …, past group target …, and a member never moves backwards` | a linked member previews a later line than the family links at (its own patch line, a minor from 1.0, a line from 1.0 its `initial-version` opened), so the group would move it back | on `next`, open that line for the members the message names (`promote.js open-line x.y.z --package <path>` for each), then the family links at it |
+| `… is already at …, past group target …, and a member never moves backwards` | a linked member previews a later line than the family links at (its own patch line, a minor from 1.0, a line from 1.0 its `initial-version` opened), so the group would move it back | on `next`, open that line for the group (`promote.js open-line x.y.z --group <group>`; the member already on it is left as it is), then the family links at it |
 | `… has no release yet and its first release would be 1.0.0 …, but the family is before 1.0` | a new linked member with no `initial-version` (release-please opens `1.0.0`) or one at or past `1.0.0` | set its `initial-version` to the line the message names (`0.5.0-alpha.0`), or open `1.0.0` for the family with `x-open-line` |
-| `… has no stable and would cut 1.0.0 from …, a line from 1.0 its initial version opened` | `main` would ship a linked member's 1.0 that no `x-open-line` opened, the family still before 1.0 | on `next`, open that line for the members the message names with `x-open-line`, promote the family via beta to rc, merge again |
+| `… has no stable and would cut 1.0.0 from …, a line from 1.0 its initial version opened` | `main` would ship a linked member's 1.0 that no `x-open-line` opened, the family still before 1.0 | on `next`, open that line for the group (`promote.js open-line x.y.z --group <group>`), promote the family via beta to rc, merge again |
 | `plugins has no "target-context"` | config lists target packages without the plugin | add it, first |
 | `prerelease-type '…': every line starts on alpha.0` | a channel set through `prerelease-type` | `alpha.0`; promote with `promote.js channel` |
 | `manifest version '…' is on channel '…': target versioning supports alpha/beta/rc only` | a target package's manifest on another channel (`experimental.N` from a stock setup) | seed the manifest on alpha, then promote via beta to rc |

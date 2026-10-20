@@ -70,7 +70,6 @@ const channelOf = pre => (pre ? pre.split('.')[0] : undefined);
 const atChannel = (v, ch) => ({...core(v), pre: `${ch}.0`});
 
 const STABLE = /^\d+\.\d+\.\d+$/;
-const ONE = {major: 1, minor: 0, patch: 0};
 
 // A promotion record, validated: {line: 'x.y.z', channel: 'beta' | 'rc'}.
 function promotionOf(record) {
@@ -346,9 +345,6 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   // opening 1.0 links the family. It never links the family nor raises
   // its target.
   const fromInitial = m => preOne && !stableOf(m) && !!(m.current && m.current.pre) && m.current.major >= 1;
-  // The released members below `line`: x-open-line `line` on them links
-  // the family at it.
-  const below = (line, except) => M.filter(x => x !== except && x.current && cmpCore(x.current, line) < 0).map(x => x.component).join(', ');
   const triggers = M.filter(m => m.proposed && m.current && !fromInitial(m) &&
     startsLinkedLine({kind, current: m.current, proposed: m.proposed, lastStable: m.lastStable}));
   if (!triggers.length) {
@@ -360,9 +356,9 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     for (const m of M) {
       if (!preOne || !m.proposed) continue;
       if (!m.current && m.proposed.major >= 1) {
-        blockedMembers[m.component] = `${groupName}: ${m.component} has no release yet and its first release would be ${fmt(m.proposed)}, but the family is before 1.0 (at ${fmt(familyLine)}): set its initial-version to ${fmt(familyLine)}-alpha.0, the family's line, or open 1.0.0 for ${below(ONE, m)} with x-open-line on ${on}`;
+        blockedMembers[m.component] = `${groupName}: ${m.component} has no release yet and its first release would be ${fmt(m.proposed)}, but the family is before 1.0 (at ${fmt(familyLine)}): set its initial-version to ${fmt(familyLine)}-alpha.0, the family's line, or open 1.0.0 for group ${groupName} with x-open-line on ${on}`;
       } else if (kind === 'stable' && fromInitial(m)) {
-        blockedMembers[m.component] = `${groupName}: ${m.component} has no stable and would cut ${fmt(m.proposed)} from ${fmt(m.current)}, a line from 1.0 its initial version opened, but the family is before 1.0 (at ${fmt(familyLine)}): 1.0 opens for the family only through x-open-line (open ${fmt(core(m.current))} for ${below(core(m.current), m)} with x-open-line on ${on})`;
+        blockedMembers[m.component] = `${groupName}: ${m.component} has no stable and would cut ${fmt(m.proposed)} from ${fmt(m.current)}, a line from 1.0 its initial version opened, but the family is before 1.0 (at ${fmt(familyLine)}): 1.0 opens for the family only through x-open-line (open ${fmt(core(m.current))} for group ${groupName} with x-open-line on ${on})`;
       }
     }
     return {linked: false, reason: `${groupName}: no new major or pre-1.0 minor line: independent`, blocked: [], blockedMembers};
@@ -371,12 +367,9 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   const fail = reason => ({linked: true, reason: `${groupName}: ${reason}`, blocked: [`${groupName}: ${reason}`], blockedMembers: {}});
   const all = v => Object.fromEntries(M.map(m => [m.component, fmt(v)]));
   // A member already on a later line than target T: it never moves back,
-  // so the family links at its line or later only, which x-open-line on
-  // the members below that line opens.
-  const pastTarget = (m, T) => {
-    const line = core(m.current);
-    return fail(`${m.component} is already at ${fmt(m.current)}, past group target ${fmt(T)} (linked by ${by}), and a member never moves backwards: open ${fmt(line)} for ${below(line, m)} with x-open-line on ${on} so the family links at ${m.component}'s line`);
-  };
+  // so the family links at its line or later only, which x-open-line for
+  // the group opens (a member already on it is left as it is).
+  const pastTarget = (m, T) => fail(`${m.component} is already at ${fmt(m.current)}, past group target ${fmt(T)} (linked by ${by}), and a member never moves backwards: open ${fmt(core(m.current))} for group ${groupName} with x-open-line on ${on} so the family links at ${m.component}'s line`);
 
   if (kind === 'stable') {
     // The target is what the linking members cut: another member's own
