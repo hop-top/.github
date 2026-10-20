@@ -12,7 +12,9 @@ Two questions, for ``version_check.py``:
 
 Paths are the simple ones the preflight evaluates (``$.a.b``, ``['a']``,
 ``[n]``; for XML ``/a/b``, ``//a/b``, ``*`` and ``*[local-name()="x"]``
-steps); ``selector_lines`` returns None for anything else. YAML is read
+steps, a plain name matching an element in no namespace only, as in
+release-please's XPath 1.0); ``selector_lines`` returns None for
+anything else. YAML is read
 with PyYAML's BaseLoader (no implicit tags) and its plain scalars typed
 by YAML 1.2's core schema, as release-please's js-yaml types them;
 without PyYAML, ``HAVE_YAML`` is false and YAML is not read. TOML values
@@ -225,38 +227,57 @@ def json_lines(text: str, steps: Steps) -> set[int]:
 # XML (element lines through expat)
 # --------------------------------------------------------------------
 
-_XPATH_STEP = re.compile(r"""^(\*|[\w.-]+(?::[\w.-]+)?|\*\[local-name\(\)\s*=\s*(["'])([\w.-]+)\2\])$""")
+_XPATH_STEP = re.compile(r"""^(\*|[\w.-]+|\*\[local-name\(\)\s*=\s*(["'])([\w.-]+)\2\])$""")
+_NS_SEP = " "  # expat's namespace separator: "<uri> <local>"; a URI holds no space
+
+# An element as (namespace URI or None, local name); a step as
+# ("name", local) -- XPath 1.0: no namespace only --, ("local", local) from
+# local-name(), or ("any", None) for `*`.
+Element = tuple  # (str | None, str)
 
 
-def _xpath_steps(sel: str) -> tuple[bool, list[str | None]] | None:
-    """(descendant, steps) for ``/a/b`` or ``//a/b``; None steps are ``*``."""
+def _xpath_steps(sel: str) -> tuple[bool, list[tuple[str, str | None]]] | None:
+    """(descendant, steps) for ``/a/b`` or ``//a/b``. A prefixed step is
+    None: release-please's xpath has no namespace resolver and throws."""
     descendant = sel.startswith("//")
     body = sel[2:] if descendant else sel[1:] if sel.startswith("/") else None
     if not body:
         return None
-    steps: list[str | None] = []
+    steps: list[tuple[str, str | None]] = []
     for part in body.split("/"):
         m = _XPATH_STEP.match(part)
         if not m:
             return None
         if m.group(3):
-            steps.append(m.group(3))
+            steps.append(("local", m.group(3)))
+        elif part == "*":
+            steps.append(("any", None))
         else:
-            steps.append(None if part == "*" else part.split(":")[-1])
+            steps.append(("name", part))
     return descendant, steps
 
 
-def xml_elements(text: str) -> list[tuple[tuple[str, ...], int, int]] | None:
-    """Every element as (local-name path from the root, first, last line)."""
-    parser = xml.parsers.expat.ParserCreate()
-    stack: list[tuple[str, int]] = []
-    out: list[tuple[tuple[str, ...], int, int]] = []
+def _step_matches(step: tuple[str, str | None], element: Element) -> bool:
+    how, local = step
+    ns, name = element
+    if how == "any":
+        return True
+    return name == local and (how == "local" or ns is None)
+
+
+def xml_elements(text: str) -> list[tuple[tuple[Element, ...], int, int]] | None:
+    """Every element as (its (namespace, local name) path from the root,
+    first line, last line)."""
+    parser = xml.parsers.expat.ParserCreate(namespace_separator=_NS_SEP)
+    stack: list[tuple[Element, int]] = []
+    out: list[tuple[tuple[Element, ...], int, int]] = []
 
     def start(name, _attrs):
-        stack.append((name.split(":")[-1], parser.CurrentLineNumber))
+        ns, _, local = name.rpartition(_NS_SEP)
+        stack.append(((ns or None, local), parser.CurrentLineNumber))
 
     def end(_name):
-        path = tuple(n for n, _ in stack)
+        path = tuple(e for e, _ in stack)
         _, first = stack.pop()
         out.append((path, first, parser.CurrentLineNumber))
 
@@ -279,7 +300,7 @@ def xml_lines(text: str, sel: str) -> set[int] | None:
         if len(path) < len(steps) or (not descendant and len(path) != len(steps)):
             continue
         tail = path[len(path) - len(steps):]
-        if all(s is None or s == p for s, p in zip(steps, tail)):
+        if all(_step_matches(s, e) for s, e in zip(steps, tail)):
             lines.update(range(first, last + 1))
     return lines
 
@@ -293,12 +314,15 @@ def selector_lines(text: str, kind: str, selector: str | None) -> set[int] | Non
     """The lines holding the value ``selector`` names in ``text``.
 
     ``kind`` is json / yaml / toml / xml / pom (pom: ``project/version``,
-    else ``project/parent/version``, as release-please's PomXml). An empty
+    else ``project/parent/version``, by local name in any namespace, as
+    release-please's PomXml). An empty
     set: the path matches nothing. None: a selector this module cannot
     place (a jsonpath beyond simple steps, an xpath beyond plain steps).
     """
     if kind == "pom":
-        return xml_lines(text, "/project/version") or xml_lines(text, "/project/parent/version")
+        project = '/*[local-name()="project"]'
+        return (xml_lines(text, f'{project}/*[local-name()="version"]')
+                or xml_lines(text, f'{project}/*[local-name()="parent"]/*[local-name()="version"]'))
     if kind == "xml":
         return xml_lines(text, selector or "")
     steps = parse_jsonpath(selector or "")
