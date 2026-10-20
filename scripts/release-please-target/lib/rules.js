@@ -266,15 +266,16 @@ function next(input) {
 // always; a new minor line only before 1.0 (major 0). From 1.0 minors
 // are independent, and a patch never links. On a stable branch the cut
 // is measured against the last stable (with none, the smallest stable
-// the rc can stem from): x.0.0 above its major, or before 1.0 a 0.y.0
-// above its minor. Never on a maintenance branch.
+// the rc can stem from): a major above its major, or before 1.0 a minor
+// above its minor, whatever its patch (x-open-line 0.6.1 from 0.5.0
+// links, as on the prerelease branch). Never on a maintenance branch.
 function startsLinkedLine({kind, current, proposed, lastStable}) {
   if (kind === 'maintenance') return false;
   const C = parse(current), V = parse(proposed), S = opt(lastStable);
   if (kind === 'stable') {
     const ref = S || (C.pre ? deriveBase(core(C)) : C);
     if (V.major > ref.major) return true;
-    return V.major === 0 && V.patch === 0 && cmpCore(V, ref) > 0;
+    return V.major === 0 && ref.major === 0 && V.minor > ref.minor;
   }
   if (V.major > C.major) return true;
   return V.major === 0 && C.major === 0 && V.minor > C.minor;

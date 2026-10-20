@@ -271,6 +271,11 @@ test('rule 4: which proposals open a linked line', () => {
   assert.ok(L('0.6.0-rc.2', '0.6.0', 'stable', '0.4.3'));
   assert.ok(L('0.5.0-rc.1', '0.5.0', 'stable'));
   assert.ok(L('0.6.0', '0.7.0', 'stable', '0.6.0'));
+  // a new minor line before 1.0 links whatever its patch (x-open-line 0.6.1)
+  assert.ok(L('0.6.1-rc.0', '0.6.1', 'stable', '0.5.0'));
+  assert.ok(L('0.6.1-rc.0', '0.6.1', 'stable', '0.4.3'));
+  // with no stable, the smallest stable 0.6.1-rc.0 can stem from is 0.6.0: a patch
+  assert.ok(!L('0.6.1-rc.0', '0.6.1', 'stable'));
   // a pre-1.0 patch never links, nor a minor from 1.0
   assert.ok(!L('0.5.0', '0.5.1', 'stable', '0.5.0'));
   assert.ok(!L('0.5.1-rc.0', '0.5.1', 'stable', '0.5.0'));
@@ -434,6 +439,8 @@ test('rule 4: the target comes from the members on a linked line: a member\'s ow
     {component: 'kit-py', current: '2.0.1-alpha.0', lastStable: '2.0.0'},
   ]);
   assert.match(major.blocked[0], /^kit: kit-py already released 2\.0\.0 as stable, at or past group target 2\.0\.0 /);
+  // a live preview of a new minor line at a patch (0.6.1 from stable 0.5.0) is a linked line too
+  assert.deepEqual(group([kit, {component: 'kit-py', current: '0.6.1-alpha.2', lastStable: '0.5.0'}]).versions, {kit: '0.6.1-alpha.3', 'kit-py': '0.6.1-alpha.3'});
   // a live preview of a linked line still wins: a new minor before 1.0,
   // with or without a stable, a new major with one (1.0 with no stable is
   // its initial version: it never pulls the family, see below)
@@ -464,7 +471,7 @@ test('rule 4: a member already past the group target blocks it, named as past it
   // patch line 0.6.1 (no linked line): the group cannot move it back
   const kit = {component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.6.0-alpha.0'};
   const g = resolveGroup({kind: 'prerelease', groupName: 'kit', prereleaseBranch: 'next', members: [
-    kit, {component: 'kit-rs', current: '0.6.1-alpha.0'}, {component: 'kit-py', current: '0.5.0-alpha.5'}, {component: 'kit-ts', current: '0.6.1-alpha.2', lastStable: '0.4.0'},
+    kit, {component: 'kit-rs', current: '0.6.1-alpha.0'}, {component: 'kit-py', current: '0.5.0-alpha.5'}, {component: 'kit-ts', current: '0.6.1-alpha.2'},
   ]});
   assert.equal(g.linked, true);
   assert.equal(g.versions, undefined);
@@ -625,6 +632,20 @@ test('rule 4: a stable-branch pre-1.0 minor links like a major: every member at 
     {component: 'kit-py', current: '0.5.1-rc.0', lastStable: '0.5.0', proposed: '0.5.1'},
     {component: 'kit-ts', current: '0.5.0', lastStable: '0.5.0'},
   ]).blocked[0], /\(promote kit-py, kit-ts to an rc of 0\.6\.0 on next first\)$/);
+  // a new minor line at a patch (x-open-line 0.6.1 from stable 0.5.0) links the same
+  const x = stable([
+    {component: 'kit', current: '0.6.1-rc.0', lastStable: '0.5.0', proposed: '0.6.1'},
+    {component: 'kit-py', current: '0.6.1-alpha.1', lastStable: '0.5.0'},
+    {component: 'kit-rs', current: '0.6.1-rc.0', proposed: '0.6.1'},
+  ]);
+  assert.equal(x.linked, true);
+  assert.equal(x.versions, undefined);
+  assert.match(x.blocked[0], /^kit: linked at 0\.6\.1 by kit@0\.6\.1, but kit-py is at 0\.6\.1-alpha\.1: a linked release is cut only when every member is at an rc of 0\.6\.1 \(promote kit-py via beta to rc on next first\)$/);
+  assert.deepEqual(stable([
+    {component: 'kit', current: '0.6.1-rc.0', lastStable: '0.5.0', proposed: '0.6.1'},
+    {component: 'kit-py', current: '0.6.1-rc.2', lastStable: '0.5.0', proposed: '0.6.1'},
+    {component: 'kit-rs', current: '0.6.1-rc.0', proposed: '0.6.1'},
+  ]).versions, {kit: '0.6.1', 'kit-py': '0.6.1', 'kit-rs': '0.6.1'});
   // a pre-1.0 patch (a hotfix on main) stays per member
   const p = stable([
     {component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.5.1'},
