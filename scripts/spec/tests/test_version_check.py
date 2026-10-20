@@ -450,6 +450,35 @@ class VersionCheckTests(unittest.TestCase):
             "ts/true.yaml:0: configured: listed in extra-files but carries no "
             "x-release-please-version line and no version at $.version ($.version is true)"])
 
+    def test_namespaced_xml_matches_xpath_names_as_release_please_does(self) -> None:
+        # release-please's xpath: a plain name step matches an element in no
+        # namespace only; `*` and local-name() match any; a prefix it cannot
+        # resolve makes it throw. PomXml uses local-name().
+        self.write(".github/release-please-config.json", _config({"ts": [
+            {"type": "xml", "path": "app.xml", "xpath": "/project/version"},
+            {"type": "xml", "path": "star.xml", "xpath": "/*/version"},
+            {"type": "xml", "path": "local.xml",
+             "xpath": '/*[local-name()="project"]/*[local-name()="version"]'},
+            {"type": "xml", "path": "mixed.xml", "xpath": "/*/meta/version"},
+            {"type": "xml", "path": "p.xml", "xpath": "/p:project/p:version"},
+            {"type": "pom", "path": "pom.xml"}]}))
+        namespaced = '<project xmlns="urn:x">\n  <version>1.0.0-alpha.0</version>\n</project>\n'
+        for name in ("app", "star", "local"):
+            self.write(f"ts/{name}.xml", namespaced)
+        self.write("ts/mixed.xml", '<project xmlns="urn:x">\n  <meta xmlns="">\n'
+                                   "    <version>1.0.0-alpha.0</version>\n  </meta>\n</project>\n")
+        self.write("ts/p.xml", '<p:project xmlns:p="urn:x">\n'
+                               "  <p:version>1.0.0-alpha.0</p:version>\n</p:project>\n")
+        self.write("ts/pom.xml", namespaced.replace("urn:x", "http://maven.apache.org/POM/4.0.0"))
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        stale = ("{}: literal: 1.0.0-alpha.0 equals a manifest version and is not annotated "
+                 "with x-release-please-version")
+        self.assertEqual(r.stdout.splitlines(), [stale.format(x) for x in (
+            "ts/app.xml:2", "ts/p.xml:2", "ts/star.xml:2")])
+        self.assertIn("version-check: ts/p.xml: xml selector /p:project/p:version not placed; "
+                      "rule 3 reads every line", r.stderr)
+
     # --- annotations release-please never rewrites ---------------------------
 
     def test_annotation_in_a_typed_only_target_fails(self) -> None:
