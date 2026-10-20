@@ -68,6 +68,9 @@ The pairing that makes it work (reference shape: poly-kit ruleset
 The config and manifest are deliberately **not** owned: channel promotions
 (`x-channel`, `x-open-line`) are human edits to the config, and owning it hands the
 self-approval block to the human maintainer — a single-member release team can
-never approve its own promotion PR. Anchor with a leading `/` when the repo
+never approve its own promotion PR. Unowned, the manifest still must change
+only through release PRs: make that a required check (for example a promotion
+gate that refuses manifest edits from any branch but the release bot's), since
+no code-owner review covers it any more. Anchor with a leading `/` when the repo
 carries scaffold or template copies of `CHANGELOG.md`; the basename form
 above is right otherwise.
