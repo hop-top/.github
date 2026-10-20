@@ -32,9 +32,9 @@ flowchart TB
     subgraph ReleasePleaseScope ["Consumer-side (release-please)"]
         direction TB
         RP[release-please.yml<br/>opens standing PR]
-        PR[chore release X.Y.Z<br/>PR open on main]
+        PR[chore release kit-ts X.Y.Z-alpha.N<br/>PR open on main]
         Merge[Merge PR]
-        Tag[release-please creates tag<br/>vX.Y.Z]
+        Tag[release-please creates tag<br/>kit-ts/vX.Y.Z-alpha.N]
         RP --> PR --> Merge --> Tag
     end
 
@@ -46,12 +46,12 @@ flowchart TB
     subgraph DotGithubScope ["dotgithub (this repo)"]
         direction TB
         Router[publish-on-tag.yml<br/>parses tag prefix]
-        Router -->|ts/v*| PubTS[publish-ts.yml]
-        Router -->|py/v*| PubPY[publish-py.yml]
-        Router -->|rs/v*| PubRS[publish-rs.yml]
-        Router -->|php/v*| NoOp1[no publish<br/>Packagist auto-syncs]
-        Router -->|go/v*| NoOp2[no publish<br/>proxy.golang.org<br/>pulls from tag]
+        Router -->|ecosystem ts| PubTS[publish-ts.yml]
+        Router -->|ecosystem py| PubPY[publish-py.yml]
+        Router -->|ecosystem rs| PubRS[publish-rs.yml]
+        Router -->|ecosystem go or none| NoOp2[no publish job<br/>go: proxy.golang.org<br/>pulls from tag]
         Router --> Mirror[mirror-subtree.yml<br/>git subtree split + push]
+        Mirror -->|ecosystem php| PubPHP[publish-php job<br/>Packagist update-package<br/>notify, after the mirror]
     end
 
     Push --> Router
@@ -60,44 +60,51 @@ flowchart TB
     PubPY --> PyPI[(PyPI<br/>OIDC trusted)]
     PubRS --> Crates[(crates.io)]
     Mirror --> MirrorRepo[(read-only mirror repo)]
+    PubPHP --> Packagist[(Packagist)]
 ```
 
 Source: [`diagrams/release-flow.mmd`](diagrams/release-flow.mmd)
 
 ## Tag push routing
 
-The router parses any `<component>/v<version>` tag and dispatches to
-the right ecosystem workflow plus the mirror. **The mirror always
-runs**; the publish job runs only if the ecosystem requires one (php
-and go skip — Packagist auto-syncs, go module proxy pulls from tags).
+The router parses any `<component>/v<version>` tag, looks the component
+up in the caller's `ecosystems` map, and dispatches to the right
+ecosystem workflow plus the mirror. The mirror runs for every
+component in the map (unless the caller sets `enable-mirror: false`),
+after the publish job and only if that job did not fail. `ts`, `py`
+and `rs` have a publish job before the mirror. `go` and `none` have no
+publish job (the Go module proxy pulls from the tag). `php` has none
+before the mirror either: its `publish-php` job runs after the mirror
+push and tells Packagist to re-index it. A tag whose component is not
+in the map (an umbrella tag) is skipped with a `::notice::`.
 
 ```mermaid
 sequenceDiagram
-    participant Tag as Tag push<br/>(ts/v0.3.0-alpha.0)
+    participant Tag as Tag push<br/>(kit-ts/v0.3.0-alpha.0)
     participant Router as publish-on-tag.yml
     participant Parse as parse job
     participant Publish as publish-ts (reusable)
     participant Mirror as mirror-subtree (reusable)
     participant NPM as npm
-    participant Source as hop-top/poly-uri
-    participant Mirror_repo as hop-top/uri-ts
+    participant Source as hop-top/poly-kit
+    participant Mirror_repo as hop-top/kit-ts
 
     Tag->>Router: triggers on tags ['*/v*']
-    Router->>Parse: extract component, version, dir, ecosystem, mirror_slug
-    Parse-->>Router: component=ts, dir=ts, ecosystem=ts, mirror=hop-top/uri-ts
+    Router->>Parse: extract component, version; look up the ecosystems entry
+    Parse-->>Router: component=kit-ts, dir=ts, ecosystem=ts, mirror=hop-top/kit-ts
 
-    par publish + mirror in parallel
-        Router->>Publish: working-directory=ts
-        Publish->>Publish: pnpm test
-        Publish->>Publish: pnpm build
-        Publish->>NPM: pnpm publish --access public
-        NPM-->>Publish: 200 OK
-    and
-        Router->>Mirror: prefix=ts, target=hop-top/uri-ts, tag=v0.3.0-alpha.0
-        Mirror->>Source: git subtree split --prefix=ts HEAD
-        Mirror->>Mirror_repo: git push (refs/heads/main + tag)
-        Mirror->>Mirror_repo: gh release create v0.3.0-alpha.0
-    end
+    Router->>Publish: working-directory=ts
+    Publish->>Publish: pnpm test
+    Publish->>Publish: pnpm build
+    Publish->>NPM: pnpm publish --access public
+    NPM-->>Publish: 200 OK
+    Publish-->>Router: success
+
+    Note over Router,Mirror: mirror starts once publish did not fail
+    Router->>Mirror: prefix=ts, target=hop-top/kit-ts, tag=v0.3.0-alpha.0
+    Mirror->>Source: git subtree split --prefix=ts HEAD
+    Mirror->>Mirror_repo: git push (refs/heads/main + tag)
+    Mirror->>Mirror_repo: gh release create v0.3.0-alpha.0
 ```
 
 Source: [`diagrams/router-dispatch.mmd`](diagrams/router-dispatch.mmd)
@@ -139,36 +146,36 @@ flowchart TB
         GH_MIRROR_PAT[(GH_MIRROR_PAT)]
         NPM_REGISTRY_TOKEN[(NPM_REGISTRY_TOKEN)]
         CARGO[(CARGO_REGISTRY_TOKEN)]
+        PACKAGIST_SECRETS[(PACKAGIST_USERNAME<br/>PACKAGIST_TOKEN)]
+        RELEASE_BOT[(RELEASE_BOT_APP_ID<br/>RELEASE_BOT_PRIVATE_KEY)]
     end
 
-    subgraph RepoLevel ["Repo-level secrets"]
-        GH_RP_PAT[(GH_RELEASE_PLEASE_PAT)]
-    end
-
-    subgraph ConsumerRepo ["Consuming repo (publish.yml)"]
+    subgraph ConsumerRepo ["Consuming repo (publish.yml, release-please.yml)"]
         Inherit[secrets: inherit<br/>or explicit per-secret mapping<br/>canonical names ONLY]
     end
 
     OrgLevel --> Inherit
-    RepoLevel --> ReleasePleaseJob[release-please job]
 
+    Inherit -->|RELEASE_BOT_APP_ID<br/>RELEASE_BOT_PRIVATE_KEY| ReleasePleaseJob[release-please-on-push<br/>mints a release-bot App token]
     Inherit --> Router[publish-on-tag.yml]
 
     Router -->|NPM_REGISTRY_TOKEN| PubTS[publish-ts]
     Router -->|CARGO_REGISTRY_TOKEN| PubRS[publish-rs]
     Router -->|GH_MIRROR_PAT| Mirror[mirror-subtree]
+    Router -->|PACKAGIST_USERNAME<br/>PACKAGIST_TOKEN| PubPHP[publish-php job]
     Router -->|no secret needed| PubPY[publish-py]
 
     PubTS -->|NODE_AUTH_TOKEN env| NPM[(npm)]
     PubRS -->|CARGO_REGISTRY_TOKEN env| Crates[(crates.io)]
     Mirror -->|GH_TOKEN env| Targets[(mirror repos)]
+    PubPHP -->|update-package API| PackagistReg[(Packagist)]
     PubPY -->|id-token: write<br/>OIDC trusted| PyPI[(PyPI)]
 
     classDef secret fill:#fff3cd,stroke:#856404,color:#000
     classDef registry fill:#f8d7da,stroke:#721c24,color:#000
     classDef consumer fill:#e8f4f8,stroke:#0a6,color:#000
-    class GH_MIRROR_PAT,NPM_REGISTRY_TOKEN,CARGO,GH_RP_PAT secret
-    class NPM,Crates,Targets,PyPI registry
+    class GH_MIRROR_PAT,NPM_REGISTRY_TOKEN,CARGO,PACKAGIST_SECRETS,RELEASE_BOT secret
+    class NPM,Crates,Targets,PackagistReg,PyPI registry
     class ConsumerRepo consumer
 ```
 
@@ -177,12 +184,19 @@ Source: [`diagrams/secret-flow.mmd`](diagrams/secret-flow.mmd)
 **PyPI uses OIDC, not a secret.** The trusted-publisher config lives
 on PyPI's side; the workflow proves identity via `id-token: write`.
 
+**release-please runs on an App token, not a PAT.**
+`release-please-on-push` mints a short-lived installation token from
+`RELEASE_BOT_APP_ID` + `RELEASE_BOT_PRIVATE_KEY`. The legacy
+`GH_RELEASE_PLEASE_PAT` is deprecated for consumers (see [GitHub App
+permissions](../references/secrets.md#github-app-permissions)); this
+repo's own self-release workflows still use it.
+
 ## Why this shape
 
 | Decision | Alternative considered | Why we chose this |
 |---|---|---|
 | Tag push as single trigger | Workflow dispatch / release-please outputs only | One trigger, one pipeline. release-please-created tags AND any other tag (manual, scripted) hit the same path. |
-| Org-default repo for reusable workflows | Per-repo workflow duplication | N consumer repos; fixes propagate via `@v1` pin instead of N repo PRs |
+| Org-default repo for reusable workflows | Per-repo workflow duplication | N consumer repos; fixes propagate via the rolling `@v0` pin instead of N repo PRs |
 | Don't manage versions here | Bundle release-please into dotgithub | release-please is per-repo by design (manifest, config). The PR-opening workflow stays per-consumer; only the publish side is shared. |
 | `persist-credentials: false` | Custom token reset step | Cleanest idiomatic fix; documented in `actions/checkout` README. Without it, runner extraheader silently overrides PAT-based pushes. |
 | One workflow per ecosystem | Monolithic `publish.yml` with conditionals | Per-ecosystem keeps each file small and lintable; conditionals in YAML are hard to follow |

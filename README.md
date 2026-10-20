@@ -9,7 +9,8 @@ run *after* release-please cuts a tag.
 **This repo is**:
 
 - Reusable GitHub Actions workflows that publish to npm / PyPI /
-  crates.io and push subtree splits to read-only mirror repos
+  crates.io, notify Packagist, and push subtree splits to read-only
+  mirror repos
 - Triggered by `<component>/v<version>` tag pushes
 - PR-time spec-versioning gates for repos with a spec tree —
   per-version commit rules, channel-derived `**Status:**` lines on
@@ -60,9 +61,9 @@ flowchart TB
     subgraph ReleasePleaseScope ["Consumer-side (release-please)"]
         direction TB
         RP[release-please.yml<br/>opens standing PR]
-        PR[chore release X.Y.Z<br/>PR open on main]
+        PR[chore release kit-ts X.Y.Z-alpha.N<br/>PR open on main]
         Merge[Merge PR]
-        Tag[release-please creates tag<br/>vX.Y.Z]
+        Tag[release-please creates tag<br/>kit-ts/vX.Y.Z-alpha.N]
         RP --> PR --> Merge --> Tag
     end
 
@@ -74,10 +75,11 @@ flowchart TB
     subgraph DotGithubScope ["dotgithub (this repo)"]
         direction TB
         Router[publish-on-tag.yml<br/>parses tag prefix]
-        Router -->|ts/v*| PubTS[publish-ts.yml]
-        Router -->|py/v*| PubPY[publish-py.yml]
-        Router -->|rs/v*| PubRS[publish-rs.yml]
+        Router -->|ecosystem ts| PubTS[publish-ts.yml]
+        Router -->|ecosystem py| PubPY[publish-py.yml]
+        Router -->|ecosystem rs| PubRS[publish-rs.yml]
         Router --> Mirror[mirror-subtree.yml]
+        Mirror -->|ecosystem php| PubPHP[publish-php job<br/>notifies Packagist]
     end
 
     Push --> Router
@@ -86,6 +88,7 @@ flowchart TB
     PubPY --> PyPI[(PyPI)]
     PubRS --> Crates[(crates.io)]
     Mirror --> MirrorRepo[(read-only mirror repo)]
+    PubPHP --> Packagist[(Packagist)]
 ```
 
 See [`docs/architecture.md`](docs/architecture.md) for full diagrams
