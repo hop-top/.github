@@ -37,7 +37,8 @@ explicitly cut stable.
 To stay in an alpha/beta/rc channel (counter-incrementing), every
 package in `release-please-config.json` needs **all four pieces**
 (with [target versioning](target-versioning.md), `"versioning": "target"`
-takes the place of `"prerelease"`):
+takes the place of `"prerelease"`), on the package or at the top level
+(a package's unset or `null` piece takes the top-level one):
 
 ```json
 {

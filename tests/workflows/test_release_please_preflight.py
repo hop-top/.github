@@ -566,6 +566,67 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
                                "— PRs won't trigger downstream workflows")
 
 
+class PreflightPrereleaseOptionTests(PreflightFixture, unittest.TestCase):
+    """Checks 4 and 5 read each prerelease option the way release-please
+    merges it: a package's own value, else (unset or null, its `??`) the
+    top-level one."""
+
+    COMBO = {"prerelease": True, "prerelease-type": "alpha.0",
+             "versioning": "prerelease", "bump-minor-pre-major": True}
+    MISSING = "[BREAK] package {} is prerelease but missing: {}"
+
+    def setup_repo(self, packages: dict[str, dict], **top) -> None:
+        self.write(CONFIG, json.dumps({**top, "packages": packages}))
+        self.write(MANIFEST, json.dumps({p: "1.0.0-alpha.1" for p in packages}))
+
+    def combo_ok(self, path: str) -> str:
+        return f"[OK]    package {path}: prerelease four-piece combo complete"
+
+    def test_top_level_bump_minor_pre_major_applies_to_every_package(self) -> None:
+        own = {k: v for k, v in self.COMBO.items() if k != "bump-minor-pre-major"}
+        self.setup_repo({"a": {"component": "a", **own},
+                         "b": {"component": "b", **own, "bump-minor-pre-major": None}},
+                        **{"bump-minor-pre-major": True})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, self.combo_ok("a"))
+        self.assertLine(lines, self.combo_ok("b"))
+
+    def test_package_bump_minor_pre_major_false_wins_over_the_top_level(self) -> None:
+        self.setup_repo({"a": {"component": "a", **self.COMBO, "bump-minor-pre-major": False}},
+                        **{"bump-minor-pre-major": True})
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, self.MISSING.format("a", "bump-minor-pre-major"))
+
+    def test_top_level_prerelease_type_applies_to_every_package(self) -> None:
+        own = {k: v for k, v in self.COMBO.items() if k != "prerelease-type"}
+        self.setup_repo({"a": {"component": "a", **own},
+                         "b": {"component": "b", **own, "prerelease-type": None}},
+                        **{"prerelease-type": "beta.0"})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertLine(lines, self.combo_ok("a"))
+        self.assertLine(lines, self.combo_ok("b"))
+
+    def test_top_level_prerelease_applies_to_every_package(self) -> None:
+        # Checks 4 and 5 both see the packages as prerelease: the combo is
+        # checked, the prerelease-shaped seed is expected. A package's own
+        # false keeps it stable.
+        self.setup_repo({"a": {"component": "a"}, "b": {"component": "b", "prerelease": None},
+                         "c": {"component": "c", "prerelease": False}}, **self.COMBO)
+        self.write(MANIFEST, json.dumps({"a": "1.0.0-alpha.1", "b": "1.0.0-alpha.1", "c": "1.0.0"}))
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        for path in ("a", "b"):
+            self.assertLine(lines, self.combo_ok(path))
+            self.assertLine(lines, f"[OK]    package {path}: manifest seed '1.0.0-alpha.1' "
+                                   "is prerelease-shaped")
+        self.assertLine(lines, "[INFO]  package c: stable channel (prerelease: false / unset)")
+        self.assertLine(lines, "[OK]    package c: manifest seed '1.0.0' is stable-shaped")
+        self.assertNoLine(lines, "[WARN]  package")
+
+
 class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
     """Check 4b (`versioning: "target"`) and the target-aware parts of
     checks 4 and 5."""
