@@ -72,7 +72,7 @@ by the commits since its latest release:
 | The required target is higher | new line at `alpha.0`, whatever channel the old line was on | `0.5.1-alpha.3` + `feat!` → `0.6.0-alpha.0`; `1.6.0-beta.2` + `feat!` → `2.0.0-alpha.0` |
 | The current target was already released stable (a cut, or a hotfix on `main`) | new line from that stable | `0.6.0-rc.2` (0.6.0 tagged) + `feat` → `0.7.0-alpha.0`; `0.6.1-alpha.4`, `main` hotfixed 0.6.1, + `fix` → `0.6.2-alpha.0` |
 | The manifest is stable | new line from it | `0.6.0` + `fix` → `0.6.1-alpha.0` |
-| No release yet (no manifest entry, no tag) | its `initial-version`, as release-please opens it | `initial-version: "0.1.0-alpha.0"` + `feat` → `0.1.0-alpha.0` |
+| No release yet (no manifest entry, no tag) | its `initial-version`, as release-please opens it; a linked family member: see [its initial version](#initial-version-of-a-linked-member) | `initial-version: "0.1.0-alpha.0"` + `feat` → `0.1.0-alpha.0` |
 | The line is promoted (`x-channel` for this line) | `<channel>.0` on the same target, then its counter; cut at once, with no other change | `0.6.0-alpha.7`, promoted to beta on 0.6.0 → `0.6.0-beta.0` |
 | A promotion that skips a channel (alpha → rc) | **blocked** | `0.6.0-alpha.7`, `rc` recorded for 0.6.0 |
 | A promotion recorded for another line | not used (the runner refuses the config first) | `0.7.0-alpha.0` + `fix`, record for 0.6.1 → `0.7.0-alpha.1` |
@@ -143,6 +143,7 @@ holding a promotion that outlives its line.
 | Manifest at an alpha or beta (an SDK in the [experimental support tier](#experimental-support-tier), a package still previewing) | **skipped** with a notice: no PR, no failure |
 | A linked family member's rc cut opens a new major, or a new minor before 1.0 (`1.0.0-rc.1`, `0.6.0-rc.2` from 0.5.0 or no stable) | the whole family in one group PR at that version once every member is at an rc of it; until then every member is **blocked** (see [Linked family](#linked-family)) |
 | No release yet (no manifest entry, no tag: a package added since) | **skipped** with a notice, never opened at its `initial-version`: that opens it on `next` |
+| A linked family member with no stable at an rc of a line from 1.0 (its `initial-version`, `1.0.0-rc.0`) while the family is before 1.0 | **blocked**: 1.0 opens for the family only through `x-open-line` (see [its initial version](#initial-version-of-a-linked-member)) |
 
 Only rc packages are cut on the stable branch: merging `next` into
 `main` while some packages are still on alpha or beta cuts the rc ones
@@ -191,7 +192,9 @@ When it links:
   line a member already previews (kit opening `0.6.0` while kit-rs
   previews `0.7.0-alpha.2` links at `0.7.0`). A member's own patch,
   proposed or previewed (`0.6.1-alpha.N` after its own `0.6.0`), never
-  raises it, on either branch;
+  raises it, on either branch, nor does a first release or a line from
+  1.0 a member's initial version opened while the family is before 1.0
+  ([below](#initial-version-of-a-linked-member));
 - each member keeps its own channel: a member already on the target
   line keeps its channel there, or takes its promotion recorded for
   that line; any other member starts the line on alpha;
@@ -242,6 +245,38 @@ When it links:
   as past group target `0.6.0` (`2.0.0`), on either branch. Opening
   kit-rs's line for the members below it with `x-open-line` links the
   family there.
+
+#### Initial version of a linked member
+
+A member's first release (no stable, no prior prerelease) opens at its
+`initial-version`, which is config, not a change: it never raises the
+group's target. When the family links in that run, the member takes the
+group's version instead (kit opening `0.6.0` makes a new kit-rs
+`0.6.0-alpha.0`, whatever its `initial-version`).
+
+1.0 opens only through `x-open-line`, so while the family is before 1.0
+(any member's stable or line at `0.x`):
+
+- a first release at `1.0.0` or later is **blocked** on `next`, that
+  member alone (the others still release): set the member's
+  `initial-version` to the family's line at alpha (`0.5.0-alpha.0`
+  while the family is on `0.5.0`; the message names it), or open
+  `1.0.0` for the family with `x-open-line`, which links the new member
+  there too. release-please opens at `1.0.0` when `initial-version` is
+  unset (go, node, simple), so set it for every new linked member;
+  python and rust ignore it and open at `0.1.0`
+  ([seed the manifest](prerelease-channel.md#release-type-python-does-not-honor-initial-version)
+  if that is not the family's line);
+- a member with no stable already on a line from 1.0 (a first release
+  at `1.0.0-alpha.0` from before it joined the group, say) never links
+  the family nor raises its target. When the family links below it,
+  the run fails naming it as past the group target (on `next` and
+  `main`); on `main`, when nothing else links, its own stable cut is
+  **blocked**, that member alone. Opening its line for the family with
+  `x-open-line` on `next` resolves both.
+
+Outside a group nothing changes: a package may start at any
+configured `initial-version`, `1.0.0` included.
 
 #### Experimental support tier
 
@@ -332,6 +367,9 @@ Per target package:
   target, a channel the current one or the next, an open line not yet
   reached (inert on other branches; the shape is checked everywhere)
 - no `release-as`
+- `initial-version` (a new member of a linked family before 1.0): the
+  family's line at alpha, below `1.0.0`
+  ([why](#initial-version-of-a-linked-member))
 - `bump-minor-pre-major: true`, no `bump-patch-for-minor-pre-major`
   (the bump table above is fixed)
 - `prerelease` decides only on a branch with no role
@@ -457,7 +495,9 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | `x-channel … skips a channel from …` | a promotion two steps ahead (hand edit) | record the next channel only (`promote.js channel`) |
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
 | `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target (cut on its own before the family linked, on `next` or `main`) | owner decision: re-seed the member or the group |
-| `… is already at …, past group target …, and a member never moves backwards` | a linked member previews a later line than the family links at (its own patch line, a minor from 1.0), so the group would move it back | on `next`, open that line for the members the message names (`promote.js open-line x.y.z --package <path>` for each), then the family links at it |
+| `… is already at …, past group target …, and a member never moves backwards` | a linked member previews a later line than the family links at (its own patch line, a minor from 1.0, a line from 1.0 its `initial-version` opened), so the group would move it back | on `next`, open that line for the members the message names (`promote.js open-line x.y.z --package <path>` for each), then the family links at it |
+| `… has no release yet and its first release would be 1.0.0 …, but the family is before 1.0` | a new linked member with no `initial-version` (release-please opens `1.0.0`) or one at or past `1.0.0` | set its `initial-version` to the line the message names (`0.5.0-alpha.0`), or open `1.0.0` for the family with `x-open-line` |
+| `… has no stable and would cut 1.0.0 from …, a line from 1.0 its initial version opened` | `main` would ship a linked member's 1.0 that no `x-open-line` opened, the family still before 1.0 | on `next`, open that line for the members the message names with `x-open-line`, promote the family via beta to rc, merge again |
 | `plugins has no "target-context"` | config lists target packages without the plugin | add it, first |
 | `prerelease-type '…': every line starts on alpha.0` | a channel set through `prerelease-type` | `alpha.0`; promote with `promote.js channel` |
 | `manifest version '…' is on channel '…': target versioning supports alpha/beta/rc only` | a target package's manifest on another channel (`experimental.N` from a stock setup) | seed the manifest on alpha, then promote via beta to rc |

@@ -272,13 +272,15 @@ function install(rpRoot) {
         return strategiesByPath;
       }
 
-      // Each member's own proposal, through its target strategy.
+      // Each member's own proposal, through its target strategy; for a
+      // member with no release yet on the prerelease branch, its first
+      // release (release-please's initial version).
       const before = report.blockedComponents();
       const rows = [];
       for (const m of members) {
         const latest = releasesByPath[m.p];
         let proposed;
-        if (latest) {
+        if (latest || kind === 'prerelease') {
           const pr = await m.s.buildReleasePullRequest(parseConventionalCommits(commitsByPath[m.p] || [], this.logger), latest);
           proposed = pr && pr.version ? pr.version.toString() : undefined;
         }
@@ -286,14 +288,24 @@ function install(rpRoot) {
       }
       const g = rules.resolveGroup({kind, groupName: this.groupName, members: rows, prereleaseBranch: members[0].ctx.prereleaseBranch});
       this.logger.info(`conditional-linked-versions: ${g.reason}`);
-      if (!g.linked) return strategiesByPath;
+      const out = {...strategiesByPath};
+      if (!g.linked) {
+        // Independent: a member blocked on its own does not release, the others do.
+        for (const m of members) {
+          const r = g.blockedMembers[m.component];
+          if (!r) continue;
+          report.block(m.component, r, m.ctx.name);
+          this.logger.error(`conditional-linked-versions: ${r}`);
+          out[m.p] = blockedStrategy(m.s);
+        }
+        return out;
+      }
 
       const after = report.blockedComponents();
       const held = members.filter(m => after.has(m.component) && !before.has(m.component)).map(m => m.component);
       const reasons = g.blocked.length ? g.blocked : held.length
         ? [`${this.groupName}: linked, but ${held.join(', ')} cannot release: no group release`]
         : [];
-      const out = {...strategiesByPath};
       if (reasons.length) {
         for (const m of members) {
           for (const r of reasons) report.block(m.component, r, m.ctx.name);
