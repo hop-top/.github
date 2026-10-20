@@ -66,11 +66,21 @@ CI runs the same on every PR.
   `generator/requirements.txt` (runtime) and `requirements-dev.txt`
   (runtime + pytest); tests run with `make test-well-known`.
   See [Adding a well-known publisher resource](#adding-a-well-known-publisher-resource)
-- `tests/workflows/` — tests that lift a workflow step's `run:`
-  block out of its `.yml` and run it with bash against a fixture
-  repository (`release-please-preflight`'s checks). Standard library
-  only; run with `make test-workflows`
+- `tests/workflows/` — tests for the workflows and the well-known
+  action. Some lift a step's `run:` block out of its `.yml` and run it
+  with bash against a fixture repository (`release-please-preflight`'s
+  detect and check steps, `release-please-on-push`'s config and
+  tooling-revision steps, `roll-major-tag`'s tag-resolution step); the
+  others read the YAML text for the shape callers depend on
+  (`release-please-on-push`'s inputs, concurrency guard and outputs,
+  the `client-id` token step of every workflow that mints the
+  release-bot token, the well-known action's hash-pinned installs and
+  `python -P`). One test also checks that the docs the preflight's
+  messages cite exist, anchors included. Standard library only (PyYAML
+  and tomllib are used when present); run with `make test-workflows`
 - `docs/` — architecture diagrams + consumer-facing reference
+- `references/` — consumer-facing quick-start, field and secret
+  references, how-to, concepts and troubleshooting
 - `SKILL.md` — consumer-facing skill (how to USE the workflows)
 - `DEVELOPING.md` — this file (how to MODIFY the workflows)
 
@@ -190,6 +200,15 @@ Default to `contents: read`. Add only what's needed:
 `make lint` runs actionlint. CI runs it on every PR; running locally
 is faster.
 
+`.github/actionlint.yaml` carries the two suppressions the lint run
+needs: actionlint's bundled metadata for `actions/create-github-app-token@v3`
+dates from v3.0.0, so it reports `app-id` as required and `client-id`
+as unknown, while v3.1.0 made `client-id` the input and deprecated
+`app-id`. The workflows that mint the release-bot token pass
+`client-id` (a test in `tests/workflows/` enforces it). Remove both
+entries once an actionlint release bundles the v3.1.0 inputs; left
+behind, they would keep hiding a workflow that sets neither input.
+
 ### 6. Diagrams: inline mermaid in markdown
 
 Diagrams are inline ` ```mermaid ` code blocks inside markdown
@@ -213,18 +232,20 @@ Example: adding Java/Maven publishing.
    publish-java:
      needs: parse
      if: needs.parse.outputs.ecosystem == 'java'
-     uses: hop-top/.github/.github/workflows/publish-java.yml@main
+     uses: hop-top/.github/.github/workflows/publish-java.yml@v0
      secrets:
        MAVEN_REGISTRY_TOKEN: ${{ secrets.MAVEN_REGISTRY_TOKEN }}
      with:
        working-directory: ${{ needs.parse.outputs.dir }}
    ```
-3. Add the `mirror` job's `needs:` list to include the new publish
-   job
+3. Add the new publish job to the `mirror` job's `needs:` list and its
+   `needs.publish-java.result != 'failure'` line in the `if:`
 4. Document the secret in [`references/secrets.md`](references/secrets.md)
-5. Bump major tag (consumers pin to `@v1`/`@v2` — adding an
-   ecosystem is technically backward-compatible, but cut a new
-   minor on `v1` to signal it)
+   and the ecosystem in [`references/ecosystems.md`](references/ecosystems.md)
+5. Ship it as a `feat:` commit. Adding an ecosystem is
+   backward-compatible, so release-please cuts a minor and
+   `roll-major-tag` moves `v0` (see [pinning](references/pinning.md)):
+   callers on `@v0` get the new route with no tag to bump by hand
 
 ## Adding a well-known publisher resource
 
@@ -326,4 +347,4 @@ commit.
 - [ ] If a tested workflow step changed, `make test-workflows` green
 - [ ] If `scripts/release-please-target/` changed, `make test-release-please-target` and `make mutate-release-please-target` green
 - [ ] If `.github/actions/well-known-publisher/` changed, `make test-well-known` green
-- [ ] If new ecosystem added, SKILL.md ecosystems section updated
+- [ ] If new ecosystem added, [`references/ecosystems.md`](references/ecosystems.md) updated
