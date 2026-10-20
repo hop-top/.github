@@ -41,15 +41,45 @@ def _write_github_output(name: str, value: str) -> None:
         sys.stdout.write(f"[github-output] {payload}")
 
 
+_CUSTOM_PREFIX = ".well-known/"
+
+
+def _custom_dest(rel: str, out_dir: Path) -> Path:
+    """Map a ``custom[].path`` onto ``out_dir``; refuse anything escaping it.
+
+    The schema already rejects unsafe paths; this re-checks so the writer
+    stays safe on its own (and against symlinks inside ``out_dir``).
+    """
+    if not rel.startswith(_CUSTOM_PREFIX):
+        raise ValueError(f"custom path {rel!r} must start with {_CUSTOM_PREFIX!r}")
+    segments = rel[len(_CUSTOM_PREFIX):].split("/")
+    for seg in segments:
+        if seg in ("", ".", "..") or "\\" in seg or any(
+            ord(ch) < 0x20 or ord(ch) == 0x7F for ch in seg
+        ):
+            raise ValueError(
+                f"custom path {rel!r}: segments must be non-empty, not '.' or "
+                "'..', and free of backslashes and control characters"
+            )
+    dest = out_dir.joinpath(*segments)
+    base = out_dir.resolve()
+    resolved = dest.resolve()
+    if resolved == base or not resolved.is_relative_to(base):
+        raise ValueError(
+            f"custom path {rel!r} resolves outside the output directory {out_dir}"
+        )
+    return dest
+
+
 def _write_custom_entries(custom: list[dict], out_dir: Path) -> list[Path]:
-    """Write each ``custom:`` entry; return the list of written paths."""
+    """Write each ``custom:`` entry; return the list of written paths.
+
+    Every destination is checked before the first write, so one unsafe
+    entry leaves nothing half-written.
+    """
+    targets = [(_custom_dest(entry["path"], out_dir), entry) for entry in custom]
     written: list[Path] = []
-    for entry in custom:
-        rel = entry["path"]
-        # Schema enforces "^\.well-known/" — strip the prefix so the file
-        # lands directly inside the configured output dir.
-        rel_stripped = rel[len(".well-known/"):]
-        dest = out_dir / rel_stripped
+    for dest, entry in targets:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(entry["body"], encoding="utf-8")
         written.append(dest)
