@@ -1113,9 +1113,9 @@ jobs:
                     ;;
                 esac
                 case "$sel" in
-                  -) SEL_STATE=unset; sel="" ;;
-                  =) SEL_STATE=empty; sel="" ;;
-                  *) SEL_STATE=set; sel="${sel#=}" ;;
+                  -) SEL_STATE="unset"; sel="" ;;
+                  =) SEL_STATE="empty"; sel="" ;;
+                  *) SEL_STATE="set"; sel="${sel#=}" ;;
                 esac
                 SELECTOR_KEY=""
                 case "$kind" in
@@ -1386,7 +1386,9 @@ jobs:
               done <<<"$GOMOD_DIRS"
               if [[ "$path" == "." ]]; then
                 for q in $PACKAGES; do
-                  [[ "$q" != "." ]] && ! has_module_file "$q/go.mod" || continue
+                  if [[ "$q" == "." ]] || has_module_file "$q/go.mod"; then
+                    continue
+                  fi
                   for m in package.json Cargo.toml pyproject.toml composer.json; do
                     if has_module_file "$q/$m"; then
                       CANDIDATES="$CANDIDATES$q"$'\t'"$m"$'\n'
