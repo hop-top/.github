@@ -57,9 +57,11 @@ jobs:
             echo "roll=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "roll=true" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "major=v$MAJOR" >> "$GITHUB_OUTPUT"
+          {
+            echo "roll=true"
+            echo "tag=$TAG"
+            echo "major=v$MAJOR"
+          } >> "$GITHUB_OUTPUT"
           echo "Resolved: tag=$TAG, major=v$MAJOR"
 
       - name: Resolve commit SHA for the version tag
