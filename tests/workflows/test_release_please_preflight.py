@@ -267,7 +267,7 @@ class PreflightExtraFilesTests(PreflightFixture, unittest.TestCase):
     def test_typed_entry_without_its_selector_fails(self) -> None:
         self.configure({"sdk/ts": {"component": "ts", "extra-files": [
             {"type": "json", "path": "package.json"},
-            {"type": "xml", "path": "app.xml"}]}})
+            {"type": "xml", "path": "app.xml", "jsonpath": "$.version"}]}})  # xml reads xpath
         self.write("sdk/ts/package.json", '{"version": "1.0.0"}\n')
         self.write("sdk/ts/app.xml", "<app><version>1.0.0</version></app>\n")
         code, lines = self.run_step()
