@@ -101,25 +101,49 @@ See [`docs/architecture.md`](docs/architecture.md) for full diagrams
     publish-py.yml           reusable: PyPI publish (OIDC)
     publish-rs.yml           reusable: crates.io publish
     mirror-subtree.yml       reusable: subtree split + mirror push
+    goreleaser-on-tag.yml    reusable: GoReleaser on a tag (prefixed or plain); uploads to the real tag
+    release-tag-on-merge.yml reusable: tag + label flip for repos that skip GitHub Releases
     spec-commit-rules.yml    reusable: per-spec-version commit isolation (PRs)
     spec-status-line.yml     reusable: channel-derived status lines (release PRs)
     version-check.yml        reusable: release-version literal + spec-path guard
     release-please-on-push.yml    reusable: release-please run (App token, concurrency guard)
     release-please-preflight.yml  reusable: config-shape checks at PR time
-    ci.yml                   self-CI: actionlint + script tests
+    ci.yml                   self-CI: actionlint + every test target
     release-please.yml       self-release: opens release PRs
+    roll-major-tag.yml       self-release: moves vMAJOR on each stable vX.Y.Z tag
+  actions/
+    well-known-publisher/    composite action, experimental: YAML config → /.well-known/* files
+  actionlint.yaml            actionlint suppressions (removal condition in DEVELOPING.md)
+  CODEOWNERS
   release-please-config.json self-release config
   .release-please-manifest.json
 ISSUE_TEMPLATE/              org-default issue forms (bug, feature)
 PULL_REQUEST_TEMPLATE.md     org-default PR template
+CODE_OF_CONDUCT.md, CONTRIBUTING.md, SECURITY.md   org-default community files
 docs/
   architecture.md            full pipeline diagrams + design rationale
+  bootstrap-checklist.md     first-time setup, in order
+  failure-modes.md           symptom → cause → fix, extended
+  browser-playbooks.md       web-side setup walkthroughs (PyPI, Packagist, ...)
+  binaries/                  installable binaries per language (GoReleaser)
+  adr/                       architecture decision records
+  generated-docs.md          generated doc regions + staleness gate
+  release-schedule.md        generated: lanes, channels, cadence
   diagrams/                  Mermaid sources (also embedded inline in docs)
+references/                  consumer reference, split by intent
+  quick-start.md, ecosystems.md, pinning.md, secrets.md
+  how-to/                    task guides (target versioning, polyglot repo, ...)
+  concepts/                  mental model, install model, release bot, ...
+  troubleshooting/           per-language and cross-cutting failures
 profile/
   README.md                  org-page content
 scripts/
+  bootstrap-first-publish.sh local helper for a new package's first publish
   spec/                      Python behind the spec-versioning workflows (+ tests)
   release-please-target/     release-please extension behind versioning-extension (+ tests)
+tests/
+  workflows/                 tests for workflow steps and the well-known action's run blocks
+Makefile                     lint + test targets (see DEVELOPING.md)
 SKILL.md                     consumer-facing how-to
 DEVELOPING.md                collaborator-facing how-to
 ```

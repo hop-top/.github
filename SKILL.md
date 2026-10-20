@@ -25,7 +25,7 @@ PR cuts a `<component>/v<version>` tag, which triggers:
 
 - The matching language-registry publish (npm / PyPI / crates.io / Packagist notify). Go has no publish-from-source step — proxy.golang.org pulls from the tag directly.
 - A read-only mirror push to `<org>/<name>-<lang>` (or `<org>/<name>` for Go, which takes the bare-name slot — see [Repo naming convention](#repo-naming-convention) below).
-- (Optionally) language-specific installable artifacts via `<lang>-on-tag.yml`.
+- (Optionally) installable binaries via `goreleaser-on-tag.yml` (Homebrew, Scoop, WinGet, ...) — see [ship-binaries](references/how-to/ship-binaries.md).
 
 And, for a repo with a spec tree, every pull request is held to the
 spec-versioning rules before release-please ever sees it — see
@@ -52,17 +52,18 @@ spec-versioning rules before release-please ever sees it — see
 | Link an SDK family's versions (only on a new major or a pre-1.0 minor) | [references/how-to/target-versioning.md § Linked family](references/how-to/target-versioning.md#linked-family) |
 | Keep nested packages and Go modules out of a root package's releases (`exclude-paths`) | [docs/bootstrap-checklist.md § 5](docs/bootstrap-checklist.md#5-configure-release-please) |
 | Make a workflow a required check without blocking PRs | [docs/bootstrap-checklist.md § 6b](docs/bootstrap-checklist.md#6b-make-checks-required-last) |
-| Keep a monorepo Release-free (Releases only on mirrors) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
+| Keep a monorepo Release-free (Releases only on mirrors; `release-tag-on-merge` pushes the tags release-please then skips) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
 | Re-trigger a failed publish | [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md) |
 | Understand why a workflow-file fix on main doesn't apply on rerun | [Re-runs use the tag's workflow snapshot, not main](#re-runs-use-the-tags-workflow-snapshot-not-main) |
 | Bootstrap a hand-populated mirror before the first tag | [Bootstrap-mirror gotcha](#bootstrap-mirror-gotcha) |
 | Understand why an umbrella tag (`<umbrella>/vX.Y.Z`) shows all-skipped | [Umbrella / meta-component tags](#umbrella--meta-component-tags) |
 | Re-trigger release-please after sibling-PR conflicts | [references/how-to/retrigger-release-please.md](references/how-to/retrigger-release-please.md) |
-| Ship installable binaries (Homebrew, Scoop, WinGet, …) | [references/how-to/ship-binaries.md](references/how-to/ship-binaries.md) |
+| Ship installable binaries (Homebrew, Scoop, WinGet, …; `goreleaser-on-tag`) | [references/how-to/ship-binaries.md](references/how-to/ship-binaries.md) |
 | Look up a secret name | [references/secrets.md](references/secrets.md) |
 | Publish to npm without tokens (trusted publishing) | [references/how-to/npm-trusted-publishing.md](references/how-to/npm-trusted-publishing.md) |
 | Look up an `ecosystems` field | [references/ecosystems.md](references/ecosystems.md) |
-| Pick the right `@v0` / `@v0.x.y` / `@main` pin | [references/pinning.md](references/pinning.md) |
+| Pick the right `@v0` / `@v0.x.y` / `@main` pin, and see when `roll-major-tag` moves `v0` | [references/pinning.md](references/pinning.md) |
+| Generate `/.well-known/*` files from one YAML config (experimental composite action; `custom:` entries only, no resource generators yet) | [.github/actions/well-known-publisher/README.md](.github/actions/well-known-publisher/README.md) |
 | Understand the overall flow | [references/concepts/mental-model.md](references/concepts/mental-model.md) |
 | Understand why secret names are canonical | [references/concepts/facade-pattern.md](references/concepts/facade-pattern.md) |
 | Understand the install model | [references/concepts/install-model.md](references/concepts/install-model.md) |
