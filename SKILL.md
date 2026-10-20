@@ -109,10 +109,12 @@ names per language (`@hop-top/<name>`, `hop-top-<name>` / `<name>`,
 `hop_top_<name>`, `HopTop\<Name>`, `<name>-ts` …) are in
 [how-to/polyglot-repo.md § Package identities](references/how-to/polyglot-repo.md#package-identities).
 
-**Tag shape is `<component>/v<version>` everywhere**, including
-single-language repos (e.g. `tlc/v1.4.2`, not `v1.4.2`). The
-`tags: ['*/v*']` glob in `publish.yml` requires this — bare
-`v...` tags would never trigger publish.
+**Tag shape is `<component>/v<version>` wherever `publish.yml` runs**,
+single-language repos included (e.g. `mytool/v1.4.2`, not `v1.4.2`).
+The `tags: ['*/v*']` glob in `publish.yml` requires this — bare `v...`
+tags would never trigger publish, and the router reads everything
+before the first `/v` as the component. The one exception is a Go-only
+repo with no `publish.yml` ([below](#tag-shape-glob-trap)).
 
 ## Tag-shape glob trap
 
@@ -137,7 +139,7 @@ There the component is the directory path, `/` included. See
 
 ## Three-way name alignment
 
-For each shipping component, three names must match exactly:
+For each shipping component, keep three names identical:
 
 ```
 release-please-config.json:packages.<path>.component
@@ -146,6 +148,16 @@ publish.yml:ecosystems.<KEY>
         ==
 mirror repo basename (org/<name>)
 ```
+
+The first equality is mechanical: the tag's prefix is the component,
+and `publish-on-tag.yml` looks it up as an `ecosystems` key. The
+second is hop-top's naming convention (see [Repo naming
+convention](#repo-naming-convention)): the router reads `mirror:`
+verbatim and nothing derives it from the component, so a mismatch
+there is not caught and pushes to whatever slug `mirror:` names. Name
+the key after the mirror (`kit-ts`, not `ts`) so the three move
+together. A bare `ts:` key works only if the release-please component
+is literally `ts` (tags `ts/v...`), which breaks the convention.
 
 If the component and the key drift, `publish-on-tag.yml` finds no
 `ecosystems[<component>]` entry for the tag's prefix and treats the
@@ -257,8 +269,8 @@ jobs:
       GH_MIRROR_PAT:        ${{ secrets.GH_MIRROR_PAT }}
     with:
       ecosystems: |
-        ts:  { dir: ts,  ecosystem: ts,  package: "@org/pkg",  mirror: org/pkg-ts }
-        # … py / rs / php / go as needed
+        pkg-ts:  { dir: ts,  ecosystem: ts,  package: "@org/pkg",  mirror: org/pkg-ts }
+        # … pkg-py / pkg-rs / pkg-php / pkg (go) as needed
 ```
 
 ## First publish of a new package

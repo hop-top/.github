@@ -156,9 +156,10 @@ on:
 }
 ```
 
-Component names carry the bare name (`my-pkg-ts`, not `ts`) because
-the component must equal the mirror repo basename — see [SKILL.md §
-Three-way name alignment](../SKILL.md#three-way-name-alignment).
+Component names carry the bare name (`my-pkg-ts`, not `ts`): the
+component must equal its `ecosystems` key, and by convention the
+mirror repo basename too — see [SKILL.md § Three-way name
+alignment](../SKILL.md#three-way-name-alignment).
 
 **A root `.` package lists every nested package in `exclude-paths`.**
 release-please gives the root package every commit in the repository,

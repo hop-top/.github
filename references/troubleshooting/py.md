@@ -214,7 +214,7 @@ base:
 
 ```yaml
 ecosystems: |
-  py:
+  my-pkg-py:
     dir: py
     ecosystem: py
     package: hop-top-my-pkg

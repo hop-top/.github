@@ -96,7 +96,7 @@ from that commit's tree. Three consequences:
 
 ## Three-way name alignment
 
-For each shipping component, three names must match exactly:
+For each shipping component, keep three names identical:
 
 ```
 release-please-config.json:packages.<path>.component
@@ -105,6 +105,11 @@ publish.yml:ecosystems.<KEY>
         ==
 mirror repo basename (org/<name>)
 ```
+
+The first equality is mechanical (the tag's prefix is looked up as an
+`ecosystems` key); the second is hop-top's naming convention, which
+the router never reads from the component ([SKILL.md § Three-way name
+alignment](../../SKILL.md#three-way-name-alignment)).
 
 If the component and the key drift, `publish-on-tag.yml`'s
 `ecosystems[<component>]` lookup finds no entry for the tag's prefix,

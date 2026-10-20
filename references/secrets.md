@@ -93,7 +93,7 @@ jobs:
       # ... other secrets
     with:
       ecosystems: |
-        py:
+        uri-py:
           dir: py
           ecosystem: py
           package: hop-top-uri

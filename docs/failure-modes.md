@@ -129,7 +129,7 @@ Trusted publishing exchange failure:
 
 ```yaml
 ecosystems: |
-  py:
+  my-pkg-py:
     dir: py
     ecosystem: py
     package: my-pkg

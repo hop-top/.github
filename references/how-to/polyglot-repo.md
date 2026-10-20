@@ -43,7 +43,7 @@ this table once; every file below copies from it.
 
 Rules that fall out of the table:
 
-- Component == `ecosystems` key == mirror basename — [SKILL.md § Three-way name alignment](../../SKILL.md#three-way-name-alignment).
+- Component == `ecosystems` key (required: the tag's prefix is looked up as a key) == mirror basename (convention, not checked) — [SKILL.md § Three-way name alignment](../../SKILL.md#three-way-name-alignment).
 - `package-name` (release-please) and `package` (`ecosystems`) both carry the **registry slug** (`hop-top-<name>`, `@hop-top/<name>`, `hop-top/<name>`), never the import name.
 - A second tree in the same language gets a suffix on both the component and the slug: `<name>-core` → crate `hop-top-<name>-core`, mirror `hop-top/<name>-core`.
 
