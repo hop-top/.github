@@ -82,8 +82,9 @@ See [concepts/install-model.md § py: package naming](../concepts/install-model.
 
 ## `__version__` never bumps when the slug differs from the import name
 
-Symptom: `pyproject.toml` says `0.2.0a1` after a release, but
-`<name>/__init__.py` still hard-codes `__version__ = "0.1.0"`.
+Symptom: `pyproject.toml` says `0.2.0-alpha.1` after a release (the
+installed version reads `0.2.0a1`), but `<name>/__init__.py` still
+hard-codes `__version__ = "0.1.0"`.
 
 Cause: `release-type: python` derives the package dir from
 `[project].name` — it looks for `<slug>/__init__.py` and
