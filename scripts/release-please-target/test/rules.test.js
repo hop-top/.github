@@ -494,14 +494,14 @@ test('rule 4: a first release never raises the group target, and never opens 1.0
     assert.deepEqual(g.versions, {kit: '0.6.0-alpha.0', 'kit-go': '0.6.0-alpha.0', 'kit-py': '0.6.0-alpha.0'}, initial);
     assert.deepEqual(g.blocked, [], initial);
   }
-  // independent: a first release on or below the family's line opens at
-  // it (the family's open line here: 0.5.0, above the highest stable 0.4.0)
+  // independent: a first release exactly on the family's line opens at it
+  // (the family's open line here: 0.5.0, above the highest stable 0.4.0)
   const fam = [{component: 'kit', current: '0.5.0-alpha.26', lastStable: '0.4.0', proposed: '0.5.0-alpha.27'}, {component: 'kit-py', current: '0.4.0', lastStable: '0.4.0'}];
-  for (const initial of ['0.5.0-alpha.0', '0.3.0-alpha.0', '0.5.0-beta.0']) assert.deepEqual(onNext([...fam, {component: 'kit-go', proposed: initial}]).blockedMembers, {}, initial);
-  // past it, or not a prerelease (next cuts prereleases only), that member
-  // alone is blocked, with the line to start on (and 1.0 only through
-  // x-open-line)
-  const open = "set its initial-version to 0.5.0-alpha.0, the family's open line";
+  for (const initial of ['0.5.0-alpha.0', '0.5.0-beta.0']) assert.deepEqual(onNext([...fam, {component: 'kit-go', proposed: initial}]).blockedMembers, {}, initial);
+  // past it, below it, or not a prerelease (next cuts prereleases only):
+  // that member alone is blocked, with the line to start on, or to wait
+  // for the family's link (and 1.0 only through x-open-line)
+  const open = "set its initial-version to 0.5.0-alpha.0, the family's open line, or wait for the family to link (it then takes the group version)";
   const one = ', or open 1.0.0 for group kit with x-open-line on next';
   for (const [initial, why] of [
     ['1.0.0', `not a prerelease (next cuts prereleases only): ${open}${one}`],
@@ -509,7 +509,10 @@ test('rule 4: a first release never raises the group target, and never opens 1.0
     ['2.0.0-alpha.0', `past the family's line 0.5.0: ${open}${one}`],
     ['0.9.0-alpha.0', `past the family's line 0.5.0: ${open}`],
     ['0.5.1-alpha.0', `past the family's line 0.5.0: ${open}`],
+    ['0.3.0-alpha.0', `below the family's line 0.5.0: ${open}`],
+    ['0.4.0-alpha.0', `below the family's line 0.5.0: ${open}`],
     ['0.3.0', `not a prerelease (next cuts prereleases only): ${open}`],
+    ['0.5.0', `not a prerelease (next cuts prereleases only): ${open}`],
   ]) {
     const g = onNext([...fam, {component: 'kit-go', proposed: initial}]);
     assert.equal(g.linked, false, initial);
@@ -519,18 +522,27 @@ test('rule 4: a first release never raises the group target, and never opens 1.0
   // the family's line already released stable, no line open above it: the
   // patch line after that stable, never a new minor (it would move the family)
   const released = [{component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.5.1-alpha.0'}, {component: 'kit-py', current: '0.5.0', lastStable: '0.5.0'}];
-  assert.deepEqual(onNext([...released, {component: 'kit-rs', proposed: '0.5.0-alpha.0'}]).blockedMembers, {}, 'below it: opens');
+  const after = "set its initial-version to 0.5.1-alpha.0, the patch line after the family's stable 0.5.0, or wait for the family to link (it then takes the group version)";
+  assert.deepEqual(onNext([...released, {component: 'kit-rs', proposed: '0.5.0-alpha.0'}]).blockedMembers,
+    {'kit-rs': `kit: kit-rs has no release yet and its first release would be 0.5.0-alpha.0, below the family's line 0.5.1: ${after}`});
   assert.deepEqual(onNext([...released, {component: 'kit-rs', proposed: '1.0.0'}]).blockedMembers,
-    {'kit-rs': "kit: kit-rs has no release yet and its first release would be 1.0.0, not a prerelease (next cuts prereleases only): set its initial-version to 0.5.1-alpha.0, the patch line after the family's stable 0.5.0, or open 1.0.0 for group kit with x-open-line on next"});
+    {'kit-rs': `kit: kit-rs has no release yet and its first release would be 1.0.0, not a prerelease (next cuts prereleases only): ${after}${one}`});
   assert.deepEqual(onNext([...released, {component: 'kit-rs', proposed: '0.5.1-alpha.0'}]).blockedMembers, {});
   // a line open above the highest stable is the family's line
   assert.match(onNext([{component: 'kit', current: '0.6.0-alpha.3', lastStable: '0.5.0'}, {component: 'kit-py', current: '0.5.0', lastStable: '0.5.0'}, {component: 'kit-rs', proposed: '0.7.0-alpha.0'}]).blockedMembers['kit-rs'],
-    /past the family's line 0\.6\.0: set its initial-version to 0\.6\.0-alpha\.0, the family's open line$/);
+    /past the family's line 0\.6\.0: set its initial-version to 0\.6\.0-alpha\.0, the family's open line, or wait for the family to link \(it then takes the group version\)$/);
   // a family from 1.0: the same, no 1.0 to open
   const v1 = [{component: 'kit', current: '1.2.0-alpha.3', lastStable: '1.1.0', proposed: '1.2.0-alpha.4'}];
-  assert.deepEqual(onNext([...v1, {component: 'kit-go', proposed: '1.0.0-alpha.0'}]).blockedMembers, {});
-  assert.deepEqual(onNext([...v1, {component: 'kit-go', proposed: '2.0.0-alpha.0'}]).blockedMembers,
-    {'kit-go': "kit: kit-go has no release yet and its first release would be 2.0.0-alpha.0, past the family's line 1.2.0: set its initial-version to 1.2.0-alpha.0, the family's open line"});
+  assert.deepEqual(onNext([...v1, {component: 'kit-go', proposed: '1.2.0-alpha.0'}]).blockedMembers, {});
+  for (const [initial, rel] of [['1.0.0-alpha.0', 'below'], ['2.0.0-alpha.0', 'past']]) {
+    assert.deepEqual(onNext([...v1, {component: 'kit-go', proposed: initial}]).blockedMembers,
+      {'kit-go': `kit: kit-go has no release yet and its first release would be ${initial}, ${rel} the family's line 1.2.0: set its initial-version to 1.2.0-alpha.0, the family's open line, or wait for the family to link (it then takes the group version)`}, initial);
+  }
+  // ... and below the patch line after a stable from 1.0
+  for (const [initial, stableV, line] of [['2.0.0-alpha.0', '2.3.0', '2.3.1'], ['1.0.0-alpha.0', '1.1.0', '1.1.1']]) {
+    assert.deepEqual(onNext([{component: 'kit', current: stableV, lastStable: stableV}, {component: 'kit-go', proposed: initial}]).blockedMembers,
+      {'kit-go': `kit: kit-go has no release yet and its first release would be ${initial}, below the family's line ${line}: set its initial-version to ${line}-alpha.0, the patch line after the family's stable ${stableV}, or wait for the family to link (it then takes the group version)`}, initial);
+  }
   // the stable branch never opens a package (unreleased: skipped, no proposal)
   assert.deepEqual(onMain([{component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.5.1'}, {component: 'kit-go'}]).blockedMembers, {});
 });
@@ -591,12 +603,13 @@ test('rule 4: before 1.0 means the highest stable or line across the members is 
     {component: 'kit-go', current: '0.3.0-alpha.1'},
     {component: 'kit-rs', current: '3.0.0-alpha.0'},
   ]).versions, {kit: '3.0.0-alpha.1', 'kit-go': '3.0.0-alpha.1', 'kit-rs': '3.0.0-alpha.1'});
-  // ... and a first release at 1.0.0-alpha.0 there is no 1.0 to open
+  // ... and a first release at 1.0.0-alpha.0 there has no 1.0 to open: it
+  // is only below the family's line
   assert.deepEqual(onNext([
     {component: 'kit', current: '1.2.0-alpha.3', lastStable: '1.1.0', proposed: '1.2.0-alpha.4'},
     {component: 'kit-go', current: '0.3.0-alpha.1'},
     {component: 'kit-new', proposed: '1.0.0-alpha.0'},
-  ]).blockedMembers, {});
+  ]).blockedMembers, {'kit-new': "kit: kit-new has no release yet and its first release would be 1.0.0-alpha.0, below the family's line 1.2.0: set its initial-version to 1.2.0-alpha.0, the family's open line, or wait for the family to link (it then takes the group version)"});
   // a family that opened 1.0 through x-open-line (lines 1.0.0-alpha.N, no
   // stable from 1.0) is on the 1.0 line, a late 0.x member or not: a new
   // member's first release at 1.0.0-alpha.0 opens, or takes the group version

@@ -263,7 +263,8 @@ group's target. When the family links in that run, the member takes the
 group's version instead (kit opening `0.6.0` makes a new kit-rs
 `0.6.0-alpha.0`, whatever its `initial-version`).
 
-Otherwise it opens on its own, so it must start on the family's line:
+Otherwise it opens on its own, so it must start exactly on the
+family's line, or wait for the family to link:
 
 | The family | A new member starts at | Example |
 |---|---|---|
@@ -277,14 +278,16 @@ either: that would move the whole family because a member joined. Cut
 at that patch line, the member's rc is an unlinked pre-1.0 patch on
 `main`, cut on its own.
 
-On `next`, a first release past that line (`0.9.0-alpha.0` in a `0.5`
-family, `1.0.0-alpha.0`) or not a prerelease at all (`0.3.0`, or the
+On `next`, a first release off that line is **blocked**, that member
+alone (the others still release), before 1.0 and after: past it
+(`0.9.0-alpha.0` in a `0.5` family, `1.0.0-alpha.0`), below it
+(`0.3.0-alpha.0` in a `0.5` family, `0.5.0-alpha.0` beside a stable
+`0.5.0`, `2.0.0-alpha.0` in a family stable at `2.3.0`, `1.0.0-alpha.0`
+in one at `1.1.0`: at rc on `main` it would link the family at its own
+line and block it), or not a prerelease at all (`0.3.0`, or the
 `1.0.0` release-please opens when `initial-version` is unset: go, node,
-simple) is **blocked**, that member alone (the others still release),
-and the message names the line to set. One below it (`0.3.0-alpha.0`)
-opens at it; the family's next link moves it up (until then, do not
-promote it to rc: at rc on `main` below the family's stable it would
-link the family at its own line and block it). Set `initial-version`
+simple). The message names the line to set, or the member waits until
+the family links and takes the group version then. Set `initial-version`
 for every new linked member; python and rust ignore it and open at
 `0.1.0`
 ([seed the manifest](prerelease-channel.md#release-type-python-does-not-honor-initial-version)
@@ -538,7 +541,7 @@ From `versioning: "prerelease"` with `Release-As` cuts:
 | `feat on maintenance branch release/x.y: patch only` | a feature landed on a maintenance line | revert it there; ship it from `next` |
 | `… already released x.y.z as stable, at or past group target …` | a linked member is already stable at the target (cut on its own before the family linked, on `next` or `main`) | owner decision: re-seed the member or the group |
 | `… is already at …, past group target …, and a member never moves backwards` | a linked member previews a later line than the family links at (its own patch line, a minor from 1.0, a line from 1.0 its `initial-version` opened), so the group would move it back | on `next`, open that line for the group (`promote.js open-line x.y.z --group <group>`; the member already on it is left as it is), then the family links at it |
-| `… has no release yet and its first release would be …, past the family's line …` (or `not a prerelease`) | a new linked member with no `initial-version` (release-please opens `1.0.0`), or one off the family's line | set its `initial-version` to the line the message names (`0.5.0-alpha.0` on an open line, `0.5.1-alpha.0` after a stable `0.5.0`); for 1.0, open it for the group with `x-open-line` |
+| `… has no release yet and its first release would be …, past the family's line …` (or `below …`, `not a prerelease`) | a new linked member with no `initial-version` (release-please opens `1.0.0`), or one off the family's line | set its `initial-version` to the line the message names (`0.5.0-alpha.0` on an open line, `0.5.1-alpha.0` after a stable `0.5.0`), or wait for the family to link; for 1.0, open it for the group with `x-open-line` |
 | `… has no stable and would cut 1.0.0 from …, a line from 1.0 its initial version opened` | `main` would ship a linked member's 1.0 that no `x-open-line` opened, the family still before 1.0 | on `next`, open that line for the group (`promote.js open-line x.y.z --group <group>`), promote the family via beta to rc, merge again |
 | `plugins has no "target-context"` | config lists target packages without the plugin | add it, first |
 | `prerelease-type '…': every line starts on alpha.0` | a channel set through `prerelease-type` | `alpha.0`; promote with `promote.js channel` |

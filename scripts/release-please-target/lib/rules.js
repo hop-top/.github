@@ -320,9 +320,10 @@ function toRc(members, L) {
  *
  * A member's first release never raises the target (it takes the
  * group's version when the group links); independent, on the
- * prerelease branch, it is blocked when it is not a prerelease or is
- * past the line a new member starts on: the family's line open above its
- * highest stable, or else the patch line after that stable.
+ * prerelease branch, it is blocked when it is not a prerelease or is not
+ * on the line a new member starts on (past or below it): the family's
+ * line open above its highest stable, or else the patch line after that
+ * stable.
  *
  * 1.0 opens only through x-open-line. While the family is before 1.0
  * (the highest stable or line across the members at 0.x; a line from 1.0
@@ -365,19 +366,20 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
     // Independent, but a member alone is blocked when its own release
     // would start it off the family's line, or open 1.0 for a family
     // before 1.0: a first release (its initial version, on the
-    // prerelease branch) that is not a prerelease or is past the line a
-    // new member starts on; the stable cut of a line from 1.0 its initial
+    // prerelease branch) that is not a prerelease or not on the line a
+    // new member starts on (past or below it: it waits for the family's
+    // link otherwise); the stable cut of a line from 1.0 its initial
     // version opened.
     const blockedMembers = {};
     for (const m of M) {
       if (!m.proposed) continue;
       if (!m.current) {
         if (kind !== 'prerelease') continue;
-        const past = !!advised && cmpCore(m.proposed, advised) > 0;
-        if (m.proposed.pre && !past) continue;
-        const why = m.proposed.pre ? `past the family's line ${fmt(advised)}` : `not a prerelease (${on} cuts prereleases only)`;
+        const off = advised ? cmpCore(m.proposed, advised) : 0;
+        if (m.proposed.pre && off === 0) continue;
+        const why = !m.proposed.pre ? `not a prerelease (${on} cuts prereleases only)` : `${off > 0 ? 'past' : 'below'} the family's line ${fmt(advised)}`;
         const one = preOne && m.proposed.major >= 1 ? `, or open 1.0.0 for group ${groupName} with x-open-line on ${on}` : '';
-        blockedMembers[m.component] = `${groupName}: ${m.component} has no release yet and its first release would be ${fmt(m.proposed)}, ${why}: set its initial-version to ${advice}${one}`;
+        blockedMembers[m.component] = `${groupName}: ${m.component} has no release yet and its first release would be ${fmt(m.proposed)}, ${why}: set its initial-version to ${advice}, or wait for the family to link (it then takes the group version)${one}`;
       } else if (kind === 'stable' && fromInitial(m)) {
         blockedMembers[m.component] = `${groupName}: ${m.component} has no stable and would cut ${fmt(m.proposed)} from ${fmt(m.current)}, a line from 1.0 its initial version opened, but the family is before 1.0 (at ${fmt(highest)}): 1.0 opens for the family only through x-open-line (open ${fmt(core(m.current))} for group ${groupName} with x-open-line on ${on})`;
       }
