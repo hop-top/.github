@@ -1,7 +1,7 @@
 """CLI entrypoint: ``python -m well_known_publisher --config ... --output-dir ...``.
 
 Loads the config, runs every registered generator whose key appears under
-``resources:``, writes any ``custom:`` entries verbatim, then emits
+``resources:``, writes any ``custom:`` entries, then emits
 ``files_written`` and ``manifest`` outputs to ``$GITHUB_OUTPUT``.
 """
 

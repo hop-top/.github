@@ -1,8 +1,31 @@
 # well-known publisher
 
-Composite action that generates files under `/.well-known/*` from a single
-YAML config and (optionally, in a separate workflow step) deploys them to a
-commit, GitHub Pages, or a Cloudflare Worker.
+> **Experimental.** Inputs, outputs and the config schema may change in any
+> release until this notice goes away. `@v0` (used below) follows every
+> release and picks such changes up; pin an exact release tag (`@v0.x.y`)
+> or a commit SHA to choose when you take them.
+
+Composite action that turns a single YAML config into files under
+`/.well-known/*`.
+
+**Works today**
+
+- Loading the config: YAML parse, JSON Schema validation with
+  line-numbered `::error::` annotations, allowlisted env interpolation
+  (see [Environment interpolation](#environment-interpolation)).
+- Writing `custom:` entries (after interpolation) into the output
+  directory.
+- The `files_written` and `manifest` outputs.
+- The generator registry that resource modules plug into.
+
+**Not yet**
+
+- Resource generators: none exist, so `resources:` accepts no keys yet
+  (security.txt, openid-configuration, assetlinks.json and friends are
+  the intended first ones).
+- Deploying: `deploy`, `worker_endpoint` and `custom[].content_type` are
+  validated but nothing acts on them. Publishing the generated files
+  (commit, GitHub Pages, a Worker) is up to the caller workflow.
 
 ## Inputs
 
@@ -35,28 +58,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: hop-top/.github/.github/actions/well-known-publisher@main
+      - uses: hop-top/.github/.github/actions/well-known-publisher@v0
         with:
           config_path: .github/well-known.yaml
           output_dir: dist/.well-known
 ```
 
-Deploy modes (commit / pages / worker) are wired by the caller workflow; the
-action itself only generates files into `output_dir`.
+The action only generates files into `output_dir`; any deploy is a later
+step of the caller workflow.
 
 ## Config skeleton
 
 ```yaml
 version: 1
 output_dir: dist/.well-known
-deploy: commit   # or 'pages', 'worker', or omitted for generate-only
-resources: {}    # per-resource generators register their own keys
+deploy: commit   # or 'pages', 'worker'; validated only, see "Not yet"
+resources: {}    # no resource generators exist yet; must stay empty
 custom:
   - path: .well-known/example.txt
     content_type: text/plain
     body: |
       hello
 ```
+
+Each `custom[].path` starts with `.well-known/`; the file lands at
+`<output_dir>/<rest of the path>`. Segments must be non-empty, must not be
+`.` or `..`, and must not contain backslashes or control characters, and
+the resolved target must stay inside `output_dir` (symlinks included).
+An unsafe path fails the run before any `custom:` file is written.
 
 Per-resource keys under `resources:` are added by individual generator
 modules. See `generator/src/well_known_publisher/resources/` and the JSON

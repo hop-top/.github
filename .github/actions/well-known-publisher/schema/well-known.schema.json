@@ -26,7 +26,7 @@
       "format": "uri"
     },
     "resources": {
-      "description": "Per-resource generator configs. Future generators add a key here via the registry plus a $defs entry.",
+      "description": "Per-resource generator configs. Each resource generator adds its registry name here plus a $defs entry; none exist yet, so no keys are accepted.",
       "type": "object",
       "additionalProperties": false,
       "properties": {}
