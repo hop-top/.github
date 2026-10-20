@@ -53,7 +53,7 @@ gh repo create <org>/<basename>-php --public --description "READ-ONLY MIRROR of 
 gh repo create <org>/<basename>     --public --description "READ-ONLY MIRROR of <org>/<basename> go"   # note: no -go suffix; go module URL = repo path
 ```
 
-The mirror jobs (`mirror-subtree.yml`) auto-flip these to read-only after the first sync. Don't push to them manually.
+The mirror jobs (`mirror-subtree.yml`) create a missing mirror and, after every sync, turn off its issues, wiki, projects and discussions (the repo is deliberately not archived: it is the install slot). Don't push to them manually.
 
 ## 3. Register the package on each external registry
 
