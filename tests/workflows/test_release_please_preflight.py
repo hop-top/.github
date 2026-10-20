@@ -732,6 +732,226 @@ class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
         self.assertNoLine(lines, "[BREAK]")
 
 
+class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
+    """Config that release-please accepts but that does not do what it
+    says: a top-level linked-versions key, a nested module outside its
+    parent's exclude-paths, a stale release-as. Warnings only: the default
+    fail-on (breaking) never fails a caller on them."""
+
+    PRE = {"prerelease": True, "prerelease-type": "alpha.0", "versioning": "prerelease",
+           "bump-minor-pre-major": True}
+
+    def setup_repo(self, config: dict, seeds: dict | None = None) -> None:
+        self.write(CONFIG, json.dumps(config))
+        self.write(MANIFEST, json.dumps(seeds or {p: "0.5.0-alpha.3" for p in config["packages"]}))
+        self.write(".github/workflows/release-please.yml", PreflightExtraFilesTests.CALLER)
+
+    def warns(self, lines: list[str]) -> list[str]:
+        return [x for x in lines if x.startswith("[WARN]")]
+
+    def git(self, *args: str) -> None:
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
+                       cwd=self.repo, check=True, capture_output=True,
+                       env={"PATH": os.environ["PATH"], "HOME": str(self.tmp),
+                            "GIT_CONFIG_NOSYSTEM": "1"})
+
+    def gomod(self, *dirs: str) -> None:
+        for d in dirs:
+            self.write(f"{d}/go.mod" if d != "." else "go.mod", f"module example.com/{d}\n")
+
+    # --- top-level linked-versions ----------------------------------------------
+
+    def test_top_level_linked_versions_warns(self) -> None:
+        packages = {".": {"component": "kit", **self.PRE}, "sdk/ts": {"component": "kit-ts", **self.PRE}}
+        self.setup_repo({"linked-versions": [{"group": "kit", "components": ["kit", "kit-ts"]}],
+                         "packages": packages})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  top-level linked-versions in .github/release-please-config.json is ignored "
+            "— release-please reads linked groups only from plugins"])
+        # The plugin form is what release-please reads.
+        self.setup_repo({"plugins": [{"type": "linked-versions", "groupName": "kit",
+                                      "components": ["kit", "kit-ts"]}], "packages": packages})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [])
+
+    def test_x_keys_pass_silently(self) -> None:
+        self.setup_repo({"x-linked-versions": [{"group": "kit", "components": ["kit"]}],
+                         "x-notes": "release policy: see RELEASING.md",
+                         "packages": {".": {"component": "kit", "x-owner": "@hop-top/release",
+                                            **self.PRE}}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [])
+        self.assertNoLine(lines, "[BREAK]")
+
+    # --- nested modules vs exclude-paths ----------------------------------------
+
+    def kit_go(self, excludes: list[str]) -> dict:
+        return {"packages": {
+            ".": {"component": "kit", "release-type": "go", "exclude-paths": excludes, **self.PRE},
+            "extensions/mcp-tasks": {"component": "mcp-tasks", "release-type": "go", **self.PRE},
+            "incubator/qmochi": {"component": "qmochi", "release-type": "go", **self.PRE},
+            "sdk/py": {"component": "kit-py", "release-type": "python", **self.PRE}}}
+
+    def test_nested_module_outside_the_root_exclude_paths_warns(self) -> None:
+        # poly-kit before its fix: mcp-tasks commits released kit too.
+        self.gomod(".", "extensions/mcp-tasks", "incubator/qmochi")
+        self.write("sdk/py/pyproject.toml", '[project]\nname = "hop-top-kit"\n')
+        self.setup_repo(self.kit_go(["incubator", "sdk/py"]))
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  package .: nested module extensions/mcp-tasks (own go.mod) is not in its "
+            "exclude-paths — commits under extensions/mcp-tasks also release package ."])
+        self.assertLine(lines, '[FIX]   add "extensions/mcp-tasks" to .packages.".".'
+                               '"exclude-paths" in .github/release-please-config.json')
+
+        self.setup_repo(self.kit_go(["/extensions/mcp-tasks/", "incubator", "sdk/py"]))
+        code, lines = self.run_step()
+        self.assertEqual(self.warns(lines), [])
+        self.assertLine(lines, "[OK]    no nested module releases its parent package")
+
+        # A nested package with a manifest of its own (here Python) counts too.
+        self.setup_repo(self.kit_go(["extensions/mcp-tasks", "incubator"]))
+        code, lines = self.run_step()
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  package .: nested module sdk/py (own pyproject.toml) is not in its "
+            "exclude-paths — commits under sdk/py also release package ."])
+
+    def test_unreleased_nested_go_module_warns_but_not_under_testdata_or_vendor(self) -> None:
+        self.gomod(".", "tools", "internal/x/testdata/mod", "vendor/example.com/y",
+                   "node_modules/z")
+        self.setup_repo({"packages": {".": {"component": "kit", "release-type": "go", **self.PRE}}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  package .: nested module tools (own go.mod) is not in its "
+            "exclude-paths — commits under tools also release package ."])
+        # top-level exclude-paths is every package's default
+        self.setup_repo({"exclude-paths": ["tools"],
+                         "packages": {".": {"component": "kit", "release-type": "go", **self.PRE}}})
+        self.assertEqual(self.warns(self.run_step()[1]), [])
+
+    def test_nested_module_under_another_package(self) -> None:
+        # tlc's plugins/*: their commits land on `plugins`, the deepest package.
+        self.gomod(".", "plugins", "plugins/foo")
+
+        def config(plugin_excludes: list[str], foo_is_a_package: bool = False) -> dict:
+            packages = {".": {"component": "tlc", "release-type": "go", "exclude-paths": ["plugins"], **self.PRE},
+                        "plugins": {"component": "plugins", "release-type": "go",
+                                    "exclude-paths": plugin_excludes, **self.PRE}}
+            if foo_is_a_package:
+                packages["plugins/foo"] = {"component": "foo", "release-type": "go", **self.PRE}
+            return {"packages": packages}
+
+        expected = ["[WARN]  package plugins: nested module plugins/foo (own go.mod) is not in its "
+                    "exclude-paths — commits under plugins/foo also release package plugins"]
+        self.setup_repo(config([]))
+        self.assertEqual(self.warns(self.run_step()[1]), expected)
+        # exclude-paths are repo-root-relative: a package-relative one excludes nothing
+        self.setup_repo(config(["foo"]))
+        self.assertEqual(self.warns(self.run_step()[1]), expected)
+        self.setup_repo(config(["plugins/foo"]))
+        self.assertEqual(self.warns(self.run_step()[1]), [])
+        # a nested package takes its own commits (release-please: deepest path wins)
+        self.setup_repo(config([], foo_is_a_package=True))
+        self.assertEqual(self.warns(self.run_step()[1]), [])
+
+    def test_aggregate_root_is_not_checked(self) -> None:
+        # release-type simple: an umbrella meant to move with everything below it.
+        self.gomod("go")
+        self.write("ts/package.json", '{"name": "x", "version": "0.5.0-alpha.3"}\n')
+        self.setup_repo({"packages": {
+            ".": {"component": "poly", "release-type": "simple", **self.PRE},
+            "go": {"component": "go", "release-type": "go", **self.PRE},
+            "ts": {"component": "ts", "release-type": "node", **self.PRE}}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [])
+
+    # --- stale release-as -------------------------------------------------------
+
+    def test_release_as_not_above_the_manifest_is_stale(self) -> None:
+        cases = [  # (release-as, manifest, stale)
+            ("0.5.0-alpha.3", "0.5.0-alpha.3", True),
+            ("0.4.0", "0.5.0-alpha.3", True),
+            ("0.5.0-alpha.0", "0.5.0-alpha.3", True),
+            ("0.5.0-rc.1", "0.5.0", True),
+            ("1.0.0-alpha", "1.0.0-alpha.1", True),
+            ("0.5.0-alpha.10", "0.5.0-alpha.9", False),
+            ("0.5.0-beta", "0.5.0-alpha.3", False),
+            ("0.5.0", "0.5.0-rc.2", False),
+            ("1.0.0-alpha.beta", "1.0.0-alpha.1", False),
+            ("0.10.0-alpha.0", "0.9.1", False),
+        ]
+        for ra, seed, stale in cases:
+            # a stable seed is a stable package's (check 5 fails a prerelease one)
+            channel = self.PRE if "-" in seed else {}
+            self.setup_repo({"packages": {"sdk/ts": {"component": "kit-ts", "release-as": ra, **channel}}},
+                            seeds={"sdk/ts": seed})
+            code, lines = self.run_step()
+            self.assertEqual(code, 0, "\n".join(lines))
+            if stale:
+                self.assertEqual(self.warns(lines), [
+                    f"[WARN]  package sdk/ts release-as '{ra}' is stale (not above the manifest's "
+                    f"{seed}) — release-please keeps proposing {ra} until the pin is removed"], ra)
+            else:
+                self.assertEqual(self.warns(lines), [], ra)
+                self.assertLine(lines, f"[OK]    package sdk/ts: release-as '{ra}' is above the "
+                                       f"manifest's {seed}")
+
+    def test_release_as_whose_tag_exists_is_stale(self) -> None:
+        self.git("init", "-q")
+        self.git("commit", "-q", "--allow-empty", "-m", "init")
+        self.git("tag", "kit-ts/v0.6.0-alpha.0")
+        self.git("tag", "v0.7.0")
+        pkg = {"component": "kit-ts", "release-as": "0.6.0-alpha.0", **self.PRE}
+        self.setup_repo({"tag-separator": "/", "packages": {"sdk/ts": pkg}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  package sdk/ts release-as '0.6.0-alpha.0' is stale (tag kit-ts/v0.6.0-alpha.0 "
+            "exists) — release-please keeps proposing 0.6.0-alpha.0 until the pin is removed"])
+        # default separator '-': kit-ts-v0.6.0-alpha.0, not tagged
+        self.setup_repo({"packages": {"sdk/ts": pkg}})
+        self.assertEqual(self.warns(self.run_step()[1]), [])
+        # include-component-in-tag false (on the package, over the top level): v<version>
+        self.setup_repo({"include-component-in-tag": True, "packages": {"sdk/ts": {
+            **pkg, "release-as": "0.7.0", "include-component-in-tag": False}}})
+        self.assertEqual(self.warns(self.run_step()[1]), [
+            "[WARN]  package sdk/ts release-as '0.7.0' is stale (tag v0.7.0 exists) — "
+            "release-please keeps proposing 0.7.0 until the pin is removed"])
+        # both reasons on one line
+        self.setup_repo({"packages": {"sdk/ts": {**pkg, "release-as": "0.7.0",
+                                                 "include-component-in-tag": False}}},
+                        seeds={"sdk/ts": "0.7.0"})
+        self.assertEqual(self.warns(self.run_step()[1]), [
+            "[WARN]  package sdk/ts release-as '0.7.0' is stale (not above the manifest's 0.7.0; "
+            "tag v0.7.0 exists) — release-please keeps proposing 0.7.0 until the pin is removed"])
+
+    def test_top_level_release_as_counts_and_target_packages_stay_with_check_4b(self) -> None:
+        self.setup_repo({"release-as": "0.5.0-alpha.3", "packages": {
+            ".": {"component": "kit", **self.PRE},
+            "sdk/ts": {"component": "kit-ts", **self.PRE, "release-as": "0.6.0-alpha.0"}}})
+        code, lines = self.run_step()
+        self.assertEqual(code, 0, "\n".join(lines))
+        self.assertEqual(self.warns(lines), [
+            "[WARN]  package . release-as '0.5.0-alpha.3' is stale (not above the manifest's "
+            "0.5.0-alpha.3) — release-please keeps proposing 0.5.0-alpha.3 until the pin is removed"])
+        target = {**PreflightTargetVersioningTests.TARGET, "component": "kit", "release-as": "0.5.0-alpha.3"}
+        self.setup_repo({"plugins": [{"type": "target-context"}], "packages": {".": target}})
+        self.write(".github/workflows/release-please.yml", PreflightTargetVersioningTests.CALLER)
+        code, lines = self.run_step()
+        self.assertEqual(code, 1, "\n".join(lines))
+        self.assertLine(lines, "[BREAK] package . sets release-as '0.5.0-alpha.3' — target "
+                               "versioning picks the version")
+        self.assertNoLine(lines, "[WARN]  package . release-as")
+
+
 class PreflightPublishWorkflowTests(PreflightFixture, unittest.TestCase):
     """Whether a missing publish.yml is a misconfiguration.
 
