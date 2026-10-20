@@ -52,8 +52,8 @@ jobs:
             exit 1
           fi
           MAJOR="${BASH_REMATCH[1]}"
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::notice::tag '$TAG' is not a stable vMAJOR.MINOR.PATCH (prerelease or build metadata): v$MAJOR stays where it is"
+          if ! [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::notice::tag '$TAG' is not a stable vMAJOR.MINOR.PATCH (prerelease, build metadata or leading zeros): v$MAJOR stays where it is"
             echo "roll=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
