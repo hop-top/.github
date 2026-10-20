@@ -692,12 +692,26 @@ test('rule 4: a stable-branch pre-1.0 minor links like a major: every member at 
   ]);
   assert.equal(x.linked, true);
   assert.equal(x.versions, undefined);
-  assert.match(x.blocked[0], /^kit: linked at 0\.6\.1 by kit@0\.6\.1, but kit-py is at 0\.6\.1-alpha\.1: a linked release is cut only when every member is at an rc of 0\.6\.1 \(promote kit-py via beta to rc on next first\)$/);
+  assert.match(x.blocked[0], /^kit: linked at 0\.6\.1 by kit@0\.6\.1, kit-rs@0\.6\.1, but kit-py is at 0\.6\.1-alpha\.1: a linked release is cut only when every member is at an rc of 0\.6\.1 \(promote kit-py via beta to rc on next first\)$/);
   assert.deepEqual(stable([
     {component: 'kit', current: '0.6.1-rc.0', lastStable: '0.5.0', proposed: '0.6.1'},
     {component: 'kit-py', current: '0.6.1-rc.2', lastStable: '0.5.0', proposed: '0.6.1'},
     {component: 'kit-rs', current: '0.6.1-rc.0', proposed: '0.6.1'},
   ]).versions, {kit: '0.6.1', 'kit-py': '0.6.1', 'kit-rs': '0.6.1'});
+  // a member with no stable is measured from the family's highest stable
+  // when its line is above it: kit-rs at 0.6.1-rc.0 beside stable 0.5.0
+  // links (it does not cut 0.6.1 alone), a 0.5.1-rc.0 is a patch
+  const rs = stable([
+    {component: 'kit', current: '0.6.1-alpha.1', lastStable: '0.5.0'},
+    {component: 'kit-py', current: '0.6.1-alpha.1', lastStable: '0.5.0'},
+    {component: 'kit-rs', current: '0.6.1-rc.0', proposed: '0.6.1'},
+  ]);
+  assert.equal(rs.linked, true);
+  assert.match(rs.blocked[0], /^kit: linked at 0\.6\.1 by kit-rs@0\.6\.1, but kit is at 0\.6\.1-alpha\.1, kit-py is at 0\.6\.1-alpha\.1: a linked release is cut only when every member is at an rc of 0\.6\.1 /);
+  assert.equal(stable([
+    {component: 'kit', current: '0.5.0', lastStable: '0.5.0'},
+    {component: 'kit-rs', current: '0.5.1-rc.0', proposed: '0.5.1'},
+  ]).linked, false);
   // a pre-1.0 patch (a hotfix on main) stays per member
   const p = stable([
     {component: 'kit', current: '0.5.0', lastStable: '0.5.0', proposed: '0.5.1'},

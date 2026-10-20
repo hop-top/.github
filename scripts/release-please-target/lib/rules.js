@@ -355,8 +355,12 @@ function resolveGroup({kind, groupName = 'group', members, prereleaseBranch}) {
   // opening 1.0 links the family. It never links the family nor raises
   // its target.
   const fromInitial = m => preOne && !stableOf(m) && !!(m.current && m.current.pre) && m.current.major >= 1;
+  // On a stable branch a member with no stable is measured from the
+  // family's highest stable when its line is above it (0.6.1 beside a
+  // stable 0.5.0 opens a minor line, not a patch of 0.6.0).
+  const measuredFrom = m => m.lastStable || (kind === 'stable' && highestStable && cmpCore(m.current, highestStable) > 0 ? highestStable : undefined);
   const triggers = M.filter(m => m.proposed && m.current && !fromInitial(m) &&
-    startsLinkedLine({kind, current: m.current, proposed: m.proposed, lastStable: m.lastStable}));
+    startsLinkedLine({kind, current: m.current, proposed: m.proposed, lastStable: measuredFrom(m)}));
   if (!triggers.length) {
     // Independent, but a member alone is blocked when its own release
     // would start it off the family's line, or open 1.0 for a family

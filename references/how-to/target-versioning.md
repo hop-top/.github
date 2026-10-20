@@ -176,9 +176,12 @@ A `conditional-linked-versions` group links only when one member's
 proposal opens a new major (always), or a new minor line while the
 family is before 1.0 (major 0), on the prerelease branch and on the
 stable branch alike. On the stable branch the cut is measured against
-the member's last stable (with none, a `0.y.0` or `x.0.0` cut links):
-`1.0.0` from 0.9.x, `0.6.0` from 0.5.x or from no stable, and `0.6.1`
-from 0.5.x (a minor line opened at a patch by `x-open-line`). From 1.0 a
+the member's last stable; with none, against the family's highest
+stable when the member's line is above it, else the smallest stable
+its rc can stem from (a `0.y.0` or `x.0.0` cut links): `1.0.0` from
+0.9.x, `0.6.0` from 0.5.x or from no stable, and `0.6.1` from 0.5.x
+(a minor line opened at a patch by `x-open-line`), also for a member
+with no stable in a family stable at 0.5.x. From 1.0 a
 new minor is independent, and a patch never links (a `0.5.1` hotfix
 on `main` is cut for that member alone). A member opening a line
 through a record (promotion or `x-open-line`) links the same way.
@@ -248,7 +251,8 @@ When it links:
   0.6.1 --group kit`; kit-rs, already on it, is left as it is) links
   the family there, on `main` too: with `x-open-line 0.6.1` the family
   moves to `0.6.1-alpha.1` on `next`, and `main` holds every member
-  until all five are at `0.6.1-rc.N`, then cuts `0.6.1` in one group
+  until all five are at `0.6.1-rc.N`, whichever reaches rc first
+  (kit-rs, with no stable, included), then cuts `0.6.1` in one group
   PR.
 
 #### Initial version of a linked member

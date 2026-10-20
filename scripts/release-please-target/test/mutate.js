@@ -233,6 +233,9 @@ const MUTATIONS = [
   {id: 'M71', what: 'a linked member blocked alone is not reported (the run passes, its stale PR stays open)',
     file: 'lib/install.js', from: '          report.block(m.component, r, m.ctx.name);\n          this.logger.error(', to: '          this.logger.error(',
     tests: ['test/runner.test.js', 'test/scenarios.test.js']},
+  {id: 'M72', what: 'on a stable branch a no-stable member is measured from below its own line (its 0.6.1 beside a stable 0.5.0 is cut alone)',
+    file: 'lib/rules.js', from: "const measuredFrom = m => m.lastStable || (kind === 'stable' && highestStable && cmpCore(m.current, highestStable) > 0 ? highestStable : undefined);", to: 'const measuredFrom = m => m.lastStable;',
+    tests: ['test/rules.test.js', 'test/scenarios.test.js']},
 ];
 
 function copy() {
