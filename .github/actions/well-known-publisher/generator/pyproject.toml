@@ -8,7 +8,10 @@ version = "0.1.0"
 description = "Generate /.well-known/* resource files from a single YAML config."
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{ name = "hop-top" }]
+authors = [
+  { name = "Idea Crafters LLC", email = "open@ideacrafters.com" },
+  { name = "Jad Bitar" },
+]
 keywords = ["well-known", "rfc8615", "github-actions"]
 classifiers = [
     "Programming Language :: Python :: 3",
