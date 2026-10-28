@@ -53,6 +53,11 @@ on:
             target-prefix    path on the mirror to publish under (e.g.
                              "specs/v0.1"); empty publishes at the mirror
                              root, which is the default
+            allow-mirror-redirect
+                             true lets the mirror push follow a rename /
+                             transfer redirect on `mirror` (default false:
+                             a redirected slug fails the mirror job). A
+                             slug that resolves to this repo always fails
             package          registry name (informational)
             test-command     override default test step
             build-command    override default build step (ts, py)
@@ -110,6 +115,7 @@ jobs:
       ecosystem: ${{ steps.lookup.outputs.ecosystem }}
       mirror: ${{ steps.lookup.outputs.mirror }}
       target_prefix: ${{ steps.lookup.outputs.target_prefix }}
+      allow_mirror_redirect: ${{ steps.lookup.outputs.allow_mirror_redirect }}
       package: ${{ steps.lookup.outputs.package }}
       test_command: ${{ steps.lookup.outputs.test_command }}
       build_command: ${{ steps.lookup.outputs.build_command }}
@@ -153,7 +159,8 @@ jobs:
                   f"::notice::Component {comp!r} has no ecosystem entry; "
                   f"skipping publish (umbrella component)\n"
               )
-              for k in ("dir", "ecosystem", "mirror", "target_prefix", "package"):
+              for k in ("dir", "ecosystem", "mirror", "target_prefix", "package",
+                        "allow_mirror_redirect"):
                   print(f"{k}=")
               sys.exit(0)
           # Fields: `dir`, `ecosystem`, `mirror` are required by downstream jobs;
@@ -174,6 +181,13 @@ jobs:
               ("pypi-auth",        "pypi_auth"),
           ]:
               print(f"{dst}={entry.get(src, '')}")
+          # Booleans: YAML `true` arrives as Python True; emit lowercase so
+          # the `== 'true'` gates downstream read it.
+          for src, dst in [
+              ("allow-mirror-redirect", "allow_mirror_redirect"),
+          ]:
+              v = entry.get(src, False)
+              print(f"{dst}={str(v).lower() if isinstance(v, bool) else str(v).strip().lower()}")
           PY
 
       - id: guard
@@ -247,6 +261,7 @@ jobs:
       target-repo: ${{ needs.parse.outputs.mirror }}
       target-prefix: ${{ needs.parse.outputs.target_prefix }}
       tag: ${{ needs.parse.outputs.version }}
+      allow-target-redirect: ${{ needs.parse.outputs.allow_mirror_redirect == 'true' }}
       homepage: ${{ inputs.homepage }}
       description: ${{ inputs.description-prefix }} of ${{ github.repository }} ${{ needs.parse.outputs.component }}
 
