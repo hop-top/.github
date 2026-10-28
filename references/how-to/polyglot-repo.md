@@ -156,7 +156,10 @@ matter:
   normal `git subtree split --prefix=go` path and the mirror gets
   only the module. A root-Go layout like `poly-kit` (the repo root
   is the Go module, SDKs under `sdk/`) uses `dir: .` on purpose: its
-  bare-name mirror carries the whole tree.
+  bare-name mirror carries the whole tree. A nested Go module inside
+  that tree (`sdk/go`) is tagged on the same mirror with
+  `mirror-mode: tag-only`, not mirrored to a repo of its own —
+  [troubleshooting/go.md § Nested Go module](../troubleshooting/go.md#nested-go-module-inside-a-mirrored-tree).
 - The mirror repo is created by the first `<name>/v*` tag if it
   doesn't exist (`mirror-subtree.yml` runs `gh repo view || gh repo
   create`). A hand-made seed is overwritten by the first tag — [SKILL.md § Bootstrap-mirror

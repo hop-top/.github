@@ -55,6 +55,40 @@ on:
           Never overrides the self-mirror refusal.
         type: boolean
         default: false
+      mode:
+        description: |
+          `mirror` (default): split `source-prefix`, force-push it to the
+          mirror's main, tag it `tag`, sync the description and settings.
+
+          `tag-only`: for a nested Go module whose tree already ships inside
+          an existing mirror (e.g. `sdk/go` inside the root mirror). Pushes
+          ONE tag, `<tag-prefix><tag>`, at the mirror commit whose
+          `<tag-prefix>` subtree equals this commit's `source-prefix` tree.
+          Never pushes a branch, never moves an existing tag, never touches
+          the mirror's description, settings or releases, and never creates
+          the mirror. The mirror commit comes from the release that mirrors
+          the enclosing tree: tag that component at this commit (or any
+          commit with the same module tree) no later than this one. The job
+          waits up to `wait-seconds` for its mirror push to land.
+        type: string
+        default: mirror
+      tag-prefix:
+        description: |
+          `tag-only` mode: path of the module on the mirror, which is also
+          the tag prefix Go expects (`sdk/go/` -> tag `sdk/go/v1.2.3`).
+          Required in `tag-only` mode; rejected in `mirror` mode.
+          Repo-relative, no `.`/`..` components; surrounding whitespace,
+          duplicate and trailing slashes are normalised (one `/` joins it
+          to the tag).
+        type: string
+        default: ""
+      wait-seconds:
+        description: |
+          `tag-only` mode: how long to keep polling the mirror for the
+          matching commit when it is not there yet (the enclosing release
+          may be mirroring in a parallel run). 0 checks once.
+        type: number
+        default: 600
     secrets:
       GH_MIRROR_PAT:
         description: PAT with admin+contents write on the mirror repo
@@ -72,7 +106,30 @@ jobs:
       HOMEPAGE: ${{ inputs.homepage }}
       DESCRIPTION: ${{ inputs.description }}
       CHANGELOG: ${{ inputs.changelog-path }}
+      MODE: ${{ inputs.mode }}
+      TAG_PREFIX: ${{ inputs.tag-prefix }}
     steps:
+      - name: Check mode inputs
+        run: |
+          case "$MODE" in
+            mirror)
+              if [ -n "$(printf '%s' "$TAG_PREFIX" | tr -d '[:space:]')" ]; then
+                echo "::error::tag-prefix ('$TAG_PREFIX') is only valid with mode: tag-only; mode: mirror tags the mirror with the plain version"
+                exit 1
+              fi
+              ;;
+            tag-only)
+              if [ -z "$(printf '%s' "$TAG_PREFIX" | tr -d '[:space:]/')" ]; then
+                echo "::error::mode: tag-only needs tag-prefix (the module's path on the mirror, e.g. 'sdk/go/')"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::mode must be 'mirror' or 'tag-only', got '$MODE'"
+              exit 1
+              ;;
+          esac
+
       - name: Resolve target repo and refuse self-mirror
         id: target
         # Defense-in-depth: if `target-repo` points at the source repo, the
@@ -98,6 +155,10 @@ jobs:
           if RESOLVED=$(gh api "repos/$TARGET" --jq .full_name 2>"$err"); then
             :
           elif grep -q 'HTTP 404' "$err"; then
+            if [ "$MODE" = "tag-only" ]; then
+              echo "::error::target-repo $TARGET does not exist. mode: tag-only tags an existing mirror and never creates one; release the component that mirrors the enclosing tree first."
+              exit 1
+            fi
             # Missing mirror: the next step creates it under the requested
             # name. A 404 cannot be a redirect, so there is nothing to follow.
             echo "::notice::target-repo $TARGET does not exist yet; it will be created"
@@ -134,6 +195,7 @@ jobs:
           persist-credentials: false
 
       - name: Ensure mirror repository exists
+        if: inputs.mode == 'mirror'
         run: |
           gh repo view "$MIRROR_REPO" >/dev/null 2>&1 || \
             gh repo create "$MIRROR_REPO" \
@@ -144,6 +206,7 @@ jobs:
               --description "$DESCRIPTION"
 
       - name: Make mirror writable for sync
+        if: inputs.mode == 'mirror'
         run: |
           gh api -X PATCH "repos/$MIRROR_REPO" \
             -F archived=false \
@@ -155,6 +218,7 @@ jobs:
             -F description="$DESCRIPTION"
 
       - name: Split subtree and push
+        if: inputs.mode == 'mirror'
         run: |
           # commit-tree with HEAD's metadata so the mirror commit reads as
           # a faithful copy (same author, date, message). Used by both the
@@ -247,8 +311,97 @@ jobs:
           git tag "$TAG" "$SHA"
           git push mirror "$TAG" --force
 
+      - name: Tag nested module on existing mirror
+        if: inputs.mode == 'tag-only'
+        env:
+          WAIT_SECONDS: ${{ inputs.wait-seconds }}
+          POLL_SECONDS: "30"
+        run: |
+          # Normalise both paths the way target-prefix is normalised: trim
+          # whitespace, collapse duplicate slashes, drop leading `./` and
+          # trailing slashes; reject absolute paths and `.`/`..` components.
+          norm() {
+            printf '%s' "$1" | tr -s '/' \
+              | sed -e 's#^[[:space:]]*##' -e 's#[[:space:]]*$##' -e 's#^\(\./\)*##' -e 's#/*$##'
+          }
+          check_path() { # name raw normalised
+            case "$2" in
+              /*) echo "::error::$1 must be repo-relative, got absolute path '$2'"; exit 1 ;;
+            esac
+            case "/$3/" in
+              */../* | */./* | //)
+                echo "::error::$1 must name a subdirectory without '.' or '..' components, got '$2'"; exit 1 ;;
+            esac
+          }
+          MPATH=$(norm "$TAG_PREFIX")
+          SPATH=$(norm "$PREFIX")
+          check_path tag-prefix "$TAG_PREFIX" "$MPATH"
+          check_path source-prefix "$PREFIX" "$SPATH"
+          NESTED_TAG="${MPATH}/${TAG}"
+
+          # The module's tree at this commit. Go builds a nested module's
+          # zip from that subdirectory alone, so the mirror commit to tag
+          # is any whose <tag-prefix> subtree is this exact tree: matching
+          # by content needs no stored source->mirror mapping and holds for
+          # every way the enclosing tree is mirrored (root split, subtree
+          # split, target-prefix graft).
+          SRC_TREE=$(git rev-parse --verify -q "HEAD:${SPATH}" || true)
+          if [ -z "$SRC_TREE" ] || [ "$(git cat-file -t "$SRC_TREE")" != tree ]; then
+            echo "::error::source-prefix '$PREFIX' is not a directory at $(git rev-parse HEAD)"
+            exit 1
+          fi
+          echo "Looking for a commit on $MIRROR_REPO whose ${MPATH}/ is tree $SRC_TREE (source ${SPATH}/ at $(git rev-parse --short HEAD))"
+
+          url="https://x-access-token:${GH_TOKEN}@github.com/${MIRROR_REPO}.git"
+          git remote add mirror "$url" 2>/dev/null || git remote set-url mirror "$url"
+          scratch=$(mktemp -d)
+
+          # Newest first. Every ref counts: a root mirror force-pushes one
+          # parentless commit per release, so older releases are reachable
+          # only from their tags.
+          find_match() {
+            git for-each-ref --format='%(objectname)' refs/mirror/ \
+              | git rev-list --date-order --stdin > "$scratch/commits"
+            awk -v p="$MPATH" '{ print $0 ":" p }' "$scratch/commits" \
+              | git cat-file --batch-check='%(objectname)' > "$scratch/trees"
+            paste -d' ' "$scratch/commits" "$scratch/trees" \
+              | awk -v t="$SRC_TREE" '$2 == t && !found { print $1; found = 1 }'
+          }
+
+          start=$(date +%s)
+          while :; do
+            git fetch --quiet --no-tags mirror \
+              '+refs/heads/*:refs/mirror/heads/*' '+refs/tags/*:refs/mirror/tags/*'
+
+            # Go module versions are immutable once the proxy has seen
+            # them: an existing tag is fine only where it already is.
+            if existing=$(git rev-parse --verify -q "refs/mirror/tags/${NESTED_TAG}^{commit}"); then
+              if [ "$(git rev-parse --verify -q "${existing}:${MPATH}")" = "$SRC_TREE" ]; then
+                echo "::notice::$MIRROR_REPO already has $NESTED_TAG at $existing with this tree; nothing to do"
+                exit 0
+              fi
+              echo "::error::$MIRROR_REPO already has $NESTED_TAG at $existing, whose ${MPATH}/ differs from source ${SPATH}/ at $(git rev-parse --short HEAD). Refusing to move a published Go module tag; release a new version instead."
+              exit 1
+            fi
+
+            MATCH=$(find_match)
+            [ -n "$MATCH" ] && break
+
+            elapsed=$(( $(date +%s) - start ))
+            if [ "$elapsed" -ge "$WAIT_SECONDS" ]; then
+              echo "::error::No commit on $MIRROR_REPO has ${MPATH}/ equal to source ${SPATH}/ at $(git rev-parse --short HEAD) (tree $SRC_TREE) after ${elapsed}s. Release the component that mirrors the enclosing tree to $MIRROR_REPO at a commit with this module tree (this one, say) and no later than this tag, then re-run. Rule: tag the enclosing component no later than the nested module."
+              exit 1
+            fi
+            echo "No matching mirror commit yet (${elapsed}s/${WAIT_SECONDS}s); retrying in ${POLL_SECONDS}s"
+            sleep "$POLL_SECONDS"
+          done
+
+          echo "Tagging $MIRROR_REPO $MATCH as $NESTED_TAG"
+          # Not forced: never move a tag someone pushed in the meantime.
+          git push mirror "${MATCH}:refs/tags/${NESTED_TAG}"
+
       - name: Create release on mirror
-        if: inputs.create-release
+        if: inputs.mode == 'mirror' && inputs.create-release
         run: |
           BODY=""
           # Root component: changelog lives at repo root, not under a subdir
@@ -303,7 +456,7 @@ jobs:
         # Only once the target resolved: after a refused self-mirror or
         # redirect there is no verified mirror, and patching the requested
         # slug would land on the repo the refusal protects.
-        if: always() && steps.target.outputs.repo != ''
+        if: always() && inputs.mode == 'mirror' && steps.target.outputs.repo != ''
         run: |
           gh api -X PATCH "repos/$MIRROR_REPO" \
             -F has_issues=false \
