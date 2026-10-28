@@ -45,6 +45,16 @@ on:
         description: Path (within source-prefix) to the CHANGELOG for release body
         type: string
         default: CHANGELOG.md
+      allow-target-redirect:
+        description: |
+          Push even when `target-repo` is a rename / transfer redirect to
+          another repository. Off by default: the job resolves the real
+          name (`gh api repos/<target-repo>`, which follows redirects) and
+          refuses when it differs from the requested one, because a stale
+          slug can point anywhere — including back at the source repo.
+          Never overrides the self-mirror refusal.
+        type: boolean
+        default: false
     secrets:
       GH_MIRROR_PAT:
         description: PAT with admin+contents write on the mirror repo
@@ -63,16 +73,60 @@ jobs:
       DESCRIPTION: ${{ inputs.description }}
       CHANGELOG: ${{ inputs.changelog-path }}
     steps:
-      - name: Refuse self-mirror
-        # Defense-in-depth: if the caller misconfigures `target-repo` to point
-        # at the source repo itself, the mirror push would force-replace main
-        # with a workflows-stripped tree. Fail fast with a clear message.
-        # See https://github.com/hop-top/.github/issues/27.
+      - name: Resolve target repo and refuse self-mirror
+        id: target
+        # Defense-in-depth: if `target-repo` points at the source repo, the
+        # mirror push would force-replace its main with a workflows-stripped
+        # tree and overwrite its description. Comparing the input string is
+        # not enough: a renamed repo leaves a redirect behind, so an old slug
+        # (`hop-top/nerv` after a rename to `hop-top/poly-nerv`) still
+        # reaches the source repo. Resolve the real name through the API,
+        # which follows redirects, and compare that. Any other redirect is
+        # refused too unless `allow-target-redirect` opts in. Later steps use
+        # the resolved name ($MIRROR_REPO). See
+        # https://github.com/hop-top/.github/issues/27.
+        env:
+          ALLOW_REDIRECT: ${{ inputs.allow-target-redirect }}
         run: |
-          if [ "$TARGET" = "$GITHUB_REPOSITORY" ]; then
+          lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+          if [ "$(lower "$TARGET")" = "$(lower "$GITHUB_REPOSITORY")" ]; then
             echo "::error::Refusing self-mirror: target-repo ($TARGET) equals github.repository ($GITHUB_REPOSITORY). The mirror push would force-replace main with a workflows-stripped tree. Fix the caller's publish.yml so 'mirror' points at the read-only mirror repo, not the source."
             exit 1
           fi
+
+          err=$(mktemp)
+          if RESOLVED=$(gh api "repos/$TARGET" --jq .full_name 2>"$err"); then
+            :
+          elif grep -q 'HTTP 404' "$err"; then
+            # Missing mirror: the next step creates it under the requested
+            # name. A 404 cannot be a redirect, so there is nothing to follow.
+            echo "::notice::target-repo $TARGET does not exist yet; it will be created"
+            RESOLVED="$TARGET"
+          else
+            cat "$err" >&2
+            echo "::error::Could not resolve target-repo $TARGET (gh api repos/$TARGET failed). Refusing to push to a repository whose real name is unknown."
+            exit 1
+          fi
+          if [ -z "$RESOLVED" ]; then
+            echo "::error::gh api repos/$TARGET returned no full_name. Refusing to push to a repository whose real name is unknown."
+            exit 1
+          fi
+
+          if [ "$(lower "$RESOLVED")" = "$(lower "$GITHUB_REPOSITORY")" ]; then
+            echo "::error::Refusing self-mirror: target-repo $TARGET redirects to $RESOLVED, which is this repository (github.repository $GITHUB_REPOSITORY). The slug is a rename redirect left by renaming this repo; pushing would force-replace this repo's main and overwrite its description. Point 'mirror' at the real read-only mirror repo."
+            exit 1
+          fi
+          if [ "$(lower "$RESOLVED")" != "$(lower "$TARGET")" ]; then
+            if [ "$ALLOW_REDIRECT" != "true" ]; then
+              echo "::error::target-repo $TARGET redirects to $RESOLVED (the repo was renamed or transferred). Refusing to push through a redirect. Set 'mirror' to $RESOLVED, or opt in with allow-target-redirect: true."
+              exit 1
+            fi
+            echo "::warning::target-repo $TARGET redirects to $RESOLVED; allow-target-redirect is set, pushing to $RESOLVED"
+          fi
+
+          echo "Mirror target: $RESOLVED"
+          echo "MIRROR_REPO=$RESOLVED" >> "$GITHUB_ENV"
+          echo "repo=$RESOLVED" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
@@ -81,8 +135,8 @@ jobs:
 
       - name: Ensure mirror repository exists
         run: |
-          gh repo view "$TARGET" >/dev/null 2>&1 || \
-            gh repo create "$TARGET" \
+          gh repo view "$MIRROR_REPO" >/dev/null 2>&1 || \
+            gh repo create "$MIRROR_REPO" \
               --public \
               --disable-issues \
               --disable-wiki \
@@ -91,7 +145,7 @@ jobs:
 
       - name: Make mirror writable for sync
         run: |
-          gh api -X PATCH "repos/$TARGET" \
+          gh api -X PATCH "repos/$MIRROR_REPO" \
             -F archived=false \
             -F has_issues=false \
             -F has_wiki=false \
@@ -188,7 +242,7 @@ jobs:
             echo "Grafted tree $GRAFT_TREE -> commit $SHA"
           fi
 
-          git remote add mirror "https://x-access-token:${GH_TOKEN}@github.com/${TARGET}.git"
+          git remote add mirror "https://x-access-token:${GH_TOKEN}@github.com/${MIRROR_REPO}.git"
           git push mirror "${SHA}:refs/heads/main" --force
           git tag "$TAG" "$SHA"
           git push mirror "$TAG" --force
@@ -219,7 +273,7 @@ jobs:
           # tag/main silently moved on. Fall back to `edit` so a retag
           # actually refreshes the release.
           if ! gh release create "$TAG" \
-                --repo "$TARGET" \
+                --repo "$MIRROR_REPO" \
                 --title "$TAG" \
                 --notes "${BODY:-Release $TAG}" \
                 --latest=false \
@@ -227,7 +281,7 @@ jobs:
             if grep -q "already exists" /tmp/mirror-release-create.err; then
               echo "Tag already released on mirror — updating existing release"
               gh release edit "$TAG" \
-                --repo "$TARGET" \
+                --repo "$MIRROR_REPO" \
                 --title "$TAG" \
                 --notes "${BODY:-Release $TAG}" \
                 $PRERELEASE_FLAG
@@ -245,9 +299,13 @@ jobs:
         # actual role as the canonical install slot for vanity imports
         # (`go install hop.top/uri@latest` resolves here).
         # See https://github.com/hop-top/.github/issues/27.
-        if: always()
+        #
+        # Only once the target resolved: after a refused self-mirror or
+        # redirect there is no verified mirror, and patching the requested
+        # slug would land on the repo the refusal protects.
+        if: always() && steps.target.outputs.repo != ''
         run: |
-          gh api -X PATCH "repos/$TARGET" \
+          gh api -X PATCH "repos/$MIRROR_REPO" \
             -F has_issues=false \
             -F has_wiki=false \
             -F has_projects=false \

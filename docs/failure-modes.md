@@ -281,6 +281,32 @@ opened and closed to land 7 real releases.
   when release-please's own commits on the branch are non-trivial.
   See [how-to/retrigger-release-please.md § Two fixes](../references/how-to/retrigger-release-please.md#two-fixes--pick-based-on-how-many-siblings-are-stale).
 
+## Mirror job refuses: target redirects to this repo, or to another repo
+
+**Symptom (workflow log)**:
+
+```
+::error::Refusing self-mirror: target-repo hop-top/nerv redirects to hop-top/poly-nerv, which is this repository ...
+::error::target-repo hop-top/old-name redirects to hop-top/new-name (the repo was renamed or transferred). Refusing to push through a redirect ...
+```
+
+**Root cause**: renaming a repo leaves a redirect behind on its old
+slug. When a monorepo is renamed (`hop-top/nerv` → `hop-top/poly-nerv`)
+and its bare-name mirror slot is then configured as `mirror:
+hop-top/nerv` before that repo exists, the slug still reaches the
+monorepo. A string comparison of `mirror` against `github.repository`
+does not see it, and the force-push would replace the monorepo's own
+`main` with the mirror payload and overwrite its description.
+`mirror-subtree.yml` now resolves the real name with `gh api
+repos/<mirror> --jq .full_name` (which follows redirects) before it
+touches anything, and fails on a self-mirror or any redirect.
+
+**Fix**: self-mirror — create the real mirror repo under that name
+(creating it replaces the redirect), or point `mirror` at it. Other
+redirect — set `mirror` to the resolved name from the error, or set
+`allow-mirror-redirect: true` on the ecosystem entry to push to the
+resolved repo anyway.
+
 ## See also
 
 - [SKILL.md](../SKILL.md) — main consumer guide
