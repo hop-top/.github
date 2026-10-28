@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/hop-top/.github/compare/v0.16.0...v0.17.0) (2026-10-28)
+
+
+### Features
+
+* **publish-rs:** opt-in protoc install before cargo steps ([84946b6](https://github.com/hop-top/.github/commit/84946b6ee13b4270da2500989c920d8dcc31c79b))
+
 ## [0.16.0](https://github.com/hop-top/.github/compare/v0.15.0...v0.16.0) (2026-10-28)
 
 
