@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.0](https://github.com/hop-top/.github/compare/v0.15.0...v0.16.0) (2026-10-28)
+
+
+### Features
+
+* **mirror:** tag-only mode for nested Go modules on an existing mirror ([9e29720](https://github.com/hop-top/.github/commit/9e29720c7dbff609fc3dc905f970cbac508dce7d))
+
+
+### Bug Fixes
+
+* **mirror:** resolve target name, refuse self-mirror via redirect ([ca0befb](https://github.com/hop-top/.github/commit/ca0befbd0048a03abc92a9eaa478d722cc710db6))
+
 ## [0.15.0](https://github.com/hop-top/.github/compare/v0.14.1...v0.15.0) (2026-10-20)
 
 
