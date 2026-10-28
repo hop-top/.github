@@ -94,10 +94,80 @@ class LookupTests(unittest.TestCase):
                     """, "kit-ts")
                 self.assertEqual(out["allow_mirror_redirect"], want)
 
+    def test_nested_go_module_entry(self) -> None:
+        # poly-nerv's sdk/go: a Go submodule inside the root mirror.
+        out = self.lookup("""
+            nerv:
+              dir: .
+              ecosystem: go
+              mirror: hop-top/nerv
+            nerv-go:
+              dir: sdk/go
+              ecosystem: go
+              mirror: hop-top/nerv
+              mirror-mode: tag-only
+              mirror-tag-prefix: sdk/go/
+              mirror-wait-seconds: 300
+            """, "nerv-go")
+        self.assertEqual((out["dir"], out["mirror"], out["mirror_mode"], out["mirror_tag_prefix"],
+                          out["mirror_wait_seconds"]),
+                         ("sdk/go", "hop-top/nerv", "tag-only", "sdk/go/", "300"))
+
+    def test_mirror_mode_fields_default_empty(self) -> None:
+        out = self.lookup("nerv: {dir: ., ecosystem: go, mirror: hop-top/nerv}\n", "nerv")
+        self.assertEqual((out["mirror_mode"], out["mirror_tag_prefix"], out["mirror_wait_seconds"]),
+                         ("", "", ""))
+
     def test_umbrella_component_emits_empty_fields(self) -> None:
         out = self.lookup("kit-ts: {dir: ts, ecosystem: ts, mirror: hop-top/kit-ts}\n", "poly-kit")
         self.assertEqual(out["ecosystem"], "")
         self.assertEqual(out["allow_mirror_redirect"], "")
+        self.assertEqual(out["mirror_mode"], "")
+
+
+class MirrorModeGuardTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="publish-on-tag-guard-"))
+        self.script = self.tmp / "step.sh"
+        self.script.write_text(step_script_by_id(WORKFLOW, "mirror-mode"), encoding="utf-8")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_step(self, mode: str, ecosystem: str, wait: str = "") -> tuple[int, str]:
+        env = {"PATH": os.environ["PATH"], "MIRROR_MODE": mode, "ECOSYSTEM": ecosystem, "WAIT": wait}
+        r = subprocess.run(["bash", "-eo", "pipefail", str(self.script)], cwd=self.tmp,
+                           env=env, capture_output=True, text=True)
+        return r.returncode, r.stdout + r.stderr
+
+    def test_existing_entries_pass(self) -> None:
+        for eco in ("ts", "py", "rs", "php", "go", "none"):
+            for mode in ("", "mirror"):
+                with self.subTest(eco=eco, mode=mode):
+                    self.assertEqual(self.run_step(mode, eco)[0], 0)
+
+    def test_tag_only_is_go_or_none(self) -> None:
+        for eco in ("go", "none"):
+            self.assertEqual(self.run_step("tag-only", eco)[0], 0)
+        for eco in ("ts", "py", "rs", "php"):
+            with self.subTest(eco=eco):
+                code, out = self.run_step("tag-only", eco)
+                self.assertEqual(code, 1, out)
+                self.assertIn("supports ecosystem go or none", out)
+
+    def test_unknown_mode_fails(self) -> None:
+        code, out = self.run_step("tags", "go")
+        self.assertEqual(code, 1, out)
+        self.assertIn("mirror-mode must be", out)
+
+    def test_wait_seconds_must_be_whole_seconds(self) -> None:
+        self.assertEqual(self.run_step("tag-only", "go", "0")[0], 0)
+        self.assertEqual(self.run_step("tag-only", "go", "300")[0], 0)
+        for bad in ("5m", "-1", "1.5", " 3"):
+            with self.subTest(wait=bad):
+                code, out = self.run_step("tag-only", "go", bad)
+                self.assertEqual(code, 1, out)
+                self.assertIn("whole number", out)
 
 
 class MirrorWiringTests(unittest.TestCase):
@@ -111,6 +181,13 @@ class MirrorWiringTests(unittest.TestCase):
     def test_redirect_opt_in_is_forwarded_as_a_boolean(self) -> None:
         self.assertIn("allow-target-redirect: ${{ needs.parse.outputs.allow_mirror_redirect == 'true' }}",
                       self.mirror_job)
+
+    def test_mirror_mode_fields_are_forwarded_with_back_compat_defaults(self) -> None:
+        for line in ("mode: ${{ needs.parse.outputs.mirror_mode || 'mirror' }}",
+                     "tag-prefix: ${{ needs.parse.outputs.mirror_tag_prefix }}",
+                     "wait-seconds: ${{ fromJSON(needs.parse.outputs.mirror_wait_seconds || '600') }}"):
+            with self.subTest(line=line):
+                self.assertIn(line, self.mirror_job)
 
     def test_every_forwarded_parse_output_is_declared(self) -> None:
         used = set(re.findall(r"needs\.parse\.outputs\.(\w+)", self.mirror_job))

@@ -103,6 +103,12 @@ Polyglot repos in the hop-top org follow a strict shape:
 does NOT exist in this org — ever. See [vanity imports
 concept](references/concepts/vanity-imports.md) for the resolver
 mechanism and how to override per-name.
+A nested Go module inside a mirrored tree (`sdk/go` under the
+root-Go mirror) gets no repo either: its ecosystem entry points
+`mirror` at the enclosing mirror with `mirror-mode: tag-only` and
+`mirror-tag-prefix: sdk/go/`, which pushes only the `sdk/go/vX.Y.Z`
+tag. Tag the enclosing component no later than the nested one —
+[troubleshooting/go.md § Nested Go module](references/troubleshooting/go.md#nested-go-module-inside-a-mirrored-tree).
 
 The table covers repo slugs only. Registry, import and component
 names per language (`@hop-top/<name>`, `hop-top-<name>` / `<name>`,

@@ -100,10 +100,51 @@ tag push <component>/v<x.y.z>
 If `<component>` is your only ecosystem, you can drop `publish.yml`
 entirely. See [how-to/single-language-repo.md](../how-to/single-language-repo.md).
 
+## Nested Go module inside a mirrored tree
+
+A module in a subdirectory of a tree that is already mirrored (e.g.
+`poly-nerv`'s `sdk/go`, module `hop.top/nerv/sdk/go`, inside the root
+mirror `hop-top/nerv`) needs the tag `sdk/go/vX.Y.Z` on that mirror,
+not a mirror of its own (`hop-top/<name>-go` is never created). Declare
+it with `mirror-mode: tag-only`:
+
+```yaml
+nerv:
+  dir: .
+  ecosystem: go
+  mirror: hop-top/nerv
+nerv-go:
+  dir: sdk/go
+  ecosystem: go
+  mirror: hop-top/nerv          # the enclosing mirror
+  mirror-mode: tag-only
+  mirror-tag-prefix: sdk/go/    # path on the mirror == Go tag prefix
+```
+
+A `nerv-go/v0.3.0` tag then pushes only `sdk/go/v0.3.0` to
+`hop-top/nerv`, at the newest mirror commit whose `sdk/go/` tree is
+identical to the source's `sdk/go/` at the tagged commit. Matching is by
+tree hash, so no source-to-mirror mapping is stored, and it is exactly
+what Go checks: a nested module's zip is built from that subdirectory.
+Nothing else on the mirror changes, and an existing `sdk/go/v0.3.0`
+is never moved (same commit: no-op; elsewhere: the job fails).
+
+**Ordering rule: tag the enclosing component (`nerv`) no later than the
+nested one, at a commit with the same module tree.** If the matching
+mirror commit is not there yet the job polls for `mirror-wait-seconds`
+(default 600), which covers both tags running in parallel; then it
+fails with a clear error. Fix: release the enclosing component at (or
+after) that commit, with no further change to the module dir, and
+re-run the nested tag's publish. A module dir unchanged since an older
+enclosing release matches that release, so no new root release is
+needed for it.
+
 ## Common issues
 
 | Problem | Cause | Fix |
 |---|---|---|
+| Mirror job: `No commit on <mirror> has <prefix>/ equal to source ...` | `mirror-mode: tag-only` and the enclosing component was not released with this module tree (yet) | Tag the enclosing component at this commit, then re-run; see [Nested Go module](#nested-go-module-inside-a-mirrored-tree) |
+| Mirror job: `Refusing to move a published Go module tag` | `tag-only` tag already exists on the mirror at a different module tree | Release a new version; Go module versions are immutable |
 | `go get @latest` returns a pseudo-version | Ghost versions in proxy outrank new tag | Bump next release above the highest ghost |
 | `fatal: . does not exist; use git subtree add` | Old `mirror-subtree.yml` doesn't handle root components | Pin to `@v0` (≥ v0.4.1) |
 | `refusing to allow a Personal Access Token to create or update workflow` | Old `mirror-subtree.yml` pushed `.github/workflows/` to mirror | Pin to `@v0` (≥ v0.4.2) |

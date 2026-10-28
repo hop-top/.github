@@ -58,6 +58,22 @@ on:
                              transfer redirect on `mirror` (default false:
                              a redirected slug fails the mirror job). A
                              slug that resolves to this repo always fails
+            mirror-mode      `mirror` (default) | `tag-only`. `tag-only`
+                             is for a nested Go module inside a tree that
+                             another component already mirrors: it only
+                             pushes the tag `<mirror-tag-prefix><version>`
+                             to `mirror`, at the mirror commit holding
+                             this commit's `dir` tree, and never pushes a
+                             branch or touches the mirror's description,
+                             settings or releases. `go` / `none` only.
+                             Tag the enclosing component no later than
+                             this one
+            mirror-tag-prefix
+                             `tag-only`: the module's path on the mirror,
+                             which is Go's tag prefix (e.g. "sdk/go/")
+            mirror-wait-seconds
+                             `tag-only`: how long to wait for the
+                             enclosing release's mirror push (default 600)
             package          registry name (informational)
             test-command     override default test step
             build-command    override default build step (ts, py)
@@ -116,6 +132,9 @@ jobs:
       mirror: ${{ steps.lookup.outputs.mirror }}
       target_prefix: ${{ steps.lookup.outputs.target_prefix }}
       allow_mirror_redirect: ${{ steps.lookup.outputs.allow_mirror_redirect }}
+      mirror_mode: ${{ steps.lookup.outputs.mirror_mode }}
+      mirror_tag_prefix: ${{ steps.lookup.outputs.mirror_tag_prefix }}
+      mirror_wait_seconds: ${{ steps.lookup.outputs.mirror_wait_seconds }}
       package: ${{ steps.lookup.outputs.package }}
       test_command: ${{ steps.lookup.outputs.test_command }}
       build_command: ${{ steps.lookup.outputs.build_command }}
@@ -160,7 +179,8 @@ jobs:
                   f"skipping publish (umbrella component)\n"
               )
               for k in ("dir", "ecosystem", "mirror", "target_prefix", "package",
-                        "allow_mirror_redirect"):
+                        "allow_mirror_redirect", "mirror_mode", "mirror_tag_prefix",
+                        "mirror_wait_seconds"):
                   print(f"{k}=")
               sys.exit(0)
           # Fields: `dir`, `ecosystem`, `mirror` are required by downstream jobs;
@@ -171,6 +191,9 @@ jobs:
           # Output keys use underscores (GITHUB_OUTPUT doesn't like hyphens).
           for src, dst in [
               ("target-prefix",    "target_prefix"),
+              ("mirror-mode",      "mirror_mode"),
+              ("mirror-tag-prefix", "mirror_tag_prefix"),
+              ("mirror-wait-seconds", "mirror_wait_seconds"),
               ("test-command",     "test_command"),
               ("build-command",    "build_command"),
               ("node-version",     "node_version"),
@@ -189,6 +212,32 @@ jobs:
               v = entry.get(src, False)
               print(f"{dst}={str(v).lower() if isinstance(v, bool) else str(v).strip().lower()}")
           PY
+
+      - id: mirror-mode
+        # `tag-only` pushes a tag and nothing else, so no registry publish
+        # and no Packagist notify can follow it: only `go` (module proxy
+        # reads the tag) and `none` make sense. Fail here, before any job
+        # runs, rather than half-publish.
+        if: steps.lookup.outputs.ecosystem != ''
+        env:
+          MIRROR_MODE: ${{ steps.lookup.outputs.mirror_mode }}
+          ECOSYSTEM: ${{ steps.lookup.outputs.ecosystem }}
+          WAIT: ${{ steps.lookup.outputs.mirror_wait_seconds }}
+        run: |
+          case "${MIRROR_MODE:-mirror}" in
+            mirror) ;;
+            tag-only)
+              case "$ECOSYSTEM" in
+                go|none) ;;
+                *) echo "::error::mirror-mode: tag-only supports ecosystem go or none, got '$ECOSYSTEM'"; exit 1 ;;
+              esac
+              ;;
+            *) echo "::error::mirror-mode must be 'mirror' or 'tag-only', got '$MIRROR_MODE'"; exit 1 ;;
+          esac
+          if [ -n "$WAIT" ] && ! printf '%s' "$WAIT" | grep -qx '[0-9][0-9]*'; then
+            echo "::error::mirror-wait-seconds must be a whole number of seconds, got '$WAIT'"
+            exit 1
+          fi
 
       - id: guard
         # PHP publishing is the Packagist notify step, and that step `needs:
@@ -262,6 +311,9 @@ jobs:
       target-prefix: ${{ needs.parse.outputs.target_prefix }}
       tag: ${{ needs.parse.outputs.version }}
       allow-target-redirect: ${{ needs.parse.outputs.allow_mirror_redirect == 'true' }}
+      mode: ${{ needs.parse.outputs.mirror_mode || 'mirror' }}
+      tag-prefix: ${{ needs.parse.outputs.mirror_tag_prefix }}
+      wait-seconds: ${{ fromJSON(needs.parse.outputs.mirror_wait_seconds || '600') }}
       homepage: ${{ inputs.homepage }}
       description: ${{ inputs.description-prefix }} of ${{ github.repository }} ${{ needs.parse.outputs.component }}
 
