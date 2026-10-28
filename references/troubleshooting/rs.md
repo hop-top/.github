@@ -7,6 +7,7 @@ Rust/crates.io-specific failure modes.
 - `cargo publish` fails with `verified email required` or `1 files in the working directory contain changes`.
 - A test under `tests/` fails to compile under default features.
 - You're moving an existing Rust crate onto this pipeline.
+- The build fails with ``Could not find `protoc` ``.
 
 ## Result
 
@@ -149,6 +150,37 @@ automatically — bumping `core`'s version without bumping this pin in
 (cargo will still resolve it as long as semver-compatible, but drift
 accumulates).
 
+## build.rs needs protoc
+
+**Symptom (workflow log)**, from the Test or Publish step:
+
+```
+Error: Custom { kind: NotFound, error: "Could not find `protoc`. If `protoc` is installed, try setting the `PROTOC` environment variable to the path of the `protoc` binary." }
+```
+
+**Root cause**: `prost-build` / `tonic-prost-build` shell out to
+`protoc`, and `ubuntu-latest` ships none. `cargo publish` rebuilds the
+packaged crate, so it hits this even when `test-command` skips the
+build.
+
+**Fix**: set `protoc-version` on the entry, quoted, at the version the
+crate's own CI uses:
+
+```yaml
+  nerv-rs:
+    dir: sdk/rs
+    ecosystem: rs
+    mirror: hop-top/nerv-rs
+    protoc-version: '36.2'
+```
+
+`publish-rs` downloads the official release zip, checks its sha256
+against the pin in `publish-rs.yml`, and puts `protoc` on `PATH` (and
+in `PROTOC`) before any cargo step. A version with no pin fails with
+`no pinned sha256 for protoc <version>`: pass `protoc-sha256` too, or
+add the pin here ([ecosystems.md](../ecosystems.md)). New pins follow
+the 14-day age gate.
+
 ## Common issues
 
 | Problem | Cause | Fix |
@@ -157,8 +189,9 @@ accumulates).
 | `unresolved import <crate>::<feature_module>` under default features | Test under `tests/` depends on feature-gated module | Add `#![cfg(feature = "<name>")]` at top of test file |
 | `cargo publish` fails: `verified email required` | Token's account has no verified email | Verify email; re-issue token |
 | `cargo publish` fails: `all dependencies must have a version requirement specified` | Path-only dependency on a workspace sibling | Add `version = "..."` alongside `path =`. See [Path deps need a version too](#path-deps-need-a-version-too). |
+| ``Could not find `protoc` `` | `build.rs` runs `prost-build` / `tonic-prost-build`; the runner has no `protoc` | Set `protoc-version: '<version>'` on the entry. See [build.rs needs protoc](#buildrs-needs-protoc). |
 
 ## Next steps
 
 - [concepts/install-model.md § rs](../concepts/install-model.md#rs) — what the default `test-command` does.
-- [references/ecosystems.md](../ecosystems.md) — `rust-toolchain` override.
+- [references/ecosystems.md](../ecosystems.md) — `rust-toolchain` and `protoc-version` overrides.
