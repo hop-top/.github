@@ -61,17 +61,20 @@ class LookupTests(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def lookup(self, ecosystems: str, component: str) -> dict[str, str]:
-        output = self.tmp / "output"
-        output.write_text("", encoding="utf-8")
+    def run_lookup(self, ecosystems: str, component: str) -> subprocess.CompletedProcess[str]:
+        self.output = self.tmp / "output"
+        self.output.write_text("", encoding="utf-8")
         env = {"PATH": self.path, "HOME": str(self.tmp),
                "ECOSYSTEMS": textwrap.dedent(ecosystems), "COMPONENT": component,
-               "GITHUB_OUTPUT": str(output)}
-        r = subprocess.run(["bash", "-eo", "pipefail", str(self.script)], cwd=self.tmp,
-                           env=env, capture_output=True, text=True)
+               "GITHUB_OUTPUT": str(self.output)}
+        return subprocess.run(["bash", "-eo", "pipefail", str(self.script)], cwd=self.tmp,
+                              env=env, capture_output=True, text=True)
+
+    def lookup(self, ecosystems: str, component: str) -> dict[str, str]:
+        r = self.run_lookup(ecosystems, component)
         self.assertEqual(r.returncode, 0, r.stderr)
         return dict(line.split("=", 1)
-                    for line in output.read_text(encoding="utf-8").splitlines() if "=" in line)
+                    for line in self.output.read_text(encoding="utf-8").splitlines() if "=" in line)
 
     def test_allow_mirror_redirect_defaults_to_false(self) -> None:
         out = self.lookup("""
@@ -124,6 +127,39 @@ class LookupTests(unittest.TestCase):
         self.assertEqual(out["allow_mirror_redirect"], "")
         self.assertEqual(out["mirror_mode"], "")
 
+    def test_protoc_fields_pass_through(self) -> None:
+        # poly-nerv's sdk/rs: build.rs runs tonic-prost-build.
+        out = self.lookup("""
+            nerv-rs:
+              dir: sdk/rs
+              ecosystem: rs
+              package: hop-top-nerv
+              mirror: hop-top/nerv-rs
+              protoc-version: '36.2'
+            """, "nerv-rs")
+        self.assertEqual((out["protoc_version"], out["protoc_sha256"]), ("36.2", ""))
+        sha = "ab" * 32
+        out = self.lookup(f"""
+            nerv-rs:
+              dir: sdk/rs
+              ecosystem: rs
+              mirror: hop-top/nerv-rs
+              protoc-version: "37.1"
+              protoc-sha256: {sha}
+            """, "nerv-rs")
+        self.assertEqual((out["protoc_version"], out["protoc_sha256"]), ("37.1", sha))
+
+    def test_protoc_fields_default_empty(self) -> None:
+        out = self.lookup("uri-rs: {dir: rs, ecosystem: rs, mirror: hop-top/uri-rs}\n", "uri-rs")
+        self.assertEqual((out["protoc_version"], out["protoc_sha256"]), ("", ""))
+
+    def test_unquoted_protoc_version_is_refused(self) -> None:
+        # YAML reads 36.10 as the float 36.1: a different release.
+        r = self.run_lookup("nerv-rs: {dir: sdk/rs, ecosystem: rs, mirror: hop-top/nerv-rs, "
+                            "protoc-version: 36.10}\n", "nerv-rs")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("protoc-version must be a quoted string", r.stderr)
+
 
 class MirrorModeGuardTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -168,6 +204,24 @@ class MirrorModeGuardTests(unittest.TestCase):
                 code, out = self.run_step("tag-only", "go", bad)
                 self.assertEqual(code, 1, out)
                 self.assertIn("whole number", out)
+
+
+class PublishRsWiringTests(unittest.TestCase):
+    def setUp(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.job = text[text.index("\n  publish-rs:\n"):text.index("\n  mirror:\n")]
+        outputs = text[text.index("    outputs:\n"):text.index("    steps:\n")]
+        self.declared = set(re.findall(r"(?m)^      (\w+): \$\{\{", outputs))
+
+    def test_protoc_fields_are_forwarded(self) -> None:
+        for line in ("protoc-version: ${{ needs.parse.outputs.protoc_version }}",
+                     "protoc-sha256: ${{ needs.parse.outputs.protoc_sha256 }}"):
+            with self.subTest(line=line):
+                self.assertIn(line, self.job)
+
+    def test_every_forwarded_parse_output_is_declared(self) -> None:
+        used = set(re.findall(r"needs\.parse\.outputs\.(\w+)", self.job))
+        self.assertLessEqual(used, self.declared)
 
 
 class MirrorWiringTests(unittest.TestCase):

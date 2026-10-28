@@ -15,6 +15,22 @@ on:
         description: Test command. Empty uses default.
         type: string
         default: ""
+      protoc-version:
+        description: |
+          protobuf release whose `protoc` to install before any cargo step
+          (e.g. "36.2"), for crates whose build.rs runs prost-build /
+          tonic-prost-build. Empty (default) installs nothing. The zip is
+          checked against a sha256 pinned in this workflow; a version
+          with no pin needs `protoc-sha256`.
+        type: string
+        default: ""
+      protoc-sha256:
+        description: |
+          sha256 of `protoc-<version>-<platform>.zip` for a
+          `protoc-version` this workflow has no pin for (linux-x86_64 on
+          ubuntu-latest). Must agree with the pin when one exists.
+        type: string
+        default: ""
     secrets:
       CARGO_REGISTRY_TOKEN:
         description: crates.io API token; account must have a verified email
@@ -31,6 +47,74 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ inputs.rust-toolchain }}
+
+      # Official protobuf release zip, sha256-checked before it is unpacked
+      # or put on PATH. Exports PROTOC too, which prost-build reads first.
+      # Pins are the release assets' sha256 (cross-checked against the
+      # GitHub release digest); add a version here by hand, 14-day age
+      # gate. A caller-supplied `protoc-sha256` covers unpinned versions.
+      - name: Install protoc
+        env:
+          PROTOC_VERSION: ${{ inputs.protoc-version }}
+          PROTOC_SHA256: ${{ inputs.protoc-sha256 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PROTOC_VERSION:-}" ]; then
+            echo "protoc-version not set; not installing protoc"
+            exit 0
+          fi
+          if ! printf '%s' "$PROTOC_VERSION" | grep -Eqx '[0-9]+\.[0-9]+(\.[0-9]+)?'; then
+            echo "::error::protoc-version must be a protobuf release like 36.2, got '$PROTOC_VERSION'"
+            exit 1
+          fi
+          exe=protoc
+          case "${RUNNER_OS:-}/${RUNNER_ARCH:-}" in
+            Linux/X64) platform=linux-x86_64 ;;
+            Linux/ARM64) platform=linux-aarch_64 ;;
+            macOS/X64) platform=osx-x86_64 ;;
+            macOS/ARM64) platform=osx-aarch_64 ;;
+            Windows/X64) platform=win64; exe=protoc.exe ;;
+            *) echo "::error::no protoc release for runner ${RUNNER_OS:-?}/${RUNNER_ARCH:-?}"; exit 1 ;;
+          esac
+          case "$PROTOC_VERSION/$platform" in
+            36.2/linux-x86_64) pinned=121f6c7afe1d4d0e3ea6aab9432038599250134cbf4474cb1167d2c7decd4278 ;;
+            36.2/linux-aarch_64) pinned=8b8f18bd2b30346efbc698dd5a73dd7c805f3ef8380f6dfc95c768f3f1852f6a ;;
+            36.2/osx-x86_64) pinned=228cc7add4616cc14ca5e80dee83209d44449a7aee95a914ae748fa374efb078 ;;
+            36.2/osx-aarch_64) pinned=9cd98a532c5c5e0c4161314de0225de27e4c8a323917b6ea7b1b714d3ae23466 ;;
+            36.2/win64) pinned=f0c128dc0d8492eceece83bb459a4c0e316764b929ffbf1aa416357fd644edd3 ;;
+            *) pinned= ;;
+          esac
+          given=$(printf '%s' "${PROTOC_SHA256:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+          if [ -n "$given" ] && ! printf '%s' "$given" | grep -Eqx '[0-9a-f]{64}'; then
+            echo "::error::protoc-sha256 must be 64 hex characters"
+            exit 1
+          fi
+          if [ -n "$given" ] && [ -n "$pinned" ] && [ "$given" != "$pinned" ]; then
+            echo "::error::protoc-sha256 disagrees with the pinned sha256 for protoc $PROTOC_VERSION ($platform): $pinned"
+            exit 1
+          fi
+          want="${given:-$pinned}"
+          if [ -z "$want" ]; then
+            echo "::error::no pinned sha256 for protoc $PROTOC_VERSION ($platform); pass protoc-sha256 (the release asset's sha256)"
+            exit 1
+          fi
+          asset="protoc-${PROTOC_VERSION}-${platform}.zip"
+          zip="$RUNNER_TEMP/$asset"
+          dest="$RUNNER_TEMP/protoc-$PROTOC_VERSION"
+          curl -fsSL --retry 3 -o "$zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${asset}"
+          got=$(sha256sum "$zip" | cut -d' ' -f1)
+          if [ "$got" != "$want" ]; then
+            rm -f "$zip"
+            echo "::error::sha256 mismatch for $asset: got $got, want $want"
+            exit 1
+          fi
+          rm -rf "$dest"
+          unzip -q "$zip" -d "$dest"
+          rm -f "$zip"
+          "$dest/bin/$exe" --version
+          echo "$dest/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=$dest/bin/$exe" >> "$GITHUB_ENV"
 
       - name: Test
         working-directory: ${{ inputs.working-directory }}
