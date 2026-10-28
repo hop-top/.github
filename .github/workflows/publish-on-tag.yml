@@ -80,6 +80,11 @@ on:
             node-version     override default Node version (ts; default 22)
             python-version   override default Python version (py; default 3.11)
             rust-toolchain   override default Rust toolchain (rs; default stable)
+            protoc-version   protobuf release whose protoc to install before
+                             cargo runs (rs; default none). Quote it:
+                             YAML reads 36.10 as 36.1
+            protoc-sha256    sha256 of the protoc zip, for a protoc-version
+                             publish-rs has no pin for (rs)
             access           override npm access level (ts; default public)
             pypi-environment override default GitHub Environment for PyPI OIDC (py; default pypi)
             pypi-auth        override default PyPI auth mode (py; "oidc" | "token"; default "oidc")
@@ -141,6 +146,8 @@ jobs:
       node_version: ${{ steps.lookup.outputs.node_version }}
       python_version: ${{ steps.lookup.outputs.python_version }}
       rust_toolchain: ${{ steps.lookup.outputs.rust_toolchain }}
+      protoc_version: ${{ steps.lookup.outputs.protoc_version }}
+      protoc_sha256: ${{ steps.lookup.outputs.protoc_sha256 }}
       access: ${{ steps.lookup.outputs.access }}
       pypi_environment: ${{ steps.lookup.outputs.pypi_environment }}
       pypi_auth: ${{ steps.lookup.outputs.pypi_auth }}
@@ -199,11 +206,23 @@ jobs:
               ("node-version",     "node_version"),
               ("python-version",   "python_version"),
               ("rust-toolchain",   "rust_toolchain"),
+              ("protoc-sha256",    "protoc_sha256"),
               ("access",           "access"),
               ("pypi-environment", "pypi_environment"),
               ("pypi-auth",        "pypi_auth"),
           ]:
               print(f"{dst}={entry.get(src, '')}")
+          # Versions that YAML would read as a float must arrive as strings:
+          # `protoc-version: 36.10` is the float 36.1, a different release.
+          # An int / float is refused rather than guessed at.
+          pv = entry.get("protoc-version", "")
+          if not isinstance(pv, str):
+              sys.stderr.write(
+                  f"::error::{comp}: protoc-version must be a quoted string "
+                  f"(e.g. '36.2'), got {pv!r}\n"
+              )
+              sys.exit(1)
+          print(f"protoc_version={pv.strip()}")
           # Booleans: YAML `true` arrives as Python True; emit lowercase so
           # the `== 'true'` gates downstream read it.
           for src, dst in [
@@ -291,6 +310,8 @@ jobs:
       working-directory: ${{ needs.parse.outputs.dir }}
       test-command: ${{ needs.parse.outputs.test_command }}
       rust-toolchain: ${{ needs.parse.outputs.rust_toolchain || 'stable' }}
+      protoc-version: ${{ needs.parse.outputs.protoc_version }}
+      protoc-sha256: ${{ needs.parse.outputs.protoc_sha256 }}
 
   mirror:
     needs: [parse, publish-ts, publish-py, publish-rs]
