@@ -50,6 +50,8 @@ ecosystems: |
 | `node-version` | no | Override default Node version (ts; default `22`) |
 | `python-version` | no | Override default Python version (py; default `3.11`) |
 | `rust-toolchain` | no | Override default Rust toolchain (rs; default `stable`) |
+| `protoc-version` | no | rs: protobuf release whose `protoc` to install before any cargo step, for a crate whose `build.rs` runs `prost-build` / `tonic-prost-build`. Default empty: no install. Quoted string (`'36.2'`): an unquoted number fails `parse`, since YAML reads `36.10` as `36.1`. The official release zip is sha256-checked, unpacked under `$RUNNER_TEMP`, put on `PATH` and exported as `PROTOC` (also visible to `test-command`). Pinned in `publish-rs.yml`: `36.2` |
+| `protoc-sha256` | no | rs: sha256 of `protoc-<version>-linux-x86_64.zip`, for a `protoc-version` with no pin. Must equal the pin when there is one. Take it from the release asset (`gh api repos/protocolbuffers/protobuf/releases/tags/v<version> --jq '.assets[] \| select(.name == "protoc-<version>-linux-x86_64.zip") \| .digest'`) and check it against a download of your own |
 | `access` | no | Override npm access level (ts; default `public`) |
 | `pypi-environment` | no | Override default GitHub Environment for PyPI OIDC (py; default `pypi`) |
 | `pypi-auth` | no | PyPI auth mode (py; `oidc` \| `token`; default `oidc`). `token` requires `PYPI_REGISTRY_TOKEN` secret. |
@@ -81,6 +83,19 @@ ecosystems: |
     ecosystem: rs
     mirror: hop-top/uri-rs
     # accepts default `cargo test` — no override needed
+```
+
+A crate that generates gRPC code in `build.rs` (`tonic-prost-build`)
+needs `protoc` on the runner:
+
+```yaml
+ecosystems: |
+  nerv-rs:
+    dir: sdk/rs
+    ecosystem: rs
+    package: hop-top-nerv
+    mirror: hop-top/nerv-rs
+    protoc-version: '36.2'   # matches the CI job's protoc
 ```
 
 ## How outputs feed downstream jobs
