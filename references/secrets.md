@@ -32,7 +32,7 @@ immediately. No silent fallback to `GITHUB_TOKEN`.
 | `RELEASE_BOT_APP_ID` | `release-please-on-push`, `release-tag-on-merge`, `goreleaser-on-tag` and `spec-status-line` (the token pushes the status-line commit), each minting via `actions/create-github-app-token@v3` with this secret as its `client-id` (an App ID or a Client ID both work); a hand-rolled release-please job | Org | GitHub App ID for the hop-top release-bot. Paired with `RELEASE_BOT_PRIVATE_KEY`. See [GitHub App permissions](#github-app-permissions). |
 | `RELEASE_BOT_PRIVATE_KEY` | `release-please-on-push`, `release-tag-on-merge`, `goreleaser-on-tag` and `spec-status-line`, each minting via `actions/create-github-app-token@v3` (`private-key`); a hand-rolled release-please job | Org | GitHub App private key. Paired with `RELEASE_BOT_APP_ID`. |
 | `NPM_REGISTRY_TOKEN` | `publish-ts` (fallback only) | Org | npm Granular Access Token with publish on your scope. **Prefer [trusted publishing](how-to/npm-trusted-publishing.md)** — with a publisher bound, OIDC wins and this token is unused. Tokens expire, hit 2FA walls in CI, and npm is deprecating 2FA-bypass tokens. |
-| `CARGO_REGISTRY_TOKEN` | `publish-rs` (if shipping Rust) | Org | crates.io API token. Account must have a verified email. |
+| `CARGO_REGISTRY_TOKEN` | `publish-rs` (fallback only) | Org | crates.io API token. Account must have a verified email. OPTIONAL: with a crates.io trusted publisher bound (caller grants `id-token: write`), OIDC wins and this token is unused. |
 | `PYPI_REGISTRY_TOKEN` | `publish-py` (if `pypi-auth: token`) | Org | OPTIONAL — only when using token mode instead of OIDC. PyPI API token. |
 | `PACKAGIST_USERNAME` | `publish-php` (if shipping PHP) | Org | Packagist account username. Paired with `PACKAGIST_TOKEN`. Find at <https://packagist.org/profile/edit>. URL-encoded into the `update-package` query string; `::add-mask::`-registered inside the job. |
 | `PACKAGIST_TOKEN` | `publish-php` (if shipping PHP) | Org | Packagist API token. Mint at <https://packagist.org/profile/edit>. URL-encoded into the `update-package` query string; `::add-mask::`-registered inside the job. |
@@ -140,7 +140,7 @@ names. The adapter names are an internal implementation detail —
 | Canonical secret | Adapter env (internal) | Where | Why |
 |---|---|---|---|
 | `NPM_REGISTRY_TOKEN` | `NODE_AUTH_TOKEN` | `publish-ts` publish step | `actions/setup-node` reads this |
-| `CARGO_REGISTRY_TOKEN` | `CARGO_REGISTRY_TOKEN` | `publish-rs` publish step | cargo reads this (name matches by coincidence) |
+| `CARGO_REGISTRY_TOKEN` | `CARGO_REGISTRY_TOKEN` | `publish-rs` publish step | cargo reads this; set from the trusted-publishing token when present, else this secret |
 | `GH_MIRROR_PAT` | `GH_TOKEN` | `mirror-subtree` all steps | `gh` CLI reads this |
 
 See [concepts/facade-pattern.md](concepts/facade-pattern.md) for the rationale.
