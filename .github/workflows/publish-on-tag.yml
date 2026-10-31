@@ -111,7 +111,7 @@ on:
         description: npm publish token (required only if any component uses ecosystem ts)
         required: false
       CARGO_REGISTRY_TOKEN:
-        description: crates.io token (required only if any component uses ecosystem rs)
+        description: crates.io token (optional fallback for ecosystem rs; unused when the crate has a trusted publisher)
         required: false
       PYPI_REGISTRY_TOKEN:
         description: 'PyPI API token (required only if a py component sets `pypi-auth: token`)'

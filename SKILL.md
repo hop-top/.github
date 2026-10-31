@@ -365,6 +365,16 @@ Recommended:
 3. After first publish, mint a name-scoped token for CI's
    `CARGO_REGISTRY_TOKEN` secret.
 
+**Trusted publishing (preferred for CI).** Once the crate exists, add a
+GitHub trusted publisher on crates.io (crate → Settings → Trusted
+Publishing): owner, repository, workflow filename, optional environment.
+Use the filename of the *caller's* top-level workflow (the one the tag
+push triggers, e.g. `publish.yml`), not `publish-rs.yml`: crates.io
+validates the OIDC `workflow_ref` claim, which names the caller. The
+caller job needs `id-token: write`. `publish-rs.yml` then mints a
+short-lived token via `rust-lang/crates-io-auth-action`; the
+`CARGO_REGISTRY_TOKEN` secret is only a fallback and can be dropped.
+
 The reasoning for "not in CI secrets": an unrestricted token can
 publish to ANY crate name on the account. CI secrets are accessible
 to anyone with `pull_request` against the repo via malicious
