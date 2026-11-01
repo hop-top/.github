@@ -63,6 +63,7 @@ the changelogs.
 |---|---|
 | **npm token (trusted-publishing mode)** | `publish-ts` attempts OIDC first; with a per-package trusted publisher bound on npmjs.com the token path is never used. Bind via `npm trust` — see [how-to/npm-trusted-publishing.md](how-to/npm-trusted-publishing.md). Requires `package.json` `repository` field for provenance. |
 | **PyPI token (default mode)** | `publish-py` uses [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) by default. Configure on PyPI's side bound to your repo + `pypi-environment` (default: `pypi`). If OIDC won't work, see [PyPI auth modes](#pypi-auth-modes) for the token escape hatch. |
+| **crates.io token (trusted-publishing mode)** | `publish-rs` mints a short-lived crates.io token over OIDC (`rust-lang/crates-io-auth-action`) when the caller grants `id-token: write` and a trusted publisher is bound on the crate, matching the **caller workflow filename** (NOT the reusable's). `CARGO_REGISTRY_TOKEN` is then a fallback only; delete it after the first OIDC publish succeeds. |
 | **Go module token** | proxy.golang.org pulls from git tags. |
 
 ## PyPI auth modes
