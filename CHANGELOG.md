@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/hop-top/.github/compare/v0.17.0...v0.18.0) (2026-11-01)
+
+
+### Features
+
+* **publish-rs:** crates.io trusted publishing via OIDC ([4336453](https://github.com/hop-top/.github/commit/433645363d484935ca58e9e4633fc70f3a0b8fb5))
+
 ## [0.17.0](https://github.com/hop-top/.github/compare/v0.16.0...v0.17.0) (2026-10-28)
 
 
