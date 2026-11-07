@@ -21,6 +21,9 @@ jobs:
         with:
           args: -color
 
+  verify-lockfile:
+    uses: ./.github/workflows/verify-lockfile.yml
+
   script-tests:
     runs-on: ubuntu-latest
     steps:
