@@ -1,0 +1,55 @@
+name: verify-lockfile (reusable)
+
+# Fails when .github/workflows/actions.lock is out of sync with the caller's
+# workflows, or a locked pin no longer verifies upstream. Read-only: runs
+# `gh actions-lock --verify`, which writes nothing. Exit 1 means findings
+# block the run; exit 2 means the tool itself failed.
+#
+# The extension is pinned exactly: 0.x releases carry upgrade notes, and a
+# lockfile written by a newer version than the verifier is an error. Raise
+# `extension-version` together with the version used to generate the lock.
+#
+# Caller template (.github/workflows/verify-lockfile.yml):
+#
+#   name: verify-lockfile
+#   on:
+#     pull_request:
+#     push:
+#       branches: [main]
+#   permissions:
+#     contents: read
+#   jobs:
+#     verify:
+#       uses: hop-top/.github/.github/workflows/verify-lockfile.yml@v0
+
+on:
+  workflow_call:
+    inputs:
+      extension-version:
+        description: Exact github/gh-actions-lock release to install
+        type: string
+        default: v0.4.0
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install gh-actions-lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXTENSION_VERSION: ${{ inputs.extension-version }}
+        run: gh extension install github/gh-actions-lock --pin "$EXTENSION_VERSION"
+
+      - name: Verify the lockfile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh actions-lock --verify
