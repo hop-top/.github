@@ -325,6 +325,11 @@ Full guide: [how-to/spec-versioning.md](../references/how-to/spec-versioning.md)
    the guard locally once before the first PR — the snippet is in the
    how-to's step 7.
 
+## 5d. Lock workflow dependencies
+
+Generate `.github/workflows/actions.lock` and add the `verify-lockfile` caller:
+[how-to/workflow-lockfiles.md](../references/how-to/workflow-lockfiles.md).
+
 ## 6. Cut the first release
 
 ```bash

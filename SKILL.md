@@ -60,6 +60,7 @@ spec-versioning rules before release-please ever sees it — see
 | Understand why an umbrella tag (`<umbrella>/vX.Y.Z`) shows all-skipped | [Umbrella / meta-component tags](#umbrella--meta-component-tags) |
 | Re-trigger release-please after sibling-PR conflicts | [references/how-to/retrigger-release-please.md](references/how-to/retrigger-release-please.md) |
 | Ship installable binaries (Homebrew, Scoop, WinGet, …; `goreleaser-on-tag`) | [references/how-to/ship-binaries.md](references/how-to/ship-binaries.md) |
+| Lock workflow dependencies and verify the lockfile on every PR (`actions.lock`, `verify-lockfile`, `Require lockfile`) | [references/how-to/workflow-lockfiles.md](references/how-to/workflow-lockfiles.md) |
 | Look up a secret name | [references/secrets.md](references/secrets.md) |
 | Publish to npm without tokens (trusted publishing) | [references/how-to/npm-trusted-publishing.md](references/how-to/npm-trusted-publishing.md) |
 | Look up an `ecosystems` field | [references/ecosystems.md](references/ecosystems.md) |
