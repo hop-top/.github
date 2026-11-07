@@ -191,7 +191,7 @@ jobs:
       json: ${{ inputs.versioning-extension && toJSON(steps.target.outputs) || toJSON(steps.release.outputs) }}
     steps:
       # Only the two files the config check reads.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           persist-credentials: false
           sparse-checkout: |
@@ -238,14 +238,14 @@ jobs:
       # `client-id` replaces the deprecated `app-id` input; the action takes
       # an App ID there too (either one is the issuer of the JWT it signs),
       # so callers keep passing RELEASE_BOT_APP_ID.
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@v3.3.0
         if: steps.config.outputs.skip != 'true'
         id: app-token
         with:
           client-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
 
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@v5.0.0
         if: steps.config.outputs.skip != 'true' && !inputs.versioning-extension
         id: release
         with:
@@ -289,7 +289,7 @@ jobs:
           echo "Shared tooling: $repo@$sha"
           { echo "repository=$repo"; echo "ref=$sha"; } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         if: steps.config.outputs.skip != 'true' && inputs.versioning-extension
         with:
           repository: ${{ steps.tooling.outputs.repository }}
@@ -298,7 +298,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts/release-please-target
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         if: steps.config.outputs.skip != 'true' && inputs.versioning-extension
         with:
           node-version: 24

@@ -31,7 +31,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GH_RELEASE_PLEASE_PAT }}
       REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           persist-credentials: false

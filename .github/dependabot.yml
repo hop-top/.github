@@ -1,0 +1,16 @@
+# Action updates. Dependabot regenerates the matching actions.lock entry in
+# the same PR. Cooldown matches the 14-day age gate; majors are ignored
+# because a new generation is bumped deliberately across all repos.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
