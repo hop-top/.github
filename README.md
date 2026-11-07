@@ -111,7 +111,8 @@ See [`docs/architecture.md`](docs/architecture.md) for full diagrams
     version-check.yml        reusable: release-version literal + spec-path guard
     release-please-on-push.yml    reusable: release-please run (App token, concurrency guard)
     release-please-preflight.yml  reusable: config-shape checks at PR time
-    ci.yml                   self-CI: actionlint + every test target
+    verify-lockfile.yml      reusable: fails when actions.lock is stale (PRs)
+    ci.yml                   self-CI: actionlint + every test target + lockfile check
     release-please.yml       self-release: opens release PRs
     roll-major-tag.yml       self-release: moves vMAJOR on each stable vX.Y.Z tag
   actions/

@@ -56,6 +56,12 @@ stable tag, run `roll-major-tag` by hand (`workflow_dispatch`, input
 `version`, e.g. `v0.1.0`). It sets the major tag to the tag you name;
 it does not check that the tag is the newest.
 
+## Lockfiles leave this pin alone
+
+`.github/workflows/actions.lock` covers step-level actions only. A reusable
+workflow at `jobs.<id>.uses` stays on the pin you choose here. See
+[Lock workflow dependencies](how-to/workflow-lockfiles.md).
+
 ## Next steps
 
 - [Quick-start](quick-start.md) — copy-paste the two workflow files.
