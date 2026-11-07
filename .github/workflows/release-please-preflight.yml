@@ -72,7 +72,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           persist-credentials: false
 
@@ -305,7 +305,7 @@ jobs:
     permissions:
       contents: read  # least privilege — annotations + step summary don't need PR write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           persist-credentials: false  # avoid auth header side-effects (DEVELOPING.md convention)

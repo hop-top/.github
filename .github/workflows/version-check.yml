@@ -99,7 +99,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
@@ -126,14 +126,14 @@ jobs:
           echo "Shared tooling: $repo@$sha"
           { echo "repository=$repo"; echo "ref=$sha"; } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           repository: ${{ steps.tooling.outputs.repository }}
           ref: ${{ steps.tooling.outputs.ref }}
           path: .hop-top-dotgithub
           persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6.3.0
         with:
           python-version: "3.12"
 

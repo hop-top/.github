@@ -189,7 +189,7 @@ jobs:
           echo "MIRROR_REPO=$RESOLVED" >> "$GITHUB_ENV"
           echo "repo=$RESOLVED" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           persist-credentials: false
