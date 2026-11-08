@@ -107,7 +107,9 @@ class PreflightFixture:
             "GITHUB_STEP_SUMMARY": str(summary),
             "GITHUB_OUTPUT": str(self.tmp / "output"),
         }
-        r = subprocess.run(["bash", str(self.script)], cwd=self.repo, env=env,
+        # Neither step sets `shell:`, so Actions runs them as `bash -e {0}`;
+        # so do the tests, or a failing pipeline that ends the step goes unseen.
+        r = subprocess.run(["bash", "-e", str(self.script)], cwd=self.repo, env=env,
                            capture_output=True, text=True)
         return r.returncode, summary.read_text(encoding="utf-8").splitlines()
 
@@ -1233,6 +1235,32 @@ class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
         self.assertEqual(code, 0, "\n".join(lines))
         self.assertEqual(self.warns(lines), [])
 
+    def test_no_nested_module_file_still_reaches_the_summary(self) -> None:
+        # A grep that matches nothing exits 1: under `bash -e` an unguarded
+        # one ended the step here, before the summary, with no annotation.
+        layouts = {  # name: (release-type, files)
+            "rust only": ("rust", {"Cargo.toml": '[package]\nname = "x"\nversion = "0.5.0-alpha.3"\n'}),
+            "root go.mod only": ("go", {"go.mod": "module example.com/x\n"}),
+            "no module file": ("simple", {"VERSION": "0.5.0-alpha.3\n"}),
+            "vendored go.mod only": ("simple", {"vendor/example.com/y/go.mod": "module example.com/y\n"}),
+        }
+        for name, (release_type, files) in layouts.items():
+            for tracked in (False, True):
+                with self.subTest(name, git=tracked):
+                    shutil.rmtree(self.repo)
+                    self.repo.mkdir()
+                    for rel, content in files.items():
+                        self.write(rel, content)
+                    self.setup_repo({"packages": {".": {"component": "x",
+                                                        "release-type": release_type, **self.PRE}}})
+                    if tracked:
+                        self.git("init", "-q")
+                        self.git("add", "-A")
+                    code, lines = self.run_step()
+                    self.assertEqual(code, 0, "\n".join(lines))
+                    self.assertIn("### Summary", lines, "\n".join(lines))
+                    self.assertLine(lines, "[OK]    no nested module releases its parent package")
+
     # --- stale release-as -------------------------------------------------------
 
     def test_release_as_below_the_manifest_is_stale(self) -> None:
@@ -1396,7 +1424,7 @@ class PreflightPublishWorkflowTests(PreflightFixture, unittest.TestCase):
             "PUBLISH_PATH": ".github/workflows/publish.yml",
             "GITHUB_OUTPUT": str(output),
         }
-        r = subprocess.run(["bash", str(self.detect)], cwd=self.repo, env=env,
+        r = subprocess.run(["bash", "-e", str(self.detect)], cwd=self.repo, env=env,
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         return dict(line.split("=", 1) for line in

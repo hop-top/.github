@@ -1386,15 +1386,15 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             MODULE_FILES_RE='(^|/)(go\.mod|package\.json|Cargo\.toml|pyproject\.toml|composer\.json)$'
             if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-              MODULE_FILES=$(git ls-files -z 2>/dev/null | tr '\0' '\n' | grep -E "$MODULE_FILES_RE")
+              MODULE_FILES=$(git ls-files -z 2>/dev/null | tr '\0' '\n' | grep -E "$MODULE_FILES_RE" || true)
             else
               info "not a git checkout — nested modules are looked up on disk, untracked files included"
-              MODULE_FILES=$(find . -name .git -prune -o -type f -print 2>/dev/null | sed -e 's|^\./||' | grep -E "$MODULE_FILES_RE")
+              MODULE_FILES=$(find . -name .git -prune -o -type f -print 2>/dev/null | sed -e 's|^\./||' | grep -E "$MODULE_FILES_RE" || true)
             fi
-            MODULE_FILES=$(printf '%s\n' "$MODULE_FILES" | grep -Ev '(^|/)(node_modules|vendor|testdata)/')
+            MODULE_FILES=$(printf '%s\n' "$MODULE_FILES" | grep -Ev '(^|/)(node_modules|vendor|testdata)/' || true)
             # has_module_file <path>: a tracked (or, outside git, existing) file
             has_module_file() { printf '%s\n' "$MODULE_FILES" | grep -qxF "$1"; }
-            GOMOD_DIRS=$(printf '%s\n' "$MODULE_FILES" | grep -E '(^|/)go\.mod$' | sed -e 's|/go\.mod$||' | grep -vx 'go\.mod' | sort -u)
+            GOMOD_DIRS=$(printf '%s\n' "$MODULE_FILES" | grep -E '(^|/)go\.mod$' | sed -e 's|/go\.mod$||' | grep -vx 'go\.mod' | sort -u || true)
             NESTED_SEEN=0
             for path in $PACKAGES; do
               RT=$(jq -r --arg p "$path" '.packages[$p]["release-type"] // .["release-type"] // empty' "$CONFIG_PATH")
