@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/hop-top/.github/compare/v0.18.0...v0.18.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **preflight:** no nested module files no longer kills the step ([cb875ba](https://github.com/hop-top/.github/commit/cb875ba4fd7c16dff1f8bc1c1921519ec7576483))
+
 ## [0.18.0](https://github.com/hop-top/.github/compare/v0.17.0...v0.18.0) (2026-11-01)
 
 
