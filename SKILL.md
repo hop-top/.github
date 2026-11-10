@@ -40,6 +40,7 @@ spec-versioning rules before release-please ever sees it — see
 | Publish a brand-new package for the first time | [First publish of a new package](#first-publish-of-a-new-package) |
 | Diagnose a first-publish CI failure | [Diagnosing first-publish failures](#diagnosing-first-publish-failures) |
 | Catch misconfigurations at PR time | [references/how-to/add-preflight.md](references/how-to/add-preflight.md) |
+| Run the quality gates (`make quality`: audit, unused, pkgcheck, coverage, dupes) before any tag, and see which catch a publish failure on the PR | [references/quality-gates.md](references/quality-gates.md) |
 | Adopt the spec-versioning gates (commit rules, status lines, version guard) | [references/how-to/spec-versioning.md](references/how-to/spec-versioning.md) |
 | Guard release-version literals and `<root>/vX.Y` paths on every PR | [references/how-to/spec-versioning.md § version-check](references/how-to/spec-versioning.md#version-check) |
 | Understand annotated `extra-files` — where it belongs, where it breaks | [references/concepts/version-strings.md § Where `extra-files` is right](references/concepts/version-strings.md#where-extra-files-is-right) |

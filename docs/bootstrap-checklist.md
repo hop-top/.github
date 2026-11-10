@@ -102,6 +102,10 @@ Nothing to pre-register. `proxy.golang.org` resolves on first fetch from the mir
 
 Both files in `.github/workflows/` on the source repo. Templates in [Quick-start](../references/quick-start.md).
 
+Add `quality.yml` in the same pass: `make quality` on PRs and weekly,
+whose `pkgcheck` runs each registry's own check before a tag exists
+([references/quality-gates.md](../references/quality-gates.md)).
+
 Critical: **install both BEFORE cutting any tags**. A tag pushed before `publish.yml` exists never triggers the workflow (the workflow file isn't in the tag's tree). If you migrate from a prior release flow, plan to retag anything cut under the old flow.
 
 ## 5. Configure release-please
