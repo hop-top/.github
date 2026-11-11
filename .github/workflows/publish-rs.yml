@@ -138,7 +138,7 @@ jobs:
       - name: Authenticate to crates.io (trusted publishing)
         id: crates-io-auth
         continue-on-error: true
-        uses: rust-lang/crates-io-auth-action@v1.0.5
+        uses: rust-lang/crates-io-auth-action@v1.0.6
 
       - name: Publish
         working-directory: ${{ inputs.working-directory }}
