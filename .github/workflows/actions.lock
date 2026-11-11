@@ -23,7 +23,7 @@ workflows:
     '.github/workflows/publish-rs.yml':
         - 'actions/checkout@v4.4.0'
         - 'dtolnay/rust-toolchain@stable'
-        - 'rust-lang/crates-io-auth-action@v1.0.5'
+        - 'rust-lang/crates-io-auth-action@v1.0.6'
     '.github/workflows/publish-ts.yml':
         - 'actions/checkout@v4.4.0'
         - 'actions/setup-node@v4.4.0'
@@ -126,8 +126,8 @@ dependencies:
         repo_id: 178055147
         uses:
             - 'actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405'
-    'rust-lang/crates-io-auth-action@v1.0.5':
-        ref: 'v1.0.5'
-        commit: 'sha1-c6f97d42243bad5fab37ca0427f495c86d5b1a18'
+    'rust-lang/crates-io-auth-action@v1.0.6':
+        ref: 'v1.0.6'
+        commit: 'sha1-3268eb413133e2960fa4ae0e963ca76380c54cd9'
         owner_id: 5430905
         repo_id: 1008931044
