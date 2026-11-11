@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/hop-top/.github/compare/v0.18.1...v0.19.0) (2026-11-11)
+
+
+### Features
+
+* **verify-lockfile:** reusable lockfile check for callers ([fcea8cd](https://github.com/hop-top/.github/commit/fcea8cd7d1216356eb479e0125169c624a062aaa))
+
 ## [0.18.1](https://github.com/hop-top/.github/compare/v0.18.0...v0.18.1) (2026-11-08)
 
 
