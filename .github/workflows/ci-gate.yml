@@ -1,0 +1,70 @@
+name: ci-gate (reusable)
+
+# One check that sums up a workflow: fails when any job it is handed
+# failed or was cancelled, passes when every one succeeded or was
+# skipped. Make it the only required check; the jobs behind it can then
+# be added, renamed, split or gated by `if:` without touching the
+# ruleset.
+#
+# A job skipped by its own `if:` reports as skipped, which GitHub treats
+# as passing, so gating work by what a PR changed is safe behind this
+# gate. A trigger-level `paths:` / `branches:` filter is not: a workflow
+# that never starts never reports (docs/bootstrap-checklist.md § 6b).
+#
+# Caller template (a job in the workflow it sums up):
+#
+#   ci-ok:
+#     if: always()          # run even when a job it needs failed
+#     needs: [changes, lint, test]  # every other job in the workflow
+#     uses: hop-top/.github/.github/workflows/ci-gate.yml@v0
+#     with:
+#       needs: ${{ toJSON(needs) }}
+#
+# Required check name: `ci-ok / gate` (`<caller job> / <reusable job>`).
+# Without `if: always()` the gate is itself skipped when a job it needs
+# fails, and a skipped required check passes.
+
+on:
+  workflow_call:
+    inputs:
+      needs:
+        description: The caller's `toJSON(needs)`
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 5
+    steps:
+      - name: Check needed job results
+        env:
+          NEEDS: ${{ inputs.needs }}
+        run: |
+          if ! printf '%s' "$NEEDS" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            echo "::error::needs input is not a JSON object; pass the caller's toJSON(needs)"
+            exit 1
+          fi
+          if [ "$(printf '%s' "$NEEDS" | jq 'length')" -eq 0 ]; then
+            echo "::error::needs is empty; list every other job of the workflow under the gate job's needs:"
+            exit 1
+          fi
+          {
+            echo "| Job | Result |"
+            echo "|---|---|"
+            printf '%s' "$NEEDS" | jq -r 'to_entries | sort_by(.key)[] | "| \(.key) | \(.value.result) |"'
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          bad=$(printf '%s' "$NEEDS" | jq -r 'to_entries | sort_by(.key)[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "\(.key)=\(.value.result)"')
+          if [ -n "$bad" ]; then
+            while IFS= read -r line; do
+              echo "::error::job ${line%%=*} ended ${line#*=}"
+            done <<< "$bad"
+            exit 1
+          fi
+          echo "all $(printf '%s' "$NEEDS" | jq 'length') needed jobs succeeded or were skipped"
