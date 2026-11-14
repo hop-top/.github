@@ -1,0 +1,144 @@
+# Org-default Dependabot policy. Copy to <repo>/.github/dependabot.yml, keep
+# the ecosystems the repo uses, fix `directories`. A missing directory fails
+# the Dependabot run, so delete unused blocks.
+#
+# Version updates: cooldown 14d after release (every entry).
+# Security updates: immediate; cooldown never applies to them. Needs repo
+#   setting "Dependabot security updates" -> scripts/enable-dependabot-security.sh
+# Grouping: one PR per dependency across directories; separate group so one
+#   advisory arrives as one PR.
+# Reference: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      go-modules:
+        patterns:
+          - "*"
+        group-by: dependency-name
+      go-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "build(deps):"
+
+  - package-ecosystem: npm
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      npm-packages:
+        patterns:
+          - "*"
+        group-by: dependency-name
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "build(deps):"
+
+  - package-ecosystem: pip
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      pip-packages:
+        patterns:
+          - "*"
+        group-by: dependency-name
+      pip-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "build(deps):"
+
+  - package-ecosystem: cargo
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      cargo-crates:
+        patterns:
+          - "*"
+        group-by: dependency-name
+      cargo-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "build(deps):"
+
+  - package-ecosystem: composer
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      composer-packages:
+        patterns:
+          - "*"
+        group-by: dependency-name
+      composer-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "build(deps):"
+
+  - package-ecosystem: docker
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        group-by: dependency-name
+      docker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "build(deps):"
+
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        patterns:
+          - "*"
+        group-by: dependency-name
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci(deps):"

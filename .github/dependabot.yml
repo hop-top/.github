@@ -11,6 +11,15 @@ updates:
       interval: weekly
     cooldown:
       default-days: 14
+    groups:
+      actions:
+        patterns:
+          - "*"
+        group-by: dependency-name
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     ignore:
       - dependency-name: "*"
         update-types: [version-update:semver-major]
