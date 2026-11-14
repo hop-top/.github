@@ -10,10 +10,10 @@ Catch misconfigurations at PR time instead of tag-push time.
 
 ## Result
 
-A workflow that fails PRs touching `release-please-config.json`,
-`.release-please-manifest.json`, `release-please.yml`, `publish.yml`,
-or per-language manifests if any of the
-[bootstrap checks](../../docs/bootstrap-checklist.md) would fail.
+A workflow that fails a PR when any of the
+[bootstrap checks](../../docs/bootstrap-checklist.md) would fail on its
+`release-please-config.json`, `.release-please-manifest.json`,
+`release-please.yml`, `publish.yml` or per-language manifests.
 
 ## Quick version
 
@@ -29,19 +29,6 @@ name: release-please-preflight
 
 on:
   pull_request:
-    paths:
-      - '.github/release-please-config.json'
-      - '.github/.release-please-manifest.json'
-      - '.github/workflows/release-please.yml'
-      - '.github/workflows/publish.yml'
-      # Single-language repo: root-level manifests. Polyglot monorepo:
-      # per-directory manifests for EVERY language you ship, e.g.
-      #   go/go.mod  ts/package.json  py/pyproject.toml  rs/Cargo.toml  php/composer.json
-      - 'pyproject.toml'
-      - 'package.json'
-      - 'Cargo.toml'
-      - 'go.mod'
-      - 'composer.json'
   workflow_dispatch: {}
 
 jobs:
@@ -50,6 +37,18 @@ jobs:
       contents: read  # annotations + step summary need nothing more
     uses: hop-top/.github/.github/workflows/release-please-preflight.yml@v0
 ```
+
+No `paths:` filter on the trigger: once the check is required, a PR
+whose workflow a filter skipped waits on it forever
+([bootstrap-checklist § 6b](../../docs/bootstrap-checklist.md#6b-make-checks-required-last)).
+The run is a few seconds of config parsing. To skip it on PRs that
+touch no release file anyway, gate the `preflight` job with `if:` on a
+`changes` job's output: a job skipped by `if:` reports as skipped,
+which passes ([single-required-check.md](single-required-check.md)).
+The release files are the config, the manifest, `release-please.yml`,
+`publish.yml` and every package manifest (`go.mod`, `package.json`,
+`pyproject.toml`, `Cargo.toml`, `composer.json`, per directory in a
+polyglot repo).
 
 ### 2. Verify it runs
 
@@ -135,8 +134,8 @@ All inputs are optional:
 | `publish-workflow-path` | `.github/workflows/publish.yml` | the publish caller has another name or location |
 | `release-please-workflow-path` | `.github/workflows/release-please.yml` | the release-please caller has another name or location |
 
-When you move a file, move the matching entry in the caller's
-`on.pull_request.paths` list too, or edits to it no longer trigger the
+When you move a file and gate the caller job on a changes job, move
+the file in that job's path list too, or edits to it no longer run the
 check.
 
 `fail-on` values:

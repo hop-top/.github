@@ -434,6 +434,8 @@ So, per check (preflight, spec gates, any reusable caller):
    the reusable's file name.
 3. Before requiring a path-filtered workflow, move the filter inside
    the job (`if:`), so a run that has nothing to check still reports.
+4. For a workflow of many jobs, require one `ci-gate.yml` job instead
+   of each job ([how-to/single-required-check.md](../references/how-to/single-required-check.md)).
 
 Renaming the caller job renames the check: update the ruleset in the
 same change.
