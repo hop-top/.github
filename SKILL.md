@@ -53,6 +53,7 @@ spec-versioning rules before release-please ever sees it — see
 | Link an SDK family's versions (only on a new major or a pre-1.0 minor) | [references/how-to/target-versioning.md § Linked family](references/how-to/target-versioning.md#linked-family) |
 | Keep nested packages and Go modules out of a root package's releases (`exclude-paths`) | [docs/bootstrap-checklist.md § 5](docs/bootstrap-checklist.md#5-configure-release-please) |
 | Make a workflow a required check without blocking PRs | [docs/bootstrap-checklist.md § 6b](docs/bootstrap-checklist.md#6b-make-checks-required-last) |
+| Skip jobs a PR cannot affect and require one check per workflow (`ci-gate`) | [references/how-to/single-required-check.md](references/how-to/single-required-check.md) |
 | Keep a monorepo Release-free (Releases only on mirrors; `release-tag-on-merge` pushes the tags release-please then skips) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
 | Re-trigger a failed publish | [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md) |
 | Understand why a workflow-file fix on main doesn't apply on rerun | [Re-runs use the tag's workflow snapshot, not main](#re-runs-use-the-tags-workflow-snapshot-not-main) |

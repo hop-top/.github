@@ -102,7 +102,10 @@ jobs:
     uses: hop-top/.github/.github/workflows/spec-commit-rules.yml@v0
 ```
 
-The `paths:` filter keeps it off PRs that never touch the spec; the
+The `paths:` filter keeps it off PRs that never touch the spec. Drop
+it before making `rules / rules` a required check: a filtered-out
+required check never reports and leaves the PR pending; gate the job
+by `if:` instead ([single-required-check.md](single-required-check.md)). The
 workflow itself fails (exit 2) when called on anything but a
 `pull_request` event or from a config with no spec package — a wiring
 error, never "nothing to validate".
