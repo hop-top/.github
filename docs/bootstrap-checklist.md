@@ -330,6 +330,15 @@ Full guide: [how-to/spec-versioning.md](../references/how-to/spec-versioning.md)
 Generate `.github/workflows/actions.lock` and add the `verify-lockfile` caller:
 [how-to/workflow-lockfiles.md](../references/how-to/workflow-lockfiles.md).
 
+## 5e. Dependabot: 14d cooldown, immediate security updates
+
+Version updates wait 14 days after release; security updates are immediate. Copy `templates/dependabot.yml`, then enable the repo setting:
+[how-to/dependabot.md](../references/how-to/dependabot.md).
+
+```bash
+scripts/enable-dependabot-security.sh <org>/<repo>
+```
+
 ## 6. Cut the first release
 
 ```bash

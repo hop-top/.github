@@ -6,6 +6,13 @@ CI deliberately cannot perform. `spec/` and `release-please-target/`
 run inside the reusable workflows that check this repository out
 (see [`DEVELOPING.md`](../DEVELOPING.md#layout)).
 
+## `enable-dependabot-security.sh`
+
+`scripts/enable-dependabot-security.sh <org>/<repo>...` enables
+vulnerability alerts and automated security fixes via `gh api`.
+Idempotent. See
+[how-to/dependabot.md](../references/how-to/dependabot.md).
+
 ## `bootstrap-first-publish.sh`
 
 Local helper for the very first publish of a brand-new package on

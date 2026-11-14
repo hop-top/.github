@@ -125,6 +125,7 @@ See [`docs/architecture.md`](docs/architecture.md) for full diagrams
 ISSUE_TEMPLATE/              org-default issue forms (bug, feature)
 PULL_REQUEST_TEMPLATE.md     org-default PR template
 CODE_OF_CONDUCT.md, CONTRIBUTING.md, SECURITY.md   org-default community files
+templates/dependabot.yml     Dependabot policy template (14d cooldown, security group)
 docs/
   architecture.md            full pipeline diagrams + design rationale
   bootstrap-checklist.md     first-time setup, in order
