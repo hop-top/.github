@@ -1,21 +1,29 @@
 # Action updates. Dependabot regenerates the matching actions.lock entry in
-# the same PR. Cooldown matches the 14-day age gate; majors are ignored
-# because a new generation is bumped deliberately across all repos.
+# the same PR. Org policy (templates/dependabot.yml): one version-update PR at
+# a time, updated in place while open; cooldown matches the 14-day age gate;
+# security updates immediate. Majors are ignored because a new generation is
+# bumped deliberately across all repos.
 version: 2
+
+multi-ecosystem-groups:
+  dependencies:
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "ci(deps):"
+
 updates:
   - package-ecosystem: github-actions
     directories:
       - /
       - /.github/actions/*
-    schedule:
-      interval: weekly
+    multi-ecosystem-group: dependencies
+    patterns:
+      - "*"
     cooldown:
       default-days: 14
     groups:
-      actions:
-        patterns:
-          - "*"
-        group-by: dependency-name
       actions-security:
         applies-to: security-updates
         patterns:
