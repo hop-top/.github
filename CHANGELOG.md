@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/hop-top/.github/compare/v0.19.0...v0.20.0) (2026-11-20)
+
+
+### Features
+
+* **ci-gate:** reusable single required check for a workflow's jobs ([5ee22b2](https://github.com/hop-top/.github/commit/5ee22b2663e72b70a7a09a106e81bbcfce533b03))
+
 ## [0.19.0](https://github.com/hop-top/.github/compare/v0.18.1...v0.19.0) (2026-11-11)
 
 
