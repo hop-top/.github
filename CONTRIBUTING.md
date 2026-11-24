@@ -80,6 +80,17 @@ See `RELEASING.md` in each repo. Org-wide pattern:
 [promote]: https://github.com/hop-top/.github/blob/main/references/how-to/target-versioning.md#promote-and-open-lines
 [channel]: https://github.com/hop-top/.github/blob/main/references/how-to/prerelease-channel.md
 
+## Architecture decisions (stdlib-only vs `hop.top/kit`)
+
+Every new `hop-top` project must evaluate both **stdlib-only** and
+**`hop.top/kit`-based** (or **hybrid**: stdlib-only core + `hop.top/kit` CLI
+module) options before implementation and record the decision with explicit
+pros and cons for each in an ADR (`docs/adr/0001-*.md`). See the
+[dependency boundary guide][dep-boundary] for the trade-off matrix and ADR
+template.
+
+[dep-boundary]: https://github.com/hop-top/.github/blob/main/references/concepts/dependency-boundary.md
+
 ## Sign-offs
 
 PRs need one approving review from a maintainer. No required sign-off

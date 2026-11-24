@@ -37,6 +37,7 @@ spec-versioning rules before release-please ever sees it — see
 |---|---|
 | Set up a brand-new repo's release pipeline | [references/quick-start.md](references/quick-start.md) |
 | Run the full first-time-setup checklist | [docs/bootstrap-checklist.md](docs/bootstrap-checklist.md) |
+| Decide between stdlib-only, `hop.top/kit`, or hybrid architecture and record the ADR | [references/concepts/dependency-boundary.md](references/concepts/dependency-boundary.md) |
 | Publish a brand-new package for the first time | [First publish of a new package](#first-publish-of-a-new-package) |
 | Diagnose a first-publish CI failure | [Diagnosing first-publish failures](#diagnosing-first-publish-failures) |
 | Catch misconfigurations at PR time | [references/how-to/add-preflight.md](references/how-to/add-preflight.md) |

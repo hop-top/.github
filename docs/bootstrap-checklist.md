@@ -2,9 +2,12 @@
 
 Order matters. Do these in sequence; some steps depend on prior ones.
 
-## 0. Decide the component layout
+## 0. Decide the component layout and dependency boundary
 
-Pick which ecosystems ship and the directory layout. Conventional hop-top shape:
+Before scaffolding modules or writing implementation code, make two upfront architectural choices:
+
+1. **Dependency boundary (`stdlib-only` vs `hop.top/kit` vs hybrid):** evaluate all options with explicit pros and cons and record the decision in `docs/adr/0001-*.md` (linked from `README.md`). See [concepts/dependency-boundary.md](../references/concepts/dependency-boundary.md) for the trade-off matrix, precedents (`uma`, `pod`, `kyx`), and ADR template.
+2. **Component layout:** pick which ecosystems ship and the directory layout. Conventional hop-top shape:
 
 ```
 my-repo/
