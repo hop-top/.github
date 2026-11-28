@@ -29,7 +29,7 @@ Every ruleset targets `~DEFAULT_BRANCH`, `refs/heads/main` and `refs/heads/relea
 | File | Enforcement | Rules |
 |---|---|---|
 | `production-branch-guardrail.json` | active | no deletion, no force-push, pull request with code-owner review, required status checks |
-| `conventional-commits.json` | disabled | `commit_message_pattern`: Conventional Commits subject |
+| `conventional-commits.json` | active | `commit_message_pattern`: Conventional Commits subject |
 
 Required checks in the guardrail:
 
@@ -40,7 +40,11 @@ Required checks in the guardrail:
 
 A required check the repo never reports blocks every merge. Replace the list with `--checks`, or add repo-specific ones with `--add-check` (poly-kit also requires `validate-promotion`, a job of its own CI).
 
-Bypass actors are empty by default. Pass `--bypass-user <id>` for a repo-admin break-glass user.
+Both rulesets let the repository `admin` role bypass (`RepositoryRole` 5, mode `always`). `--bypass-user <id>` adds a user on top.
+
+`conventional-commits` assumes a rebase-only repo, where every commit subject is the PR commit. A repo that allows merge commits ("Merge pull request ...") must not take it: apply with `--only production-branch-guardrail`, or set the ruleset to `disabled`.
+
+Before applying, the repo must already run both required jobs. A check that never reports blocks every merge. `--dry-run` warns for each required check not seen on the default branch head.
 
 ## Steps
 
