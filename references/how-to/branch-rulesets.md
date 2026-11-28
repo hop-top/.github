@@ -42,7 +42,7 @@ A required check the repo never reports blocks every merge. Replace the list wit
 
 Both rulesets let the repository `admin` role bypass (`RepositoryRole` 5, mode `always`). `--bypass-user <id>` adds a user on top.
 
-`conventional-commits` assumes a rebase-only repo, where every commit subject is the PR commit. A repo that allows merge commits ("Merge pull request ...") must not take it: apply with `--only production-branch-guardrail`, or set the ruleset to `disabled`.
+`conventional-commits` follows the org merge model: squash by default, merge commits for branch promotions (`next` → `main`), rebase-merge off. The pattern accepts a Conventional Commits subject or GitHub's own `Merge pull request ...` / `Merge branch ...` subject, so a promotion merge passes while the squashed commits it carries were already checked.
 
 Before applying, the repo must already run both required jobs. A check that never reports blocks every merge. `--dry-run` warns for each required check not seen on the default branch head.
 

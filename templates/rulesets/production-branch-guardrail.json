@@ -31,8 +31,7 @@
       "parameters": {
         "allowed_merge_methods": [
           "squash",
-          "merge",
-          "rebase"
+          "merge"
         ],
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": true,
