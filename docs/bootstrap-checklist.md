@@ -236,6 +236,8 @@ right](../references/concepts/version-strings.md#where-extra-files-is-right).
 | Target | linked family that must share one version | seed every linked member at `0.1.0-alpha.0` | `alpha.1` |
 | Target | unlinked component with its own first version (a spec at `1.0.0-alpha.0`) | key absent + its own `initial-version` | `initial-version` |
 
+Spec package rule: an unseeded spec package (no manifest key) that declares its own `initial-version` is valid; the preflight and `version-check` read that `initial-version` until the first release PR writes the key. Neither key nor `initial-version` fails. Never seed it just to satisfy the checks: a seed makes the first tag `alpha.1`, and `validate-promotion` forbids manifest writes outside release PRs.
+
 Why python and rust need a seed under target versioning: with the key
 absent they open at stable `0.1.0`, and `next` refuses it
 (`conditional-linked-versions`: "has no release yet and its first
@@ -327,8 +329,10 @@ Full guide: [how-to/spec-versioning.md](../references/how-to/spec-versioning.md)
 
 1. Declare the directory as a release-please package: path
    `<root>/vX.Y`, `release-type: simple`, a single-segment
-   `component`, a prerelease-shaped manifest seed. The preflight fails
-   a spec package with no directory or no manifest key.
+   `component`, a prerelease-shaped manifest seed (or, under target
+   versioning, no key and its own `initial-version`). The preflight
+   fails a spec package with no directory, or with neither a manifest
+   key nor an `initial-version`.
 2. Put `**Status:** Draft` (bold, exactly) in the first fifteen lines
    of every spec document. `spec-status-line` rewrites it from the
    channel on each release PR; a plain `Status:` line is never managed.

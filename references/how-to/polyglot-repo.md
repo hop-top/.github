@@ -125,7 +125,9 @@ python` and `rust` ignore `initial-version` and open at stable
 `0.1.0` while their manifest key is absent; the other strategies
 honor it. On stock versioning, seed a python or rust tree at
 `0.1.0-alpha.0` (its first tag lands at `alpha.1`); a go, ts or php
-tree leaves its key absent and sets `initial-version`
+tree leaves its key absent and sets `initial-version` (a
+`<root>/vX.Y` spec package included: the preflight reads `initial-version`
+until the first release PR writes the key)
 ([bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please),
 [prerelease channel § Manifest presence vs `initial-version`](prerelease-channel.md#manifest-presence-vs-initial-version)).
 With target versioning, go, ts, php and `simple` trees keep the key
