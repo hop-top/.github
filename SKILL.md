@@ -47,6 +47,8 @@ spec-versioning rules before release-please ever sees it — see
 | Understand annotated `extra-files` — where it belongs, where it breaks | [references/concepts/version-strings.md § Where `extra-files` is right](references/concepts/version-strings.md#where-extra-files-is-right) |
 | Configure a single-language repo (no polyglot split) | [references/how-to/single-language-repo.md](references/how-to/single-language-repo.md) |
 | Add a ts/py/rs/php/go tree to an existing `poly-<name>` repo (names, root package, first tag) | [references/how-to/polyglot-repo.md](references/how-to/polyglot-repo.md) |
+| Write agent skills (router + per-port) for a `poly-<name>` repo | [references/how-to/poly-agent-skills.md](references/how-to/poly-agent-skills.md) |
+| List those skills in the `hop-top/skillset` plugin marketplace | [references/how-to/publish-skills-to-skillset.md](references/how-to/publish-skills-to-skillset.md) |
 | Stay in an alpha/beta/rc channel on stock `versioning: "prerelease"` (what the counter does, what a `Release-As` pin reaches, stock `linked-versions`) | [references/how-to/prerelease-channel.md](references/how-to/prerelease-channel.md) |
 | Version by branch role (recommended; no pins): one target per prerelease line, stable cut from the rc without `Release-As` (non-rc packages skipped, stable packages patch-only), patch-only `release/x.y`, families linked only on a new major (or a pre-1.0 minor), on `main` too (cut together once every member is at rc) | [references/how-to/target-versioning.md](references/how-to/target-versioning.md) |
 | Migrate from `versioning: "prerelease"` + `Release-As` to target versioning | [references/how-to/target-versioning.md § Migrate](references/how-to/target-versioning.md#migrate) |
