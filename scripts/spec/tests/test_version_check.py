@@ -195,6 +195,29 @@ class VersionCheckTests(VersionCheckCase):
         self.assertIn("docs/a.md:1: spec-path: spec/v0.8 is not a manifest package (known: spec/v1.0)", r.stdout)
         self.assertIn("docs/a.md:1: spec-path: spec/v0.9 is not a manifest package", r.stdout)
 
+    def test_unseeded_spec_package_with_initial_version_is_known(self) -> None:
+        # Target versioning: key absent by design, first release not cut.
+        self.write(".github/.release-please-manifest.json", json.dumps({}))
+        self.write(".github/release-please-config.json", _config(packages={
+            "spec/v1.0": {"release-type": "simple", "component": "fit-spec",
+                          "versioning": "target", "initial-version": "1.0.0-alpha.0"},
+        }))
+        self.write("docs/a.md", "see spec/v1.0/03.md and spec/v0.8/x.md\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn("spec/v1.0 is not", r.stdout)
+        self.assertIn("spec-path: spec/v0.8 is not a manifest package (known: spec/v1.0)", r.stdout)
+
+    def test_unseeded_spec_package_without_initial_version_is_unknown(self) -> None:
+        self.write(".github/.release-please-manifest.json", json.dumps({}))
+        self.write(".github/release-please-config.json", _config(packages={
+            "spec/v1.0": {"release-type": "simple", "component": "fit-spec"},
+        }))
+        self.write("docs/a.md", "see spec/v1.0/03.md\n")
+        r = self.run_check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("spec/v1.0 is not a manifest package", r.stdout)
+
     def test_specs_root_is_derived_from_the_config(self) -> None:
         # The spec-repo layout: root `specs`, one package, one manifest
         # key. `spec/vX.Y` is not a configured root and is not a finding.

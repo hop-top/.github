@@ -1040,8 +1040,9 @@ jobs:
           # (the shared spec-commit-rules / spec-status-line / version-check
           # workflows derive the spec roots from exactly this shape). The
           # directory must exist, the manifest must know the package (the
-          # version-check spec-path rule reads `<root>/vX.Y` manifest keys —
-          # a missing key is a hard failure here, where check 5 only warns
+          # version-check spec-path rule reads `<root>/vX.Y` manifest keys, or
+          # the package's `initial-version` while the key is absent — with
+          # neither it is a hard failure here, where check 5 only warns
           # for an ordinary package), and the strategy should be `simple`.
           if [[ -f "$CONFIG_PATH" && -n "${PACKAGES:-}" ]]; then
             {
@@ -1069,8 +1070,16 @@ jobs:
                 if [[ -n "$SEED" ]]; then
                   ok "spec package $path: manifest key present ($SEED)"
                 else
-                  fail "spec package $path has no manifest key — the version-check spec-path rule cannot know its version"
-                  fixhint "add \"$path\": \"<version>\" to $MANIFEST_PATH (prerelease-shaped when the package is prerelease, e.g. 0.1.0-alpha.0)"
+                  # Unseeded by design (target versioning: key absent, the
+                  # first release PR writes it): the package's own
+                  # `initial-version` is its version until then.
+                  INIT=$(jq -r --arg p "$path" '.packages[$p]["initial-version"] // .["initial-version"] // empty' "$CONFIG_PATH")
+                  if [[ -n "$INIT" ]]; then
+                    ok "spec package $path: no manifest key yet; initial-version $INIT (first release PR writes the key)"
+                  else
+                    fail "spec package $path has no manifest key and no initial-version — the version-check spec-path rule cannot know its version"
+                    fixhint "add \"$path\": \"<version>\" to $MANIFEST_PATH (prerelease-shaped when the package is prerelease, e.g. 0.1.0-alpha.0), or set .packages.\"$path\".\"initial-version\" in $CONFIG_PATH and leave the key absent (target versioning)"
+                  fi
                 fi
               fi
               RT=$(jq -r --arg p "$path" '.packages[$p]["release-type"] // .["release-type"] // empty' "$CONFIG_PATH")
