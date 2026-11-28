@@ -26,7 +26,7 @@
         "name": "conventional-commits",
         "negate": false,
         "operator": "regex",
-        "pattern": "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\\([\\w\\-\\.]+\\))?(!)?: .+"
+        "pattern": "^((build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\\([\\w\\-\\.]+\\))?(!)?: .+|Merge (pull request|branch) .+)"
       }
     }
   ]
