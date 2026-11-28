@@ -57,6 +57,7 @@ spec-versioning rules before release-please ever sees it — see
 | Skip jobs a PR cannot affect and require one check per workflow (`ci-gate`) | [references/how-to/single-required-check.md](references/how-to/single-required-check.md) |
 | Keep a monorepo Release-free (Releases only on mirrors; `release-tag-on-merge` pushes the tags release-please then skips) | [references/how-to/release-free-monorepo.md](references/how-to/release-free-monorepo.md) |
 | Set up Dependabot (14-day cooldown on version updates, immediate security updates, one version-update PR at a time) and enable security updates on a repo | [references/how-to/dependabot.md](references/how-to/dependabot.md) |
+| Apply the org branch rulesets (guardrail on default, `main`, `release/*`) to a repo, per repo because org rulesets need a paid plan | [references/how-to/branch-rulesets.md](references/how-to/branch-rulesets.md) |
 | Re-trigger a failed publish | [references/how-to/retrigger-failed-publish.md](references/how-to/retrigger-failed-publish.md) |
 | Understand why a workflow-file fix on main doesn't apply on rerun | [Re-runs use the tag's workflow snapshot, not main](#re-runs-use-the-tags-workflow-snapshot-not-main) |
 | Bootstrap a hand-populated mirror before the first tag | [Bootstrap-mirror gotcha](#bootstrap-mirror-gotcha) |
