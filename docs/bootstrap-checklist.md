@@ -31,7 +31,7 @@ Create at `https://github.com/organizations/<org>/settings/secrets/actions`.
 | `GH_MIRROR_PAT` | every release (mirror push) | Fine-grained PAT, `Administration: RW` + `Contents: RW` on every mirror repo |
 | `RELEASE_BOT_APP_ID` | release-please standing PR | Numeric App ID of the hop-top release-bot GitHub App. The App must be installed on the source repo with `Contents: RW` + `Pull Requests: RW` + `Workflows: RW`. Paired with `RELEASE_BOT_PRIVATE_KEY`. |
 | `RELEASE_BOT_PRIVATE_KEY` | release-please standing PR | PEM private key for the same App. Mint via the App's GitHub settings page. Paired with `RELEASE_BOT_APP_ID`. |
-| `NPM_REGISTRY_TOKEN` | ts component | npm Granular Access Token, publish on your scope — needed once for the FIRST publish; bind a [trusted publisher](../references/how-to/npm-trusted-publishing.md) right after and the token goes unused |
+| `NPM_REGISTRY_TOKEN` | ts component | npm Granular Access Token, publish on your scope. It publishes updates only: neither it nor trusted publishing can create a new package name, so the FIRST publish is a local maintainer publish ([§ 3](#npm)). Needed for CI publishes until a [trusted publisher](../references/how-to/npm-trusted-publishing.md) is bound; once bound the token goes unused (keep it as the fallback for unbound packages) |
 | `CARGO_REGISTRY_TOKEN` | rs component | crates.io API token. Account must have a **verified email**. |
 | `PYPI_REGISTRY_TOKEN` | py component (token mode) | OPTIONAL — only if you're using `pypi-auth: token` instead of OIDC. PyPI API token (project-scoped after first publish; account-scoped for bootstrap). |
 | `PACKAGIST_USERNAME` | php component | Packagist account username. Paired with `PACKAGIST_TOKEN`. Find at <https://packagist.org/profile/edit>. |
@@ -57,6 +57,8 @@ gh repo create <org>/<basename>     --public --description "READ-ONLY MIRROR of 
 ```
 
 The mirror jobs (`mirror-subtree.yml`) create a missing mirror and, after every sync, turn off its issues, wiki, projects and discussions (the repo is deliberately not archived: it is the install slot). Don't push to them manually.
+
+**Renamed repo trap**: renaming `<org>/<basename>` to `<org>/poly-<basename>` leaves `<org>/<basename>` as a GitHub redirect. The mirror job does `gh repo view <mirror> || gh repo create <mirror>`, and the view succeeds through the redirect, so the go mirror push lands in the renamed repo. When a mirror name equals a renamed repo's old name, create that mirror yourself first (`gh repo create <org>/<basename> --public ...`): creating it removes the redirect.
 
 ## 3. Register the package on each external registry
 
@@ -211,8 +213,10 @@ right](../references/concepts/version-strings.md#where-extra-files-is-right).
 ```
 
 ```json
-// .release-please-manifest.json — poly-* or ANY repo with a python
-// component: seed EVERY component. Accept that the first tag is alpha.1.
+// .release-please-manifest.json — stock `versioning: "prerelease"`,
+// poly-* or ANY repo with a python component: seed EVERY component.
+// Accept that the first tag is alpha.1. (Target versioning: see the
+// per-mode table below.)
 {
   ".":  "0.1.0-alpha.0",
   "go": "0.1.0-alpha.0",
@@ -223,10 +227,22 @@ right](../references/concepts/version-strings.md#where-extra-files-is-right).
 
 **Which one depends on whether the repo has a python component.**
 
-| Repo | Manifest | First tag |
-|---|---|---|
-| Pure go, pure ts (no python) | `{}` | `alpha.0` |
-| `poly-*`, or any repo with a `release-type: python` package | Seed every component at `0.1.0-alpha.0` | `alpha.1` |
+| Mode | Repo / package | Manifest | First tag |
+|---|---|---|---|
+| Stock `versioning: "prerelease"` | Pure go, pure ts (no python) | `{}` + `initial-version` | `alpha.0` |
+| Stock | `poly-*`, or any repo with a `release-type: python` package | Seed every component at `0.1.0-alpha.0` | `alpha.1` |
+| `versioning: "target"` | go, node, php, simple (honor `initial-version`) | key absent + `initial-version` | `initial-version` |
+| Target | python, rust (ignore `initial-version`) | seed `0.1.0-alpha.0` | `alpha.1` |
+| Target | linked family that must share one version | seed every linked member at `0.1.0-alpha.0` | `alpha.1` |
+| Target | unlinked component with its own first version (a spec at `1.0.0-alpha.0`) | key absent + its own `initial-version` | `initial-version` |
+
+Why python and rust need a seed under target versioning: with the key
+absent they open at stable `0.1.0`, and `next` refuses it
+(`conditional-linked-versions`: "has no release yet and its first
+release would be 0.1.0, not a prerelease"). Seeding only the new
+component is for ADDING one to an already-released repo
+([polyglot-repo § Manifest seed](../references/how-to/polyglot-repo.md)); the
+others already have releases, and reseeding them rewinds them.
 
 An empty manifest makes the **python** strategy compute a *stable* first
 version even with `prerelease: true` set — the release PR proposes
@@ -344,12 +360,20 @@ scripts/enable-dependabot-security.sh <org>/<repo>
 
 ## 6. Cut the first release
 
+The first commit depends on the versioning mode:
+
+| Mode | First commit | Why |
+|---|---|---|
+| Stock `versioning: "prerelease"` | `chore: initial public release` + `Release-As: 0.1.0-alpha.0` footer | the footer makes a `chore:` visible ([below](#if-your-commit-type-is-chore-not-feat)) |
+| `versioning: "target"` | `feat: initial public release`, NO footer | target ignores `Release-As` (log: "target versioning picks the version"); `chore:` alone yields "No user facing commits" |
+
 ```bash
+# target versioning; stock mode: see "If your commit type is chore" below
 git commit -m "feat: initial public release"
 git push origin main
 ```
 
-release-please opens a standing PR per component (`separate-pull-requests: true`). Merge each PR you want to release. With target versioning, push this commit to `next`: `main` skips a package with no release yet (it cuts only rcs), `next` opens it at its `initial-version`. Each merge creates a `<component>/v<version>` tag and triggers `publish.yml`, which fans out to the right ecosystem.
+release-please opens a standing PR per component (`separate-pull-requests: true`). The first push into a freshly created repo may not fire push events: if no release PR appears, run `gh workflow run release-please --ref next` (`main` for stock mode). Merge each PR you want to release. With target versioning, push this commit to `next`: `main` skips a package with no release yet (it cuts only rcs), `next` opens it at its `initial-version`. Each merge creates a `<component>/v<version>` tag and triggers `publish.yml`, which fans out to the right ecosystem.
 
 For first publish on **PyPI specifically** (OIDC mode), the pending trusted publisher resolves on first successful publish and becomes a project-scoped publisher. After that, the pending entry can be deleted; subsequent publishes use the project-scoped binding.
 
@@ -382,7 +406,7 @@ components](../references/how-to/prerelease-channel.md#release-as-is-global-acro
 before reaching for anything fancier.
 
 **With target versioning** the footer is ignored (the log says
-`ignoring "Release-As: …"`), so a `chore:`-only first commit opens
+`ignoring "Release-As: …"` / "target versioning picks the version"), so a `chore:`-only first commit opens
 nothing. Make it a `feat:` (or `fix:`): on `next`, each package with no
 release yet opens at its `initial-version`.
 
@@ -398,6 +422,8 @@ existing history:
 
 ```bash
 # 1. Squash local history to one commit (adjust for your situation)
+#    stock mode shown; with target versioning use
+#    -m "feat: initial public release" and no Release-As footer
 git reset --soft <first-commit-sha>
 git commit --amend -m "chore: initial public release" -m "Release-As: 0.1.0-alpha.0"
 
@@ -405,7 +431,12 @@ git commit --amend -m "chore: initial public release" -m "Release-As: 0.1.0-alph
 #    protection — see the Fresh-repo recreate checklist above)
 gh repo delete <org>/<repo> --yes
 gh repo create <org>/<repo> --public --description "..." --homepage "..."
-gh api repos/<org>/<repo> -X PATCH -f allow_squash_merge=true -f allow_merge_commit=true -f allow_rebase_merge=true
+gh api repos/<org>/<repo> -X PATCH -f allow_squash_merge=true -f allow_merge_commit=true -f allow_rebase_merge=false
+#    org merge model: squash + merge commits on, rebase off. The
+#    `conventional-commits` ruleset accepts `Merge pull request ...`
+#    subjects ([branch-rulesets](../references/how-to/branch-rulesets.md));
+#    a copy of it that lacks the `Merge (pull request|branch)` arm
+#    rejects merge commits, so keep the arm or go squash-only.
 
 # 3. Recreate labels BEFORE pushing (see § 5b above) — release-please's
 #    first run needs them
