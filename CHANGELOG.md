@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.21.0](https://github.com/hop-top/.github/compare/v0.20.0...v0.21.0) (2026-11-28)
+
+
+### Features
+
+* **rulesets:** add branch ruleset templates + apply script ([517fd5d](https://github.com/hop-top/.github/commit/517fd5d2393117ada6b6fe14f2199ef83d91a936))
+* **rulesets:** enable conventional-commits; admin-role bypass; warn on unseen checks ([93532db](https://github.com/hop-top/.github/commit/93532dbaac4b9af5761982f39104a588bea1d1f4))
+
+
+### Bug Fixes
+
+* **preflight:** accept unseeded spec package with initial-version ([cbf8d11](https://github.com/hop-top/.github/commit/cbf8d11eb03990b072ad013c0839dcee76c35441))
+* **rulesets:** match org merge model ([3357366](https://github.com/hop-top/.github/commit/3357366c6bfa89998ae75c99c89a47664ca3ce0a))
+
 ## [0.20.0](https://github.com/hop-top/.github/compare/v0.19.0...v0.20.0) (2026-11-20)
 
 
