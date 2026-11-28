@@ -29,7 +29,8 @@ Three workflows, pinned `@v0`, run against your tree:
 | `version-check` | every push to `main` and every pull request | annotated literals equal the manifest; annotated files and `extra-files` are one set; no stray version literal; every `<root>/vX.Y` path is a manifest version; no forbidden pattern |
 
 Plus the [release-please preflight](add-preflight.md), which rejects a
-spec package with no directory or no manifest key, and an
+spec package with no directory, or with neither a manifest key nor its
+own `initial-version`, and an
 `extra-files` entry that points at no file.
 
 ## The rules
@@ -38,7 +39,7 @@ spec package with no directory or no manifest key, and an
 - **A commit stays inside one version directory.** The one admitted shape across two directories is a whole-directory rename: every path under `<root>/vA.B/` reappears at the same relative path under one other `<root>/vC.D/` and nothing is left behind. A breaking change opens a new directory; nothing bumps within one — no `!`, no `BREAKING CHANGE:` trailer on a spec commit.
 - **Every spec document carries a `**Status:**` line** (bold, exactly that spelling) in its first fifteen lines. Automation writes it from the version's channel: alpha → Draft, beta → Pre-release, rc → Release Candidate, unsuffixed → General Availability. Hands never edit it.
 - **Every release-version literal outside the files release-please rewrites natively** (the manifest, changelogs, the strategy's own version file) sits on a line annotated `x-release-please-version`, and its file is an `extra-files` entry of its package. Never `pyproject.toml`: the python strategy owns that file and an `extra-files` entry there bypasses PEP 440 normalization — [version-strings.md § Don't break the normalization](../concepts/version-strings.md#dont-break-the-normalization). A version typed anywhere else is a defect.
-- **Every `<root>/vX.Y/` path in the tree names a version the manifest knows.**
+- **Every `<root>/vX.Y/` path in the tree names a version the manifest knows** (or, while its key is absent, a spec package that declares its own `initial-version`).
 
 ## Quick version
 
@@ -55,7 +56,10 @@ watch the checks.
 The version directory is a release-please package of its own. One
 package per shipped line; the manifest seed is prerelease-shaped when
 the package is prerelease (the first release is then `alpha.1` — see
-[prerelease-channel.md](prerelease-channel.md)).
+[prerelease-channel.md](prerelease-channel.md)). Under target
+versioning an unreleased spec package instead leaves the key absent and
+sets `initial-version` (first release PR opens at that version and writes
+the key); the preflight and `version-check` read `initial-version` until then.
 
 ```jsonc
 // .github/release-please-config.json
@@ -251,7 +255,7 @@ manifest and each package's natively rewritten file are skipped.
 | `annotated` | an `x-release-please-version` line sits outside every package path, holds more or fewer than one version literal (SemVer or PEP 440), or its literal differs from the package's manifest version, or it sits where release-please never rewrites it (a typed-only target; a plain YAML entry rewritten at `$.version`, which the YAML updater re-dumps without comments) |
 | `configured` | a file is a string or `generic` `extra-files` entry but carries no annotation, or carries one but is not an `extra-files` entry; a typed `json` / `yaml` / `toml` / `xml` / `pom` entry needs no annotation (its `jsonpath` / `xpath` is the marker), nor does a plain `*.json` / `*.yaml` / `*.toml` / `*.xml` entry with a version at `$.version` (`/*/version` for XML; counted when release-please's updater would rewrite it, passed unread without a TOML parser; a YAML target without PyYAML is itself a finding) |
 | `literal` | an un-annotated line carries a literal equal to a manifest version, or a literal in the prerelease channel shape (`X.Y.Z-alpha.N`, PEP 440 `X.Y.ZaN`) — outside the skipped files and the `allow` globs; in an `extra-files` target only the line holding a selector's (or marking default path's) value is exempt, every other line is checked |
-| `spec-path` | a `<root>/vX.Y` path (or a corpus walker's `"vX.Y"` … `"conformance"` spelling) names a version with no `<root>/vX.Y` manifest key; inert when the config has no spec package |
+| `spec-path` | a `<root>/vX.Y` path (or a corpus walker's `"vX.Y"` … `"conformance"` spelling) names a version with no `<root>/vX.Y` manifest key and no spec package declaring `initial-version` for it; inert when the config has no spec package |
 | `forbidden` | an un-annotated line matches a `forbid-literal` regex |
 
 One `path:line: <rule>: <detail>` per finding and exit 1, or

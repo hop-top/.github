@@ -255,6 +255,14 @@ When it links:
   (kit-rs, with no stable, included), then cuts `0.6.1` in one group
   PR.
 
+#### Unseeded spec package
+
+A `<root>/vX.Y` spec package that is unlinked and unreleased keeps its
+manifest key absent and sets its own `initial-version`. That is valid:
+the preflight and `version-check` read `initial-version` until the first
+release PR writes the key. Seeding it would shift the first tag to
+`alpha.1`.
+
 #### Initial version of a linked member
 
 A member's first release (no stable, no prior prerelease) opens at its
