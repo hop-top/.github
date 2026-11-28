@@ -1049,6 +1049,37 @@ class PreflightTargetVersioningTests(PreflightFixture, unittest.TestCase):
         self.assertNoLine(lines, "[BREAK]")
 
 
+class PreflightSpecPackageTests(PreflightFixture, unittest.TestCase):
+    """Check 5c: a spec package needs a manifest key or its own
+    `initial-version` (unseeded target-versioning package)."""
+
+    def setup_spec(self, pkg: dict, manifest: dict) -> None:
+        self.write(CONFIG, json.dumps({"packages": {"spec/v1.0": pkg}}))
+        self.write(MANIFEST, json.dumps(manifest))
+        self.write("spec/v1.0/README.md", "spec\n")
+
+    def test_unseeded_with_initial_version_passes(self) -> None:
+        self.setup_spec({"release-type": "simple", "component": "fit-spec",
+                         "versioning": "target", "initial-version": "1.0.0-alpha.0"}, {})
+        _, lines = self.run_step()
+        self.assertNoLine(lines, "[FAIL] spec package spec/v1.0 has no manifest key")
+        self.assertTrue(any("no manifest key yet; initial-version 1.0.0-alpha.0" in x
+                            for x in lines), "\n".join(lines))
+
+    def test_unseeded_without_initial_version_fails(self) -> None:
+        self.setup_spec({"release-type": "simple", "component": "fit-spec"}, {})
+        _, lines = self.run_step()
+        self.assertTrue(any("spec package spec/v1.0 has no manifest key and no initial-version" in x
+                            for x in lines), "\n".join(lines))
+
+    def test_seeded_passes(self) -> None:
+        self.setup_spec({"release-type": "simple", "component": "fit-spec"},
+                        {"spec/v1.0": "1.0.0-alpha.0"})
+        _, lines = self.run_step()
+        self.assertTrue(any("manifest key present (1.0.0-alpha.0)" in x for x in lines),
+                        "\n".join(lines))
+
+
 class PreflightPolicyWarningTests(PreflightFixture, unittest.TestCase):
     """Config that release-please accepts but that does not do what it
     says: a top-level linked-versions key, a nested module outside its

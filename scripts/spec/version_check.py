@@ -49,7 +49,8 @@ Rules, each with its own message and a non-zero exit on any finding:
 4. ``spec-path``  -- every ``<root>/vX.Y`` path, and every corpus-walker
    spelling of one (a quoted ``vX.Y`` token joined to a quoted
    ``conformance``), names a version whose ``<root>/vX.Y`` key is in
-   the manifest. The roots are those of the config's spec packages
+   the manifest (or, while the key is absent, the package declares its
+   own ``initial-version``). The roots are those of the config's spec packages
    (package paths of the shape ``<root>/vX.Y``); with no spec package
    the rule is inert.
 5. ``forbidden``  -- no un-annotated line matches a ``--forbid-literal``
@@ -298,6 +299,13 @@ class Repo:
         for key in self.manifest:
             m = SPEC_PACKAGE_RE.match(key)
             if m and m.group("root") in known:
+                known[m.group("root")].add(m.group("line"))
+        # Unseeded package (target versioning: key absent until the first
+        # release PR writes it): its own initial-version is its version.
+        for key, pkg in self.packages.items():
+            m = SPEC_PACKAGE_RE.match(key)
+            if m and m.group("root") in known and key not in self.manifest \
+                    and (pkg.get("initial-version") or self.config.get("initial-version")):
                 known[m.group("root")].add(m.group("line"))
         return known
 
