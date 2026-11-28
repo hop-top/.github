@@ -18,6 +18,11 @@ You know which of three pinning strategies matches your risk tolerance, and the 
 uses: hop-top/.github/.github/workflows/publish-on-tag.yml@v0  # use this
 ```
 
+A full commit SHA is a valid pin everywhere `@v0` is shown (annotate
+it, e.g. `@<sha> # v0.20.0`); nothing in the preflight or the other
+docs requires one, and Dependabot/Renovate can bump it. Use whichever
+fits the repo's supply-chain policy.
+
 `@v0` is the rolling major — it follows every stable release of the 0.x
 line. Before 1.0 that includes breaking changes (see
 [How rolling majors work](#how-rolling-majors-work)).

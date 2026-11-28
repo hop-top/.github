@@ -256,7 +256,8 @@ Verified empirically against a 7-package manifest repo:
   all 7 packages produced candidate releases for all 7, each at
   `0.1.0-alpha.0`.
   This is what you want if you're bootstrapping a polyglot repo's
-  first release across every component at the same version — see
+  first release across every component at the same version (stock
+  `versioning: "prerelease"` only; target versioning ignores the footer) — see
   [docs/bootstrap-checklist.md § Cut the first release](../../docs/bootstrap-checklist.md#6-cut-the-first-release).
 - **There is no per-component scoping syntax.** A footer like
   `Release-As: my-ts-component: 0.2.0-alpha.0` is NOT parsed as

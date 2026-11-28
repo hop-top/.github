@@ -289,7 +289,8 @@ line and block it), or not a prerelease at all (`0.3.0`, or the
 simple). The message names the line to set, or the member waits until
 the family links and takes the group version then. Set `initial-version`
 for every new linked member; python and rust ignore it and open at
-`0.1.0`
+`0.1.0` (a new repo whose whole family must share one version seeds
+every member at `0.1.0-alpha.0` instead; the first PRs are `alpha.1`)
 ([seed the manifest](prerelease-channel.md#release-type-python-does-not-honor-initial-version)
 if that is off the family's line).
 
@@ -334,7 +335,9 @@ at an rc of the target too.
 A `Release-As:` footer would override the strategy, so the extension
 drops it from the commits of every target package and logs
 `ignoring "Release-As: …"`. `release-as` in the config is refused
-(preflight and runner).
+(preflight and runner). So a repo's first commit is `feat: initial
+public release` with no footer: a `chore:` alone opens nothing
+([bootstrap § 6](../../docs/bootstrap-checklist.md#6-cut-the-first-release)).
 
 ### GitHub releases and release PRs
 

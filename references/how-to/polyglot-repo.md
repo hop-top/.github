@@ -115,8 +115,12 @@ group's `components`. The family links on every new major, and on a
 new minor while it is before 1.0; patches, and minors from 1.0, stay
 per member ([target versioning § Linked family](target-versioning.md#linked-family)).
 
-**Manifest seed**: seed only the new component. The others already
-have releases, and reseeding them rewinds them. `release-type:
+**Manifest seed**: when ADDING a component to an already-released
+repo, seed only the new one: the others already have releases, and
+reseeding them rewinds them. (A brand-new repo follows the per-mode
+table in [bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please):
+a linked family that must share one version seeds every member at
+`0.1.0-alpha.0`.) `release-type:
 python` and `rust` ignore `initial-version` and open at stable
 `0.1.0` while their manifest key is absent; the other strategies
 honor it. On stock versioning, seed a python or rust tree at
@@ -124,8 +128,11 @@ honor it. On stock versioning, seed a python or rust tree at
 tree leaves its key absent and sets `initial-version`
 ([bootstrap-checklist § 5](../../docs/bootstrap-checklist.md#5-configure-release-please),
 [prerelease channel § Manifest presence vs `initial-version`](prerelease-channel.md#manifest-presence-vs-initial-version)).
-With target versioning, an unlinked python or rust tree likewise
-opens at stable `0.1.0` on `next` unless seeded on alpha. A new
+With target versioning, go, ts, php and `simple` trees keep the key
+absent and set `initial-version`; a python or rust tree opens at
+stable `0.1.0`, which `next` refuses (`has no release yet and its
+first release would be 0.1.0, not a prerelease`), so seed it at
+`0.1.0-alpha.0` (first PR `alpha.1`). A new
 linked member's first release must start on the family's line: set
 its `initial-version` there (the block message names the line;
 python and rust: seed the manifest on that line instead) —
@@ -164,6 +171,12 @@ matter:
   doesn't exist (`mirror-subtree.yml` runs `gh repo view || gh repo
   create`). A hand-made seed is overwritten by the first tag — [SKILL.md § Bootstrap-mirror
   gotcha](../../SKILL.md#bootstrap-mirror-gotcha).
+- **Renamed repo trap**: when the repo was renamed `<name>` →
+  `poly-<name>`, `hop-top/<name>` is now a GitHub redirect to it. The
+  `gh repo view` succeeds through the redirect, `gh repo create` is
+  skipped, and the Go mirror push lands in `poly-<name>`. Pre-create
+  the mirror (`gh repo create hop-top/<name> --public`) before the
+  first tag: creating it removes the redirect.
 
 Per-language overrides (`test-command`, `pypi-auth`, …):
 [ecosystems.md](../ecosystems.md).
