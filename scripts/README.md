@@ -6,6 +6,13 @@ CI deliberately cannot perform. `spec/` and `release-please-target/`
 run inside the reusable workflows that check this repository out
 (see [`DEVELOPING.md`](../DEVELOPING.md#layout)).
 
+## `apply-rulesets.sh`
+
+`scripts/apply-rulesets.sh [--dry-run] <org>/<repo>` creates or
+updates the branch rulesets in `templates/rulesets/` by name.
+Idempotent; `--dry-run` prints the diff and writes nothing. See
+[how-to/branch-rulesets.md](../references/how-to/branch-rulesets.md).
+
 ## `enable-dependabot-security.sh`
 
 `scripts/enable-dependabot-security.sh <org>/<repo>...` enables
