@@ -56,6 +56,19 @@ norm='{name, target, enforcement, bypass_actors, conditions, rules}
 
 existing="$(gh api --paginate "repos/${repo}/rulesets" --jq '.[] | [.id, .name] | @tsv')"
 
+# Warn when a required check has not reported on the default branch head.
+warn_checks() {
+  local ctxs branch seen c
+  ctxs="$(jq -r '.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' <<<"$1")"
+  [ -n "$ctxs" ] || return 0
+  branch="$(gh api "repos/${repo}" --jq .default_branch)"
+  seen="$(gh api "repos/${repo}/commits/${branch}/check-runs" --jq '.check_runs[].name' 2>/dev/null || true)"
+  while IFS= read -r c; do
+    grep -qxF "$c" <<<"$seen" ||
+      info "warn: required check '${c}' not seen on ${branch} head; would block merges"
+  done <<<"$ctxs"
+}
+
 for tpl in "$dir"/*.json; do
   stem="$(basename "$tpl" .json)"
   if [ "${#only[@]}" -gt 0 ] && ! printf '%s\n' "${only[@]}" | grep -qx "$stem"; then
@@ -74,6 +87,7 @@ for tpl in "$dir"/*.json; do
 
   want="$(jq -S "$norm" <<<"$want")"
   name="$(jq -r .name <<<"$want")"
+  [ "$dry" -eq 1 ] && warn_checks "$want"
   id="$(awk -F'\t' -v n="$name" '$2 == n {print $1}' <<<"$existing" | head -n1)"
 
   if [ -n "$id" ]; then
